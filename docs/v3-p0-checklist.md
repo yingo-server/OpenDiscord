@@ -54,5 +54,19 @@
   分桶、S-5 重启恢复）；`server/cmd/chatd/v3wire_test.go`（P3c 装配层：默认 flag-off 时
   `assembly.v3` 非 nil 且 Enabled=false、全量 e2e 仍绿，热改 true/percent=100 后 Enabled
   且 InBucket 稳定，Offer 落库 + Restore 后 cursor 不回退）。
-- **P3d 计划**：把 v3 plane 接进下行 fanout（按 `InBucket` 双路径分流）、做旧路径瘦身与
-  背压传播（`Bus.PausedConns`/`Bus.BackpressureDepth` 经 §5.5 暴露），届时才改变主干行为。
+- **P3d-1 已落地**：`server/cmd/chatd/v3wire.go` 的 `WireV3.AttachV3Split(p)` 把
+  `MailboxHub.Offer` 适配成 `pipe.V3Offer` 注入 data 层 fanout 产出点（主干
+  `newAssembly` 成功路径调用）。分流按 uid 哈希灰度（`Enabled()/InBucket()` 每次
+  读最新 flag 快照，T-SV-7），**双写旁路**：灰度 uid 的 canonical 下行帧写入
+  mailbox，同时旧直投路径照常发帧（逐字节对照用）；非灰度 uid / flag-off 零
+  行为变化。MSG_NEW 小群 102 与拉取模式 14 水位线进 mailbox，大群消息本体不进
+  （§2.4）；typing/presence 低价值帧按 §10 保持无序旁路，不进 mailbox。
+  `pipe.V3SplitStats()` 暴露 Offered/Bypassed/Failed/Broadcast 计数；hub 写失败
+  只计数、绝不回流影响旧路径。连接写循环与 DeliveryPlane.Pump **一行未动**
+  （P3d-2 范围）。测试：`server/internal/data/pipe/v3split_test.go`（未装配旧路径
+  逐字节、灰度按 uid、双写不抑制、失败隔离、低价值旁路、水位线）、
+  `server/cmd/chatd/v3wire_test.go`（装配层 flag-off 零落库 / 热改全量灰度落库 /
+  kill-switch 冻结 / 分桶稳定）。
+- **P3d 计划（更新）**：P3d-2 把 v3 plane 的 Pump 接进下行连接写循环、做旧路径
+  瘦身与背压传播（`Bus.PausedConns`/`Bus.BackpressureDepth` 经 §5.5 暴露）；
+  P4 压测改造 + 灰度验收。届时才改变主干投递行为。

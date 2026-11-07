@@ -186,6 +186,10 @@ type fanoutPlane struct {
 	// (§1.3 lastWatermarkSeq / lastWatermarkAt).
 	pullMu    sync.Mutex
 	pullState map[int64]*pullConvState
+
+	// v3 is the P3d-1 fanout split sink. nil (or nil offer) = pure no-op:
+	// the legacy direct-delivery path is byte-identical (§9 中间态铁律).
+	v3 *v3Split
 }
 
 // pullConvState is the per-conversation watermark throttle state (§1.3).
@@ -239,6 +243,11 @@ func newFanoutPlane(mc *memberCache, put func(*env) bool, lg *log.Logger) *fanou
 // setFlags installs the process-wide feature flag store (SIGHUP / 911 writes
 // mutate it in place, so the pointer stays valid across reloads).
 func (f *fanoutPlane) setFlags(flags *featureflags.Flags) { f.flags = flags }
+
+// setV3Split attaches the P3d-1 split sink. It is called by Pipe.SetV3Offer
+// with the SAME pointer the flusher holds, so every fan-out producer shares one
+// counter set. An unassembled plane keeps v3 == nil → no-op.
+func (f *fanoutPlane) setV3Split(v *v3Split) { f.v3 = v }
 
 // start launches the aggregator + the broadcaster workers.
 func (f *fanoutPlane) start(ctx context.Context) {
@@ -541,6 +550,13 @@ func (f *fanoutPlane) fanoutTo(kind uint32, cid uint64, uids []uint64, payload [
 // fan-out lane is not wired (test assemblies): nothing is emitted and no shared
 // frame is built.
 func (f *fanoutPlane) fanoutToPut(kind uint32, cid uint64, uids []uint64, payload []byte, put func(*env) bool) {
+	// P3d-1: the SAME fan-out output also feeds the v3 mailbox log for uid's
+	// in the grey bucket (dual-write / byte-for-byte comparison). This happens
+	// BEFORE the legacy direct delivery and can never fail it: a nil sink, a
+	// bucket miss or a hub error only updates counters (§9).
+	if f.v3 != nil && put != nil {
+		f.v3.offerTo(context.Background(), kind, cid, uids, "", payload, 0, 0)
+	}
 	if put == nil {
 		return
 	}
@@ -688,6 +704,8 @@ func (f *fanoutPlane) emitWatermark(cid, senderID, seq uint64, members []store.M
 		}
 		uids = append(uids, uint64(m.UID))
 	}
+	// fanoutToPut 会顺带把这条水位线按灰度 uid 投进 mailbox（§2.4）；
+	// 大群消息本体（102）不进 mailbox，避免 O(N) 复活。
 	f.fanoutToPut(uint32(kinds.KindWatermark), cid, uids, pl, put)
 }
 

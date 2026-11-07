@@ -339,15 +339,17 @@ func newAssembly(cfg *config, lg *log.Logger) (*assembly, error) {
 		lg.Info("job plane wired in degraded mode (no cold store): archive dry-run only, real runs fail with a clear error")
 	}
 
-	// 13. v3 bus wire (P3c): construct the mailbox hub + delivery plane on the
-	// same hot DB. Bypass-only: nothing in fanout/user/pipe references it, so
-	// flag-off behavior is byte-identical to the pre-P3c binary (§9). A nil
-	// result never blocks startup — log loudly and continue on the old
-	// delivery path, which remains the only delivery path until P3d.
+	// 13. v3 bus wire (P3c) + P3d-1 fanout 灰度分流（双写旁路，仅构造/挂载）：
+	// 同一热库上构造 mailbox hub + delivery plane；把 hub.Offer 适配成
+	// pipe.V3Offer 注入 fanout 产出点。旧直投路径仍是唯一投递路径，连接写
+	// 循环一行不动（P3d-2）；flag 默认 false / percent=0 时 adapter 与
+	// Hub.Offer 双层 no-op，旧路径行为逐字节一致（§9）。nil 结果只记 WARN，
+	// 不阻断启动——旁路设施故障不得影响旧路径。
 	if w := newV3Wire(hot.DB, a.flags.Snapshot, delivery.Config{}); w != nil {
 		a.v3 = w
+		w.AttachV3Split(p)
 	} else {
-		lg.Warn("v3 bus wire unavailable; continuing on legacy delivery path (P3d split pending)")
+		lg.Warn("v3 bus wire unavailable; continuing on legacy delivery path (P3d split not attached)")
 	}
 	return a, nil
 }

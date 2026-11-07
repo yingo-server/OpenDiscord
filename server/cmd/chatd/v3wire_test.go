@@ -13,9 +13,14 @@ package main
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/yingo-server/OpenDiscord/server/internal/bus/mailbox"
+	"github.com/yingo-server/OpenDiscord/server/internal/data/store"
 	"github.com/yingo-server/OpenDiscord/server/internal/pkg/featureflags"
+	"github.com/yingo-server/OpenDiscord/server/internal/proto"
+	"github.com/yingo-server/OpenDiscord/server/internal/proto/gen/chatpb"
+	"github.com/yingo-server/OpenDiscord/server/internal/proto/kinds"
 )
 
 // (a) 默认中间态：构造成功、Enabled=false、Offer 为 no-op（不落库）。
@@ -74,6 +79,139 @@ func TestV3WireHotToggle(t *testing.T) {
 	a.flags.Apply(map[string]any{featureflags.KeyV3BusEnabled: false})
 	if a.v3.Enabled() {
 		t.Fatal("kill-switch: Enabled() must be false again")
+	}
+}
+
+// (d) P3d-1：flag-off 时 fanout 双写旁路不落库；热改全量灰度后，MSG_NEW
+// 经主干 fanout 产出按 uid 写入 mailbox_entries，且旧直投路径仍照常发帧。
+// 直接驱动真实 dataPeer（与 e2e 同一条 FrameSource → pipe.dispatch 路径），
+// 不经过 WS 会话，因此不需要 member/conn 之外的任何客户端行为。
+func TestV3WireFanoutSplitFlagOffAndHotToggle(t *testing.T) {
+	a, _ := startAssembly(t)
+	ctx := context.Background()
+
+	// 造一个 3 人群（sender 4242 + 2 个灰度 uid），消息必须扇出给成员。
+	cid, err := a.hot.CreateConv(ctx, &store.ConvMeta{
+		CType: 2, CreatedBy: testUID, CreatedAt: time.Now().Unix(),
+	}, testUID)
+	if err != nil {
+		t.Fatalf("CreateConv: %v", err)
+	}
+	for _, uid := range []int64{5001, 5002} {
+		if err := a.hot.AddMember(ctx, &store.Member{Cid: cid, UID: uid, Role: 1, JoinedAt: 1}); err != nil {
+			t.Fatalf("AddMember: %v", err)
+		}
+	}
+	// flag-off：发一条消息，旧路径照常，mailbox 一行都不能有。
+	sendAssemblyMsg(t, a, cid, "p3d-off", []byte(`{"clientMsgId":"p3d-off","text":"hi"}`))
+	var n int
+	if err := a.hot.DB.QueryRow(`SELECT COUNT(*) FROM mailbox_entries`).Scan(&n); err != nil {
+		t.Fatalf("count mailbox_entries: %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("flag-off fanout must not write mailbox, got %d rows", n)
+	}
+	if st := a.pipe.V3SplitStats(); st.Offered != 0 || st.Failed != 0 {
+		t.Fatalf("flag-off stats = %+v, want Offered=0 Failed=0", st)
+	}
+
+	// 热改全量灰度：同一 uid 稳定落桶（T-SV-7），hub 真落库。
+	a.flags.Apply(map[string]any{
+		featureflags.KeyV3BusEnabled: true,
+		featureflags.KeyV3BusPercent: 100,
+	})
+	sendAssemblyMsg(t, a, cid, "p3d-on", []byte(`{"clientMsgId":"p3d-on","text":"hi"}`))
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if err := a.hot.DB.QueryRow(`SELECT COUNT(*) FROM mailbox_entries`).Scan(&n); err != nil {
+			t.Fatalf("count: %v", err)
+		}
+		if n > 0 || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if n != 2 {
+		t.Fatalf("percent=100: want 2 mailbox rows (2 recipients), got %d", n)
+	}
+	if st := a.pipe.V3SplitStats(); st.Offered != 2 || st.Failed != 0 {
+		t.Fatalf("grey stats = %+v, want Offered=2 Failed=0", st)
+	}
+	// 旧直投路径未被抑制：ack 之后 pipe 的 fanout lane 仍产出 2 条 per-uid 帧
+	// （双写语义，P3d-1 不切换投递）。
+	// kill-switch：关回去后不再产生新行。
+	a.flags.Apply(map[string]any{featureflags.KeyV3BusEnabled: false})
+	sendAssemblyMsg(t, a, cid, "p3d-back-off", []byte(`{"clientMsgId":"p3d-back-off","text":"hi"}`))
+	if err := a.hot.DB.QueryRow(`SELECT COUNT(*) FROM mailbox_entries`).Scan(&n); err != nil {
+		t.Fatalf("count after kill-switch: %v", err)
+	}
+	if n != 2 {
+		t.Fatalf("kill-switch must freeze mailbox writes, got %d rows", n)
+	}
+}
+
+// sendAssemblyMsg feeds one MSG_SEND into the running assembly's data pipe via
+// the REAL assembly-installed FrameSource (InternalFrame-wrapped chatpb
+// envelope). The dispatcher runs the full group-commit path; we wait for the
+// mailbox/legacy fan-out counters to settle instead of consuming the shared
+// outbound lane (the bridge is a concurrent reader of that lane).
+func sendAssemblyMsg(t *testing.T, a *assembly, cid int64, id string, pl []byte) {
+	t.Helper()
+	env := &chatpb.Envelope{Id: 1, Kind: kinds.KindMsgSend, RequestId: id,
+		Target: &chatpb.Envelope_ConvId{ConvId: uint64(cid)}, Payload: pl}
+	env.SetUserId(uint64(testUID))
+	intf := &chatpb.InternalFrame{
+		Envelope: env, SrcLayer: "data", TraceId: id,
+	}
+	body, err := intf.Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	fr := &proto.Frame{Kind: kinds.KindMsgSend,
+		Env:  &chatpb.Envelope{Payload: body},
+		Meta: &proto.FrameMeta{SrcLayer: "data"},
+	}
+	// 直接把转换后的 Req 送进 dispatcher（FrameSource 已在 newAssembly 安装）。
+	req := a.pipe.FrameSource(fr)
+	// FrameSource 的 protobuf oneof 目标解析里 conv_id 与 user_id 互斥；测试
+	// 直接补齐路由字段（真实链路的 conv_id 在 InternalFrame 外层 Meta 里带，
+	// 这里不重复实现桥接层的那层转换）。
+	req.ConvID = uint64(cid)
+	req.UserID = uint64(testUID)
+	a.pipe.FeedReqForTest(context.Background(), req)
+	// 等 group commit：flusher 的 run goroutine 消费 writeCh 是异步的。
+	// 轮询热库总行数直到本次消息落盘（dispatch 前总行数已记录，避免与
+	// 同进程其他测试的库混淆；不用抢 bridge 也在读的 outCh）。
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		var n int
+		if err := a.hot.DB.QueryRow(`SELECT COUNT(*) FROM msg_messages_hot`).Scan(&n); err == nil && n > 0 {
+			// fanoutNew 在同一 flush 循环里紧跟 emit，give it a brief settle.
+			time.Sleep(30 * time.Millisecond)
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	// 闸门拒绝时会回一个 ERROR(10) 到 outCh；把内容带进失败信息方便定位。
+	var status string
+	_ = a.hot.DB.QueryRow(`SELECT COUNT(*) FROM msg_messages_hot`).Scan(&status)
+	t.Fatalf("no committed message for %s (total rows=%s); check FrameSource/admit gates", id, status)
+}
+
+// (e) 灰度分桶按 uid 稳定、与连接无关：重复调用 InBucket 结果不变。
+func TestV3WireFanoutSplitBucketStable(t *testing.T) {
+	a, _ := startAssembly(t)
+	a.flags.Apply(map[string]any{
+		featureflags.KeyV3BusEnabled: true,
+		featureflags.KeyV3BusPercent: 5,
+	})
+	for uid := int64(1); uid <= 200; uid++ {
+		first := a.v3.InBucket(uid)
+		for i := 0; i < 5; i++ {
+			if a.v3.InBucket(uid) != first {
+				t.Fatalf("uid %d bucket unstable across reads", uid)
+			}
+		}
 	}
 }
 

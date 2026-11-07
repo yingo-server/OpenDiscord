@@ -103,6 +103,8 @@ type Pipe struct {
 	// transient signals; the plane resolves the recipients (from the cache),
 	// aggregates them into per-conv windows and emits the frames.
 	fanout *fanoutPlane
+	// v3 is the P3d-1 grey-split sink (nil = legacy-only, byte-identical).
+	v3 *v3Split
 
 	// recallWindow is the recall time window in seconds (injectable; 0 =
 	// default 120s).
@@ -194,6 +196,38 @@ func (p *Pipe) SetFeatureFlags(flags *featureflags.Flags) {
 		p.conv.flags = flags
 	}
 }
+
+// SetV3Offer installs the P3d-1 grey-split sink (docs/v3-bus-design.md §5.1/§6).
+//
+// The callback is supplied by the assembly layer (chatd/v3wire.go): it reads
+// the LATEST flag snapshot on every call (v3_bus_enabled && percent>0), checks
+// InV3Bucket(uid) — FNV-1a uid hashing, stable per uid (T-SV-7) — and writes
+// the frame into MailboxHub. The pipe itself stays bus-agnostic: no import of
+// internal/bus/*, no connection write loop (P3d-2).
+//
+// Semantics of this intermediate state:
+//   - The legacy direct path is UNCHANGED and remains the only *delivery* path.
+//     Frames offered to the hub are a DUAL WRITE for byte-for-byte comparison;
+//     the hub does not suppress the legacy frame.
+//   - offer == nil (default, and in every unit-test rig) disables the split:
+//     zero calls, zero allocations, zero behaviour change.
+//   - Hub errors are counted, never returned into the write path (§9: a bypass
+//     failure must not affect the legacy delivery).
+//
+// V3SplitStats exposes the split counters for diagnostics/tests.
+func (p *Pipe) SetV3Offer(offer V3Offer) {
+	v := &v3Split{offer: offer}
+	p.v3 = v
+	if p.fl != nil {
+		p.fl.v3 = v
+	}
+	if p.fanout != nil {
+		p.fanout.setV3Split(v)
+	}
+}
+
+// V3SplitStats returns the P3d-1 split counters (zero when unassembled).
+func (p *Pipe) V3SplitStats() V3SplitStats { return p.v3.stats() }
 
 // SetWritePolicy re-applies the write_path tunables (batch size / flush
 // interval) from a policy snapshot. The assembly calls this on SIGHUP so a

@@ -55,6 +55,9 @@ type flusher struct {
 	// watermark, §3.1/§3.2) and the per-conv watermark throttle. nil falls back
 	// to the plain inline loop (assemblies that build a flusher directly).
 	fanout *fanoutPlane
+	// v3 is the P3d-1 split sink, shared with p.fanout (see SetV3Offer).
+	// nil = no-op, legacy path byte-identical.
+	v3 *v3Split
 
 	// done closes when run() returns (final flush complete) — Drain waits on it.
 	done chan struct{}
@@ -283,6 +286,13 @@ func (f *flusher) fanoutNew(m store.PendingMsg, mediaIdx map[string]*store.Media
 			continue
 		}
 		uids = append(uids, uint64(member.UID))
+	}
+	// P3d-1: MSG_NEW 的 canonical 产出按灰度 uid 双写进 mailbox（§5.1）。
+	// 大群（>threshold）在上面已经转成水位线，本体不进 mailbox（§2.4）。
+	// sink 为 nil / 总开关关闭时零行为变化，旧直投循环原样执行。
+	if f.v3 != nil && f.putBulk != nil {
+		f.v3.offerTo(context.Background(), uint32(kinds.KindMsgNew), uint64(m.Cid),
+			uids, "", payload, m.MsgID, m.Seq)
 	}
 	// encode-once (perf-spec §2.1): the MSG_NEW body is serialised a single time
 	// and shared by reference across every member's frame.
