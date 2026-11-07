@@ -178,24 +178,25 @@ func sendAssemblyMsg(t *testing.T, a *assembly, cid int64, id string, pl []byte)
 	// 这里不重复实现桥接层的那层转换）。
 	req.ConvID = uint64(cid)
 	req.UserID = uint64(testUID)
+	var baseline int
+	if err := a.hot.DB.QueryRow(`SELECT COUNT(*) FROM msg_messages_hot`).Scan(&baseline); err != nil {
+		t.Fatalf("baseline: %v", err)
+	}
 	a.pipe.FeedReqForTest(context.Background(), req)
-	// 等 group commit：flusher 的 run goroutine 消费 writeCh 是异步的。
-	// 轮询热库总行数直到本次消息落盘（dispatch 前总行数已记录，避免与
-	// 同进程其他测试的库混淆；不用抢 bridge 也在读的 outCh）。
-	deadline := time.Now().Add(3 * time.Second)
+	// 等本次消息落盘：按行数增量（baseline 在 Feed 前取），不依赖
+	// client_msg_id 形态。组提交 50ms，给 5s 覆盖 CI 负载抖动。
+	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		var n int
-		if err := a.hot.DB.QueryRow(`SELECT COUNT(*) FROM msg_messages_hot`).Scan(&n); err == nil && n > 0 {
-			// fanoutNew 在同一 flush 循环里紧跟 emit，give it a brief settle.
-			time.Sleep(30 * time.Millisecond)
+		if err := a.hot.DB.QueryRow(`SELECT COUNT(*) FROM msg_messages_hot`).Scan(&n); err == nil && n > baseline {
+			time.Sleep(50 * time.Millisecond)
 			return
 		}
-		time.Sleep(5 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond)
 	}
-	// 闸门拒绝时会回一个 ERROR(10) 到 outCh；把内容带进失败信息方便定位。
-	var status string
-	_ = a.hot.DB.QueryRow(`SELECT COUNT(*) FROM msg_messages_hot`).Scan(&status)
-	t.Fatalf("no committed message for %s (total rows=%s); check FrameSource/admit gates", id, status)
+	var total int
+	_ = a.hot.DB.QueryRow(`SELECT COUNT(*) FROM msg_messages_hot`).Scan(&total)
+	t.Fatalf("no committed message for %s (rows %d -> %d); check FrameSource/admit gates", id, baseline, total)
 }
 
 // (e) 灰度分桶按 uid 稳定、与连接无关：重复调用 InBucket 结果不变。
