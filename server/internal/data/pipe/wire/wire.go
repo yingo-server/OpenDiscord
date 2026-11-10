@@ -43,11 +43,14 @@ type Media struct {
 
 // MessagePayload mirrors chat.v1.MessagePayload (MSG_SEND 101).
 type MessagePayload struct {
-	ClientMsgID string          `json:"clientMsgId,omitempty"`
-	Text        string          `json:"text,omitempty"`
-	Media       []Media         `json:"media,omitempty"`
-	ReplyTo     uint64          `json:"replyTo,omitempty"`
-	Raw         json.RawMessage `json:"-"`
+	ClientMsgID string  `json:"clientMsgId,omitempty"`
+	Text        string  `json:"text,omitempty"`
+	Media       []Media `json:"media,omitempty"`
+	ReplyTo     uint64  `json:"replyTo,omitempty"`
+	// Mentions is the @mention uid list (FE-1a #3). The name is identical in
+	// snake_case and camelCase, so both wire forms share one field.
+	Mentions []uint64        `json:"mentions,omitempty"`
+	Raw      json.RawMessage `json:"-"`
 }
 
 // MsgAck mirrors chat.v1.MsgAck (MSG_ACK 103).
@@ -227,6 +230,43 @@ type MsgMutation struct {
 	ConvID      uint64 `json:"conv_id,omitempty"`
 	Text        string `json:"text,omitempty"`
 	ForEveryone bool   `json:"for_everyone,omitempty"`
+}
+
+// MsgEditPayload is the 106 MSG_EDIT uplink shape. Field names follow the
+// existing client msg-mutation snake_case convention (same family as
+// MsgMutation), so a browser payload passes through unmarshalled as-is.
+type MsgEditPayload struct {
+	MsgID  uint64 `json:"msg_id,omitempty"`
+	ConvID uint64 `json:"conv_id,omitempty"`
+	Text   string `json:"text,omitempty"`
+}
+
+// ForwardFrom records the provenance of a forwarded message (FE-1a #2): the
+// original msg id and conversation. It is stored inside the new message's
+// content under the forward_from key; ids only, no text duplication.
+type ForwardFrom struct {
+	MsgID  uint64 `json:"msg_id,omitempty"`
+	ConvID uint64 `json:"conv_id,omitempty"`
+}
+
+// MsgForwardPayload is the 109 MSG_FORWARD uplink: which message, from which
+// conversation, into which target conversation (the envelope conv_id is
+// authoritative when to_conv_id is absent).
+type MsgForwardPayload struct {
+	MsgID       uint64      `json:"msg_id,omitempty"`
+	FromConvID  uint64      `json:"from_conv_id,omitempty"`
+	ToConvID    uint64      `json:"to_conv_id,omitempty"`
+	ForwardFrom ForwardFrom `json:"forward_from,omitempty"`
+}
+
+// ReportPayload is the 453 REPORT uplink. Detail is an enum/string the CLIENT
+// supplies; the server never stores message bodies or free-form user text in
+// it beyond a bounded truncation (PII red line: ids + reason enum only).
+type ReportPayload struct {
+	TargetMsg  uint64 `json:"target_msg,omitempty"`
+	TargetUser uint64 `json:"target_user,omitempty"`
+	Reason     uint32 `json:"reason,omitempty"`
+	Detail     string `json:"detail,omitempty"`
 }
 
 // MemberUpdate is the 212 MEMBER_UPDATE event body. camelCase (the conv

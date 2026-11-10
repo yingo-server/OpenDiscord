@@ -45,6 +45,9 @@ type HotStores interface {
 	store.ConvStore
 	store.SysStore
 	store.MediaStore
+	// ReportStore is the FE-1a sys_reports sink (453). *sqlite.DB satisfies
+	// it; the test bundle stubs it as a no-op.
+	store.ReportStore
 }
 
 // Pipe is the data layer's entry assembly: consumes internal frames from a
@@ -109,6 +112,15 @@ type Pipe struct {
 	// recallWindow is the recall time window in seconds (injectable; 0 =
 	// default 120s).
 	recallWindow int64
+
+	// editWindow is the MSG_EDIT time window in seconds (injectable; 0 =
+	// default 300s). FE-1a #1.
+	editWindow int64
+
+	// flags carries the process-wide feature flags; msgDomainV2 reads
+	// msg_domain_v2_enabled (default false = legacy behaviour untouched).
+	// Set via SetFeatureFlags; nil = compiled defaults.
+	flags *featureflags.Flags
 
 	senderDone chan struct{}
 
@@ -189,6 +201,10 @@ func (p *Pipe) SetTrunkee(t Trunkee) { p.trunk = t }
 // Not calling this leaves the pipe at the compiled defaults, i.e.
 // pull_mode_threshold = 0 → the pre-v1.2 inline behaviour, byte for byte.
 func (p *Pipe) SetFeatureFlags(flags *featureflags.Flags) {
+	p.flags = flags
+	if p.fl != nil {
+		p.fl.flags = flags
+	}
 	if p.fanout != nil {
 		p.fanout.setFlags(flags)
 	}
@@ -390,6 +406,24 @@ func (p *Pipe) dispatch(ctx context.Context, req Req) {
 		p.onPresenceConnect(ctx, req)
 	case uint32(kinds.KindMsgDelete), uint32(kinds.KindMsgRecall): // 107/108 recall (persisted)
 		p.onRecall(ctx, req)
+	case uint32(kinds.KindMsgEdit): // 106 edit (FE-1a #1, flag msg_domain_v2_enabled)
+		if p.msgDomainV2() {
+			p.onMsgEdit(ctx, req)
+			return
+		}
+		p.lg.Debug("pipe: unhandled kind", "kind", kinds.KindName(req.Kind))
+	case uint32(kinds.KindMsgForward): // 109 forward metadata (FE-1a #2, flag-gated)
+		if p.msgDomainV2() {
+			p.onMsgForward(ctx, req)
+			return
+		}
+		p.lg.Debug("pipe: unhandled kind", "kind", kinds.KindName(req.Kind))
+	case uint32(kinds.KindReport): // 453 report → sys_reports (FE-1a #4, flag-gated)
+		if p.msgDomainV2() {
+			p.onReport(ctx, req)
+			return
+		}
+		p.lg.Debug("pipe: unhandled kind", "kind", kinds.KindName(req.Kind))
 	default:
 		p.lg.Debug("pipe: unhandled kind", "kind", kinds.KindName(req.Kind))
 	}

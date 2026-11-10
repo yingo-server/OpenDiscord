@@ -102,6 +102,12 @@ func (h hotBundle) SetPenalty(ctx context.Context, p *store.Penalty) error {
 func (h hotBundle) MarkRecalled(ctx context.Context, cid, msgID, senderID, at int64) (*store.HotMsg, error) {
 	return h.w.MarkRecalled(ctx, cid, msgID, senderID, at)
 }
+func (h hotBundle) MarkEdited(ctx context.Context, cid, msgID, senderID int64, content []byte, at int64) (*store.HotMsg, error) {
+	return h.w.MarkEdited(ctx, cid, msgID, senderID, content, at)
+}
+func (h hotBundle) InsertReport(ctx context.Context, reporter, targetMsg, targetUser int64, reason int, detail string, at int64) error {
+	return nil // report sink stub: the FE-1a tests assert via their own fake
+}
 func (h hotBundle) MemberPeersOf(ctx context.Context, uid int64) ([]int64, error) {
 	return h.conv.MemberPeersOf(ctx, uid)
 }

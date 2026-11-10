@@ -28,6 +28,8 @@ func defaultCaps() map[string][]kinds.Kind {
 			// 回执/输入中/presence/撤回：上行请求与下行事件共用这些 kind
 			// （能力表按层不按方向区分；回程帧 SrcLayer=data 也须通过）。
 			kinds.KindMsgRead, kinds.KindMsgDelivered, kinds.KindMsgDelete, kinds.KindMsgRecall,
+			// FE-1a 消息域：106/109 上行请求与下行事件共用（能力表按层不按方向）。
+			kinds.KindMsgEdit, kinds.KindMsgForward,
 			kinds.KindTyping, kinds.KindPresenceUpdate, kinds.KindPresenceOnline, kinds.KindPresenceOffline,
 			// 通话信令回程（data → user）：OFFER/ANSWER/CANDIDATE/BUSY/HANGUP。
 			kinds.KindCallOffer, kinds.KindCallAnswer, kinds.KindCallCandidate,
@@ -60,6 +62,8 @@ func allUserKinds() []kinds.Kind {
 		kinds.KindPresenceUpdate, kinds.KindPresenceOnline, kinds.KindPresenceOffline,
 		kinds.KindProfileUpdate, kinds.KindBlock, kinds.KindUnblock, kinds.KindReport,
 		kinds.KindAdminBroadcast, kinds.KindAnnounce, kinds.KindMaintenance,
+		// FE-1a 下行到客户端：106/109 事件与 202 提及定向通知。
+		kinds.KindMsgEdit, kinds.KindMsgForward, kinds.KindConvPayload,
 		kinds.KindShutdownNotice, kinds.KindFlagSync, kinds.KindConfigUpdate,
 		// 通话信令上行（client → data）：OFFER/ANSWER/CANDIDATE/BUSY/HANGUP。
 		kinds.KindCallOffer, kinds.KindCallAnswer, kinds.KindCallCandidate,

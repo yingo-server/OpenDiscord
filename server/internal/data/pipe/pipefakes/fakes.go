@@ -334,6 +334,26 @@ func (f *FakeMsgStore) MarkRecalled(ctx context.Context, cid, msgID, senderID, a
 	return nil, fmt.Errorf("fake: msg cid=%d id=%d: %w", cid, msgID, store.ErrNotFound)
 }
 
+// MarkEdited implements store.MsgWriter.MarkEdited: soft content update on
+// the exact (cid, msg_id, sender_id) row; ErrNotFound when absent or recalled.
+func (f *FakeMsgStore) MarkEdited(ctx context.Context, cid, msgID, senderID int64, content []byte, at int64) (*store.HotMsg, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for k, m := range f.Rows {
+		if m.Cid == cid && m.MsgID == msgID && m.SenderID == senderID {
+			if m.Recalled != 0 {
+				return nil, fmt.Errorf("fake: msg cid=%d id=%d recalled: %w", cid, msgID, store.ErrNotFound)
+			}
+			m.Content = content
+			m.Edited = at
+			f.Rows[k] = m
+			row := m
+			return &row, nil
+		}
+	}
+	return nil, fmt.Errorf("fake: msg cid=%d id=%d: %w", cid, msgID, store.ErrNotFound)
+}
+
 // FakeArchive implements the archiver's two ports with call recording:
 // store.ArchiveSource (cold copy) and store.HotPruner (hot delete).
 type FakeArchive struct {

@@ -51,6 +51,19 @@ func (db *DB) MarkRecalled(ctx context.Context, cid, msgID, senderID, at int64) 
 	return db.msgw.MarkRecalled(ctx, cid, msgID, senderID, at)
 }
 
+// MarkEdited delegates to the message writer's content soft-update
+// (msgwriter.go, FE-1a #1).
+func (db *DB) MarkEdited(ctx context.Context, cid, msgID, senderID int64, content []byte, at int64) (*store.HotMsg, error) {
+	return db.msgw.MarkEdited(ctx, cid, msgID, senderID, content, at)
+}
+
+// InsertReport appends one row to sys_reports (FE-1a #4): reporter uid, the
+// reported message / user ids, the reason enum and a bounded detail string.
+// Ids + enum only — the caller enforces the no-PII red line.
+func (db *DB) InsertReport(ctx context.Context, reporter int64, targetMsg, targetUser int64, reason int, detail string, at int64) error {
+	return db.sys.InsertReport(ctx, reporter, targetMsg, targetUser, reason, detail, at)
+}
+
 // MemberPeersOf delegates to the conv store's presence peer set (conv.go).
 func (db *DB) MemberPeersOf(ctx context.Context, uid int64) ([]int64, error) {
 	return db.conv.MemberPeersOf(ctx, uid)

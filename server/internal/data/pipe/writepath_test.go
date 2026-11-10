@@ -118,6 +118,9 @@ func (c *countingWriter) AppendMessages(ctx context.Context, batch []store.Pendi
 func (c *countingWriter) AllocateSeq(ctx context.Context, cid int64, n int) (int64, error) {
 	return 1, nil
 }
+func (c *countingWriter) MarkEdited(ctx context.Context, cid, msgID, senderID int64, content []byte, at int64) (*store.HotMsg, error) {
+	return nil, store.ErrNotFound
+}
 func (c *countingWriter) MarkRecalled(ctx context.Context, cid, msgID, senderID, at int64) (*store.HotMsg, error) {
 	return nil, nil
 }

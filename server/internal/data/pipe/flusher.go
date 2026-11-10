@@ -7,8 +7,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/yingo-server/OpenDiscord/server/internal/data/pipe/wire"
 	"github.com/yingo-server/OpenDiscord/server/internal/data/policy"
 	"github.com/yingo-server/OpenDiscord/server/internal/data/store"
+	"github.com/yingo-server/OpenDiscord/server/internal/pkg/featureflags"
 	"github.com/yingo-server/OpenDiscord/server/internal/pkg/log"
 	"github.com/yingo-server/OpenDiscord/server/internal/proto/kinds"
 )
@@ -58,6 +60,9 @@ type flusher struct {
 	// v3 is the P3d-1 split sink, shared with p.fanout (see SetV3Offer).
 	// nil = no-op, legacy path byte-identical.
 	v3 *v3Split
+	// flags is the process-wide feature flag store (FE-1a: msg_domain_v2
+	// mention notices). nil = compiled defaults (all off).
+	flags *featureflags.Flags
 
 	// done closes when run() returns (final flush complete) — Drain waits on it.
 	done chan struct{}
@@ -287,6 +292,12 @@ func (f *flusher) fanoutNew(m store.PendingMsg, mediaIdx map[string]*store.Media
 		}
 		uids = append(uids, uint64(member.UID))
 	}
+	// FE-1a #3 (@mentions): a stored mentions list triggers a targeted
+	// CONV_PAYLOAD(202) notification frame per mentioned uid (kind reuse —
+	// no new protocol kind). Flag-gated; off → zero extra frames.
+	if f.flags != nil && f.flags.Bool("msg_domain_v2_enabled", false) {
+		f.emitMentionNotices(m, mediaIdx)
+	}
 	// P3d-1: MSG_NEW 的 canonical 产出按灰度 uid 双写进 mailbox（§5.1）。
 	// 大群（>threshold）在上面已经转成水位线，本体不进 mailbox（§2.4）。
 	// sink 为 nil / 总开关关闭时零行为变化，旧直投循环原样执行。
@@ -483,6 +494,66 @@ func buildMsgNewPayloadWithMedia(m store.PendingMsg, lookup func(string) (*store
 		Recalled: m.Recalled, Content: content,
 	})
 	return out
+}
+
+// emitMentionNotices (FE-1a #3): for each mentioned uid that is a member of
+// the conversation, emit one targeted CONV_PAYLOAD(202) notification frame
+// (kind reuse, addressed by user_id). The payload is the plain conv-event
+// shape the client's decodeConvPayload already reads: op "mention" with the
+// triggering msg/conv ids — no new kind, no new schema.
+func (f *flusher) emitMentionNotices(m store.PendingMsg, mediaIdx map[string]*store.Media) {
+	var c wire.MessagePayload
+	if len(m.Content) > 0 {
+		if err := json.Unmarshal(m.Content, &c); err != nil {
+			return
+		}
+	}
+	if len(c.Mentions) == 0 {
+		return
+	}
+	members, err := func() ([]store.Member, error) {
+		if f.mc != nil {
+			return f.mc.Members(context.Background(), m.Cid)
+		}
+		if f.convs == nil {
+			return nil, store.ErrNotFound
+		}
+		return f.convs.ListMembers(context.Background(), m.Cid)
+	}()
+	if err != nil {
+		f.lg.Warn("flusher: mention notices skipped (members)", "cid", m.Cid, "err", err.Error())
+		return
+	}
+	isMember := make(map[int64]bool, len(members))
+	for _, mm := range members {
+		isMember[mm.UID] = true
+	}
+	seen := make(map[uint64]bool, len(c.Mentions))
+	for _, uid := range c.Mentions {
+		if uid == 0 || seen[uid] || !isMember[int64(uid)] {
+			continue
+		}
+		seen[uid] = true
+		body, err := json.Marshal(map[string]any{
+			"convId":   uint64(m.Cid),
+			"op":       "mention",
+			"msgId":    uint64(m.MsgID),
+			"senderId": uint64(m.SenderID),
+			"seq":      uint64(m.Seq),
+		})
+		if err != nil {
+			continue
+		}
+		if f.putBulk == nil {
+			continue
+		}
+		e := &env{Kind: uint32(kinds.KindConvPayload), ConvID: uint64(m.Cid),
+			UserID: uid, Payload: body}
+		if !f.putBulk(e) {
+			e.releaseShared()
+			f.lg.Warn("flusher: mention notice dropped (lane full)", "cid", m.Cid, "uid", uid)
+		}
+	}
 }
 
 // mediaStatus* are the client-facing media status strings (frontend's

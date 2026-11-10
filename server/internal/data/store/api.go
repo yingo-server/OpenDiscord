@@ -67,6 +67,13 @@ type MsgWriter interface {
 	// recalled. Returns the matched row (or ErrNotFound). Authorization and
 	// the time window are domain logic ABOVE the store — this is mechanism.
 	MarkRecalled(ctx context.Context, cid, msgID, senderID, at int64) (*HotMsg, error)
+
+	// MarkEdited soft-updates one hot message's content (FE-1a #1): rewrites
+	// content and sets edited = at (unix sec) when the (cid, msg_id,
+	// sender_id) row exists and is not recalled/already-edited-guarded by the
+	// caller. Returns the matched row (or ErrNotFound). Authorization (sender
+	// himself) and the time window are domain logic ABOVE the store.
+	MarkEdited(ctx context.Context, cid, msgID, senderID int64, content []byte, at int64) (*HotMsg, error)
 }
 
 // MsgReader is the hot read path, used by readrouter and archiver.
@@ -313,6 +320,16 @@ type Penalty struct {
 //
 // Red line: RateLimitIncr is ONLY a counter primitive. Whether a count is
 // "too many" is decided by the caller reading policy — never by the store.
+// ------------------------------------------------------------ reports domain
+
+// ReportStore is the sys_reports write sink (FE-1a #4). Implemented by the
+// hot SQLite DB; the admin plane reads the same table.
+type ReportStore interface {
+	// InsertReport appends one pending report row. reason is an enum,
+	// detail is a bounded, caller-sanitised string (ids/enum only — no PII).
+	InsertReport(ctx context.Context, reporter, targetMsg, targetUser int64, reason int, detail string, at int64) error
+}
+
 type SysStore interface {
 	// UpsertFlag stores a feature flag / policy-flag document, bumping its
 	// version for incremental frame fan-out.

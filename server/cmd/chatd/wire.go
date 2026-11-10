@@ -227,6 +227,11 @@ func payloadForPipe(kind uint32, payload []byte) []byte {
 		// native protobuf. The pipe's wire structs use the same field names,
 		// so JSON passes through verbatim; protobuf is converted.
 		return convertChatPayload(kind, payload)
+	case kinds.KindMsgEdit, kinds.KindMsgForward, kinds.KindReport:
+		// FE-1a uplink kinds: the browser JSON forms share the pipe wire
+		// structs' snake_case names and pass through verbatim; native
+		// protobuf is normalised into those structs.
+		return convertDomainV2Payload(kind, payload)
 	case kinds.KindSyncRequest:
 		// SYNC_REQUEST (8): normalize either the browser JSON form
 		// ({convId,sinceSeq,limit} or snake_case) or the native protobuf
@@ -332,6 +337,48 @@ func convertChatPayload(kind uint32, payload []byte) []byte {
 			status = "away"
 		}
 		if b, err := json.Marshal(wire.PresenceSignal{UserID: m.GetUserId(), Status: status, At: int64(m.GetAt())}); err == nil {
+			return b
+		}
+	}
+	return payload
+}
+
+// convertDomainV2Payload normalises the uplink payload of the FE-1a kinds
+// (106 MSG_EDIT / 109 MSG_FORWARD / 453 REPORT) into the pipe's wire JSON
+// form. JSON passes through (shared field names); protobuf is decoded and
+// re-encoded snake_case.
+func convertDomainV2Payload(kind uint32, payload []byte) []byte {
+	if isJSONPayload(payload) {
+		return payload
+	}
+	switch kind {
+	case kinds.KindMsgEdit:
+		var m chatpb.MsgEdit
+		if err := m.Unmarshal(payload); err != nil {
+			return payload
+		}
+		if b, err := json.Marshal(wire.MsgEditPayload{MsgID: m.GetMsgId(), ConvID: m.GetConvId(), Text: m.GetText()}); err == nil {
+			return b
+		}
+	case kinds.KindMsgForward:
+		var m chatpb.MsgForward
+		if err := m.Unmarshal(payload); err != nil {
+			return payload
+		}
+		if b, err := json.Marshal(wire.MsgForwardPayload{
+			MsgID:       m.GetMsgId(),
+			FromConvID:  m.GetFromConvId(),
+			ToConvID:    m.GetToConvId(),
+			ForwardFrom: wire.ForwardFrom{MsgID: m.GetMsgId(), ConvID: m.GetFromConvId()},
+		}); err == nil {
+			return b
+		}
+	case kinds.KindReport:
+		var m chatpb.ReportPayload
+		if err := m.Unmarshal(payload); err != nil {
+			return payload
+		}
+		if b, err := json.Marshal(wire.ReportPayload{TargetUser: m.GetUserId(), Reason: m.GetReason(), Detail: m.GetDetail()}); err == nil {
 			return b
 		}
 	}
@@ -619,11 +666,16 @@ func buildRoutesFromData() map[uint32][]router.Target {
 		// these entries the main table routes them BACK to data (same kinds
 		// as the uplink) and the frame loops until dropped — the peer never
 		// sees it. Same bug class as the call signaling loop, different kinds.
-		kinds.KindMsgRead:         toUser("sys.receipt"),
-		kinds.KindMsgDelivered:    toUser("sys.receipt"),
-		kinds.KindTyping:          toUser("sys.typing"),
-		kinds.KindMsgDelete:       toUser("sys.mutation"),
-		kinds.KindMsgRecall:       toUser("sys.mutation"),
+		kinds.KindMsgRead:      toUser("sys.receipt"),
+		kinds.KindMsgDelivered: toUser("sys.receipt"),
+		kinds.KindTyping:       toUser("sys.typing"),
+		kinds.KindMsgDelete:    toUser("sys.mutation"),
+		kinds.KindMsgRecall:    toUser("sys.mutation"),
+		// FE-1a: 数据层产出的编辑/转发事件与 @ 提及定向通知下行（同 107/108
+		// 回环类别：同一 kind 上行进 data，下行必须回 user，否则回环丢弃）。
+		kinds.KindMsgEdit:         toUser("sys.mutation"),
+		kinds.KindMsgForward:      toUser("sys.mutation"),
+		kinds.KindConvPayload:     toUser("sys.conv.payload"),
 		kinds.KindPresenceUpdate:  toUser("sys.presence"),
 		kinds.KindPresenceOnline:  toUser("sys.presence"),
 		kinds.KindPresenceOffline: toUser("sys.presence"),

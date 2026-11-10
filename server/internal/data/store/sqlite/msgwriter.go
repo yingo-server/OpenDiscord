@@ -249,6 +249,46 @@ func (w *msgWriter) appendSingleRow(ctx context.Context, batch []store.PendingMs
 	return nil
 }
 
+// MarkEdited implements store.MsgWriter.MarkEdited: a conditional UPDATE that
+// rewrites the content and stamps edited = at. Matches only the exact
+// (cid, msg_id, sender_id) row; the caller owns authorization and the edit
+// window (mechanism/policy split, same as MarkRecalled).
+func (w *msgWriter) MarkEdited(ctx context.Context, cid, msgID, senderID int64, content []byte, at int64) (*store.HotMsg, error) {
+	res, err := w.db.ExecContext(ctx,
+		`UPDATE msg_messages_hot SET content = ?, edited = ? WHERE cid = ? AND msg_id = ? AND sender_id = ? AND recalled = 0`,
+		content, at, cid, msgID, senderID)
+	if err != nil {
+		return nil, fmt.Errorf("sqlite: mark edited cid=%d msg=%d: %w", cid, msgID, err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		// Row absent or already recalled: read to distinguish 404 vs 410.
+		var m store.HotMsg
+		qerr := w.db.QueryRowContext(ctx,
+			`SELECT msg_id, cid, seq, sender_id, client_msg_id, content, sent_at, edited, recalled
+FROM msg_messages_hot WHERE cid = ? AND msg_id = ?`, cid, msgID).
+			Scan(&m.MsgID, &m.Cid, &m.Seq, &m.SenderID, &m.ClientMsgID, &m.Content, &m.SentAt, &m.Edited, &m.Recalled)
+		if errors.Is(qerr, sql.ErrNoRows) {
+			return nil, fmt.Errorf("sqlite: msg cid=%d id=%d: %w", cid, msgID, store.ErrNotFound)
+		}
+		if qerr != nil {
+			return nil, fmt.Errorf("sqlite: read edited msg cid=%d id=%d: %w", cid, msgID, qerr)
+		}
+		if m.Recalled != 0 {
+			return nil, fmt.Errorf("sqlite: msg cid=%d id=%d recalled: %w", cid, msgID, store.ErrNotFound)
+		}
+		return &m, nil
+	}
+	var m store.HotMsg
+	err = w.db.QueryRowContext(ctx,
+		`SELECT msg_id, cid, seq, sender_id, client_msg_id, content, sent_at, edited, recalled
+FROM msg_messages_hot WHERE cid = ? AND msg_id = ?`, cid, msgID).
+		Scan(&m.MsgID, &m.Cid, &m.Seq, &m.SenderID, &m.ClientMsgID, &m.Content, &m.SentAt, &m.Edited, &m.Recalled)
+	if err != nil {
+		return nil, fmt.Errorf("sqlite: re-read edited msg cid=%d id=%d: %w", cid, msgID, err)
+	}
+	return &m, nil
+}
+
 // MarkRecalled implements store.MsgWriter.MarkRecalled: a conditional
 // UPDATE that only matches the exact (cid, msg_id, sender_id) row and only
 // when it has not been recalled already (idempotent re-recall succeeds

@@ -39,6 +39,11 @@ const (
 	KeyV3BusEnabled = "v3_bus_enabled"
 	// KeyV3BusPercent 是 v3 灰度百分比（0-100，按 uid 哈希分桶，非按连接随机，§7.3 T-SV-7）。
 	KeyV3BusPercent = "v3_bus_percent"
+
+	// KeyMsgDomainV2 是 FE-1a 消息域补齐的总开关（106 编辑 / 109 转发元数据 /
+	// @ 提及定向通知 / 453 举报入库）。默认 false：关闭时这些 kind 的上行走
+	// 原有 default 分支（debug 日志后丢弃），现有路径逐字节不变。
+	KeyMsgDomainV2 = "msg_domain_v2_enabled"
 )
 
 // Defaults 返回默认 flag 集合的副本。
@@ -57,6 +62,8 @@ func Defaults() map[string]any {
 
 		KeyV3BusEnabled: false, // v3 总线：主干合入默认关（v3-bus-design §6/§9）
 		KeyV3BusPercent: 0,     // 灰度百分比：P4 阶段 5% 起步
+
+		KeyMsgDomainV2: false, // FE-1a 消息域（106/109/@/453）：默认关，行为零变化
 	}
 }
 
