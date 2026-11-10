@@ -37,6 +37,25 @@ type ConnLifecycle interface {
 	Connected(c *ws.Conn) func()
 }
 
+// callConnCleanups 执行 LoadAndDelete 取回的断连清理函数集合。
+// 值是 []func()；对每个非 nil 项做 panic 隔离，保证一个钩子的失败不影响
+// 其余钩子与连接收尾路径（与 bridge 侧 jobber 的 recover 语义一致）。
+func callConnCleanups(v any) {
+	cleans, ok := v.([]func())
+	if !ok {
+		return
+	}
+	for _, fn := range cleans {
+		if fn == nil {
+			continue
+		}
+		func() {
+			defer func() { _ = recover() }()
+			fn()
+		}()
+	}
+}
+
 // Server 是组装后的用户层网关。
 //
 // 组装关系：
