@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/yingo-server/OpenDiscord/server/internal/pkg/featureflags"
@@ -25,6 +27,16 @@ import (
 // AuthnFunc 是 WS 握手鉴权函数（由 core/authn.Verifier 适配）。
 type AuthnFunc = ws.AuthnFunc
 
+// ConnLifecycle 是可选的连接生命周期钩子（docs/v3-bus-design.md §3.1）。
+//
+// Connected 在连接注册成功后被调用；返回的 func() 是断连清理函数
+// （例如取消该连接的后台投递循环），可为 nil。钩子由装配层在 New 之后
+// 经 AddConnLifecycle 后置注入；未注入时 OnConnect/OnDisconnect 不产生
+// 任何额外行为（无 goroutine、无日志、无存储）。
+type ConnLifecycle interface {
+	Connected(c *ws.Conn) func()
+}
+
 // Server 是组装后的用户层网关。
 //
 // 组装关系：
@@ -43,6 +55,14 @@ type Server struct {
 	logger *log.Logger
 	flags  *featureflags.Flags
 	peer   transport.Peer
+
+	// lifecycle 保存 []ConnLifecycle 快照（atomic.Value，后置注入并发安全）。
+	// cleanups 按 c.ID() 保存 Connected 返回的断连清理函数。两者零值时
+	// 不触发任何额外工作：未注入 hooks 的路径逐字节等同主干。
+	lifecycle atomic.Value
+	// lifecycleMu 串行化 AddConnLifecycle 的读-拷贝-写（atomic.Value 无 CAS）。
+	lifecycleMu sync.Mutex
+	cleanups    sync.Map
 
 	cancel context.CancelFunc
 	done   chan struct{}
@@ -90,6 +110,19 @@ func New(cfg Config, authn AuthnFunc, peer transport.Peer) (*Server, error) {
 	}, authn, logger)
 
 	// 连接生命周期 → 连接表 + 限流器连接级状态。
+	srv := &Server{
+		cfg:    cfg,
+		pol:    pol,
+		lim:    lim,
+		sess:   sess,
+		acc:    acc,
+		fwd:    fwd,
+		rtr:    rtr,
+		logger: logger,
+		flags:  flags,
+		peer:   peer,
+		done:   make(chan struct{}),
+	}
 	acc.OnConnect = func(c *ws.Conn) {
 		if err := sess.Register(c); err != nil {
 			if logger != nil {
@@ -103,27 +136,66 @@ func New(cfg Config, authn AuthnFunc, peer transport.Peer) (*Server, error) {
 		// 成员广播（瞬态，不落 per-user 投递）。帧不带 env user_id —— 数据层
 		// 从 payload 读 user_id 并当作内部事件处理。
 		emitPresenceEvent(peer, uint32(kinds.KindPresenceOnline), c.UserID())
+		// 可选钩子（§3.1）：未注入时快照为空，整段跳过——无 goroutine、
+		// 无日志、无额外状态，旧路径逐字节不变。
+		if hooks := srv.lifecycleHooks(); len(hooks) > 0 {
+			var cleans []func()
+			for _, h := range hooks {
+				if clean := h.Connected(c); clean != nil {
+					cleans = append(cleans, clean)
+				}
+			}
+			if len(cleans) > 0 {
+				srv.cleanups.Store(c.ID(), cleans)
+				// 连接可能在 OnConnect 返回前就被读/写协程关掉（秒断）：
+				// 此时 OnDisconnect 的 LoadAndDelete 已错过，这里自行收尾。
+				// 两边都用 LoadAndDelete，保证 cleanup 恰好调用一次。
+				select {
+				case <-c.Done():
+					if v, ok := srv.cleanups.LoadAndDelete(c.ID()); ok {
+						callConnCleanups(v)
+					}
+				default:
+				}
+			}
+		}
 	}
 	acc.OnDisconnect = func(c *ws.Conn) {
 		sess.Unregister(c.ID())
 		lim.RemoveConn(c.ID())
 		// 402 PRESENCE_UNSUBSCRIBE：下线事件，同上。
 		emitPresenceEvent(peer, uint32(kinds.KindPresenceOffline), c.UserID())
+		// 钩子只增不减：注入过至少一个钩子才可能有 cleanup，未注入时连
+		// LoadAndDelete 都不做（旧路径零额外开销）。
+		if len(srv.lifecycleHooks()) > 0 {
+			if v, ok := srv.cleanups.LoadAndDelete(c.ID()); ok {
+				callConnCleanups(v)
+			}
+		}
 	}
+	return srv, nil
+}
 
-	return &Server{
-		cfg:    cfg,
-		pol:    pol,
-		lim:    lim,
-		sess:   sess,
-		acc:    acc,
-		fwd:    fwd,
-		rtr:    rtr,
-		logger: logger,
-		flags:  flags,
-		peer:   peer,
-		done:   make(chan struct{}),
-	}, nil
+// AddConnLifecycle 后置注入连接生命周期钩子（并发安全，nil 忽略）。
+// 每次注入以「读快照 → 拷贝 → 追加 → Store」替换，运行期 OnConnect 直接
+// Load 不可变快照，无锁；已建立的连接不补调新钩子，只有后续连接生效。
+func (s *Server) AddConnLifecycle(h ConnLifecycle) {
+	if h == nil {
+		return
+	}
+	s.lifecycleMu.Lock()
+	defer s.lifecycleMu.Unlock()
+	prev, _ := s.lifecycle.Load().([]ConnLifecycle)
+	next := make([]ConnLifecycle, len(prev), len(prev)+1)
+	copy(next, prev)
+	next = append(next, h)
+	s.lifecycle.Store(next)
+}
+
+// lifecycleHooks 返回当前钩子快照；未注入时返回 nil（零分配）。
+func (s *Server) lifecycleHooks() []ConnLifecycle {
+	hooks, _ := s.lifecycle.Load().([]ConnLifecycle)
+	return hooks
 }
 
 // Run 启动全部组件并阻塞到 ctx 取消；ctx 取消后执行 Drain。
