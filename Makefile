@@ -122,3 +122,15 @@ release-all: release
 
 clean:
 	rm -rf $(DIST_DIR) $(GEN_DIR)
+
+# build-pg: chatd-pg 冷库构建变体（OPS-1，1.4 §5 #1）。位于主仓
+# server/cmd/chatd-pg，根 go.mod 统一管理 pgx 依赖，CI 的 go build ./...
+# 会编译验证它；不影响上面任何现有 target。
+.PHONY: build-pg
+build-pg:
+	go build -o $(DIST_DIR)/chatd-pg ./server/cmd/chatd-pg
+	@fmt_out=$$(gofmt -l server/cmd/chatd-pg/); \
+	if [ -n "$$fmt_out" ]; then \
+		echo "gofmt 需要格式化的文件: $$fmt_out"; exit 1; \
+	fi; \
+	echo "built $(DIST_DIR)/chatd-pg (pgx/v5/stdlib embedded)"

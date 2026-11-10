@@ -81,8 +81,8 @@
 		#     }
 		# }
 
-		# 端口：split 形态的用户层默认 8081；embedded 单进程用
-		# OPENDISCORD_WS_PORT=8080 覆盖（与 opendiscord.toml 的 listen 一致）。
+		# 端口：embedded 单进程默认 8080（与 opendiscord.toml 的 listen 一致）。
+		# embedded-only：split 用户层 8081 形态未实现，勿改默认端口。
 		reverse_proxy 127.0.0.1:{$OPENDISCORD_WS_PORT:8081} {
 			# WS 需要长连接：关闭响应缓冲与超时
 			flush_interval -1

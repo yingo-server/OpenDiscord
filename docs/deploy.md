@@ -57,10 +57,8 @@ curl -s  https://chat.example.com/admin/ | grep -o '<title>[^<]*'
 | 地址 | 用途 | 谁能访问 |
 |---|---|---|
 | `127.0.0.1:8080` | 用户层 HTTP + WebSocket + 内嵌 SPA（`listen`） | Caddy |
-| `127.0.0.1:8081` | split 形态用户网关（Caddy `OPENDISCORD_WS_PORT`，embedded 设为 8080） | Caddy |
 | `127.0.0.1:7780` | 管理 API（`admin_listen`） | Caddy + IP 白名单 |
 | `127.0.0.1:9090` | Prometheus 指标（`metrics_listen`，当前版本未监听，见附录 A.2） | 本机/内网 |
-| `/run/opendiscord/*.sock` | 层间 UDS（split） | 同组进程，0600 |
 | `22 / 80 / 443` | SSH / ACME / HTTPS | 公网（22 建议源 IP 白名单） |
 
 ---
@@ -97,16 +95,14 @@ opendiscord-<version>/
 ### 2.2 执行
 
 ```bash
-sudo ./deploy/install.sh                 # embedded（默认）
+sudo ./deploy/install.sh                 # embedded 单进程（1.4 起 embedded-only）
 sudo ./deploy/install.sh --no-start      # 只落盘，不 enable/start（打镜像）
-sudo ./deploy/install.sh --split         # split：bridge/user/data/admin 四个 unit
 sudo ./deploy/install.sh --skip-keys     # 密钥由 KMS 下发时
 sudo ./deploy/install.sh --prefix /opt/opendiscord --etc /etc/opendiscord --state /var/lib/opendiscord
 ```
 
 | 参数 | 默认 | 作用 |
 |---|---|---|
-| `--split` | off | 安装 4 个 split unit，并 disable embedded unit |
 | `--no-start` | off | 只 `daemon-reload`，不 `enable --now` |
 | `--skip-keys` | off | 跳过密钥生成（要求已由外部下发） |
 | `--prefix` | `/opt/opendiscord` | 二进制 release 根 |
@@ -119,13 +115,13 @@ sudo ./deploy/install.sh --prefix /opt/opendiscord --etc /etc/opendiscord --stat
 
 | # | 动作 | 产物 | 现场校验 |
 |---|---|---|---|
-| 1 | 建组 `opendiscord` 与系统用户（embedded: `opendiscord`；split: `opendiscord-{bridge,user,data,admin}`，shell=nologin，home=`/var/lib/opendiscord`） | `/etc/group`、`/etc/passwd` | `getent passwd opendiscord` |
+| 1 | 建组 `opendiscord` 与系统用户（`opendiscord`，shell=nologin，home=`/var/lib/opendiscord`；embedded-only） | `/etc/group`、`/etc/passwd` | `getent passwd opendiscord` |
 | 2 | 建目录并按 §6 矩阵 chmod/chown | 见 §6 表 | `stat -c '%a %U:%G %n' /etc/opendiscord /var/lib/opendiscord` |
-| 3 | 写环境变量文件（存在则不动） | `/etc/opendiscord/env`（0600 root:opendiscord；split 为 `env.d/*.env`） | `ls -l /etc/opendiscord/env` |
+| 3 | 写环境变量文件（存在则不动） | `/etc/opendiscord/env`（0600 root:opendiscord） | `ls -l /etc/opendiscord/env` |
 | 4 | 生成密钥（存在则跳过，绝不覆盖） | `keys/{jwt_sign_key.pem,admin_jwt_key.pem,ipc_key,hmac_key,pii_key,phone_lookup_key,download_key,upload_secret,audit_chain_key,backup.key}`；`/etc/opendiscord/backup.key -> keys/backup.key` | `ls -l /etc/opendiscord/keys`；`openssl pkey -in .../jwt_sign_key.pem -pubout \| openssl dgst -sha256` |
 | 5 | 安装配置（存在则保留；`Caddyfile.reference` 每次覆盖） | `opendiscord.toml` 0640、`policy.json` 0640、`Caddyfile.reference` 0640；`config/chatd.toml -> ../opendiscord.toml` | `ls -l /etc/opendiscord` |
 | 6 | 安装二进制（前端已内嵌；若包内有 `apps/*/dist` 则额外复制到 `current/web` 作静态回退） | `/opt/opendiscord/releases/bootstrap/bin/chatd`；`current -> releases/bootstrap`；`bin -> current/bin`；`web -> current/web` | `ls -l /opt/opendiscord/current/bin/chatd` |
-| 7 | 安装 unit 与 journald 配额 | `/etc/systemd/system/opendiscord.service`（split 为 4 个）；`/etc/systemd/journald.conf.d/opendiscord.conf`（`SystemMaxUse=200M`） | `systemctl cat opendiscord`；`journalctl --disk-usage` |
+| 7 | 安装 unit 与 journald 配额 | `/etc/systemd/system/opendiscord.service`；`/etc/systemd/journald.conf.d/opendiscord.conf`（`SystemMaxUse=200M`） | `systemctl cat opendiscord`；`journalctl --disk-usage` |
 | 8 | `daemon-reload` + `enable --now`（`--no-start` 跳过） | 运行中的 unit | `systemctl is-active opendiscord` |
 | 9 | 红线自检：`find /etc/opendiscord /var/lib/opendiscord -perm /o+rwx` 必须为空，否则 **exit 1** | — | 手工重跑同一条命令 |
 | 10 | 打印下一步（改 toml / policy / Caddy / 首登） | stdout | — |
@@ -146,7 +142,7 @@ sudo ./deploy/install.sh --prefix /opt/opendiscord --etc /etc/opendiscord --stat
 
 | 字段 | 默认值 | 含义与约束 |
 |---|---|---|
-| `mode` | `"embedded"` | `embedded` 单进程；`split` 五进程（配合 `[socket]`） |
+| `mode` | `"embedded"` | embedded 单进程。**1.4 起 embedded-only**：split 多进程未实现（lts-1.4-plan §5 #4），勿改 |
 | `listen` | `"127.0.0.1:8080"` | 用户层 HTTP/WS 监听。**必须是回环**；公网只走 Caddy。也用它托管内嵌 SPA |
 | `admin_listen` | `"127.0.0.1:7780"` | 管理 API 监听（Caddy 仅对白名单 IP 反代 `/api/admin/*`） |
 | `metrics_listen` | `"127.0.0.1:9090"` | Prometheus `/metrics` 监听（契约字段，见下方「消费进度」） |
@@ -169,7 +165,7 @@ sudo ./deploy/install.sh --prefix /opt/opendiscord --etc /etc/opendiscord --stat
 | `[feature_flags].registration` | `true` | 注册开关；被刷时后台关（§6.4.3 一键禁注册） |
 | `[feature_flags].readonly` | `false` | 全站只读（收信保留，MSG_SEND 回 READONLY） |
 | `[feature_flags].call_enabled` | `false` | 通话开关 |
-| `[socket].bus/user/data/admin`（split） | 注释示例 | split 形态的 UDS 地址，默认 `/run/opendiscord/*.sock` |
+| `[socket].bus/user/data/admin` | 注释占位 | 前瞻字段；split 未实现，当前无效 |
 
 **不要改**：监听地址改成 `0.0.0.0`（绕过 Caddy 等于裸奔）、`public_origin` 用 http、
 把 `hot_db` 放到 NFS（SQLite WAL 不支持网络文件系统）。
@@ -226,7 +222,7 @@ sudo ./deploy/install.sh --prefix /opt/opendiscord --etc /etc/opendiscord --stat
 | `TZ` | `UTC` | 固定 UTC，避免 cron/归档时间漂移 |
 | `GOMEMLIMIT` | `1280MiB` | Go 软内存上限（2C2G 留 700MB 给系统/页缓存） |
 | `OPENDISCORD_CONFIG` | `/etc/opendiscord/opendiscord.toml` | 配置路径（`chatd --config` 的默认值来源） |
-| `OPENDISCORD_LAYER` | `embedded`（split 为层名） | 进程角色标识 |
+| `OPENDISCORD_LAYER` | `embedded` | 进程角色标识（embedded-only） |
 
 改完 `systemctl restart opendiscord`（EnvironmentFile 只在启动时读取）。
 
@@ -436,7 +432,7 @@ ss -lntp | grep -E ':(80|443)\b'
 
 ## 6. 目录与权限矩阵
 
-embedded 形态（split 的差异在表后注明）。**这张表就是 security-spec §6.2 红线的落地值**，
+embedded 形态（**1.4 起 embedded-only**，split 多进程未实现）。**这张表就是 security-spec §6.2 红线的落地值**，
 任何 `other` 位带 `rwx` 都视为未通过上线评审。
 
 | 路径 | owner:group | mode | 内容 / 说明 |
@@ -451,7 +447,7 @@ embedded 形态（split 的差异在表后注明）。**这张表就是 security
 | `/etc/opendiscord/opendiscord.toml` | root:opendiscord | 0640 | 运行配置 |
 | `/etc/opendiscord/policy.json` | root:opendiscord | 0640 | 策略真源 |
 | `/etc/opendiscord/Caddyfile.reference` | root:opendiscord | 0640 | 边缘配置样例（每次安装覆盖） |
-| `/etc/opendiscord/env` | root:opendiscord | 0600 | 环境变量（split: `env.d/*.env`） |
+| `/etc/opendiscord/env` | root:opendiscord | 0600 | 环境变量 |
 | `/etc/opendiscord/keys/` | root:opendiscord | 0750 | 密钥目录 |
 | `/etc/opendiscord/keys/*.pem` | root:opendiscord | 0640 | Ed25519 私钥（JWT 签名） |
 | `/etc/opendiscord/keys/{ipc,hmac,pii,phone_lookup,download,upload_secret,audit_chain}_key` | root:opendiscord | 0600 | 对称密钥 |
@@ -462,12 +458,8 @@ embedded 形态（split 的差异在表后注明）。**这张表就是 security
 | `/var/lib/opendiscord/media/` | opendiscord:opendiscord | 0750 | 媒体对象（建议 LUKS 卷） |
 | `/var/lib/opendiscord/backup/` | opendiscord:opendiscord | 0700 | 本地加密备份 |
 | `/run/opendiscord/` | opendiscord:opendiscord | 0750 | UDS 目录（systemd `RuntimeDirectory`） |
-| `/run/opendiscord/*.sock` | 层用户:opendiscord | 0600 | 层间 socket（split） |
 | `/etc/systemd/system/opendiscord*.service` | root:root | 0644 | unit |
 | `/etc/systemd/journald.conf.d/opendiscord.conf` | root:root | 0644 | journald 配额 |
-
-split 差异：`/var/lib/opendiscord/{data,admin,user,bridge}` 各自 0700、owner 为同名用户；
-媒体与备份归 `opendiscord-data`。
 
 ### 6.1 权限自检（贴进巡检脚本）
 
@@ -591,64 +583,67 @@ journalctl -u opendiscord -n 100 --no-pager
 
 ---
 
-### 7.4 升级到 v1.1.0：为热库启用 auto_vacuum（一次性，必做）
+### 7.7 升级到 v1.4：`opendiscordctl upgrade`（一次性维护自动化）
 
-v1.1.0 起热库用 `auto_vacuum=INCREMENTAL` + 周期 `PRAGMA incremental_vacuum`
-才能真正把已删除的页归还给文件系统。**新库自动启用；已有的库必须在升级时
-手工转换一次**，否则「删了行但文件不缩小」。
+1.4 把历史上需要手工做的两项一次性维护合并成一条命令：
 
-> 为什么必须做：归档/trim 会删掉大量历史行，但 SQLite 默认 `auto_vacuum=0`
-> 只把页标记为空闲、文件大小不变。2C2G 机器上这意味着磁盘只涨不落。
+| # | 步骤 | 背景 |
+|---|---|---|
+| 1 | 旧 `thumb_data` 内联缩略图迁移到 `media_dir/thumbs/` 文件（即原 `migrate thumbs`） | v1.0 的缩略图按 base64 存在热库，每行 ~10.7KB，百万级图片可占 >10GB |
+| 2 | 热库 `auto_vacuum=0 → INCREMENTAL` 转换（`PRAGMA auto_vacuum=INCREMENTAL; VACUUM;`） | SQLite 默认 `auto_vacuum=0` 只把删除的页标记为空闲，文件不缩小；不转换则 2C2G 上磁盘只涨不落 |
 
-步骤（**全程停服**，转换期间不能有连接）：
+**安全约定：默认 dry-run**——不带 `--run` 时命令只读热库、输出结构化计划（含
+`--json` 信封），不写盘、不改库、不加写锁；带 `--run` 才执行。auto_vacuum 的
+`VACUUM` 会重写整个库文件，因此 `--run` 前服务必须已停止（`systemctl is-active`
+检测到运行中会拒绝并提示，exit 77；仅离线维护窗口可用 `--force` 跳过检查）。
+
+推荐流程：
 
 ```bash
-# 0. 变量
-HOT=/var/lib/opendiscord/data/hot.db        # 按 config 里 hot_db 的实际路径改
-BK=/var/lib/opendiscord/backup/hot-pre-autovacuum.db
+# 1. 先备份（§8）
+sudo deploy/backup.sh
+
+# 2. 停服（VACUUM 期间不能有连接）
 sudo systemctl stop opendiscord
 
-# 1. 备份（VACUUM INTO 产出一致性快照，不需要停服前预热）
-sudo -u opendiscord sqlite3 "$HOT" "VACUUM INTO '$BK'"
-sudo -u opendiscord sqlite3 "$BK" "PRAGMA integrity_check;"   # 必须输出 ok
+# 3. 预览计划（dry-run，只读）
+opendiscordctl upgrade --hot-db /var/lib/opendiscord/data/hot.db
+opendiscordctl upgrade --json --hot-db /var/lib/opendiscord/data/hot.db   # 结构化输出
 
-# 2. 转换（auto_vacuum 只在 VACUUM 时写入库头；只设 pragma 不 VACUUM 等于没设）
-#    需要与库大小相当的临时磁盘空间
-sudo -u opendiscord sqlite3 "$HOT" "PRAGMA auto_vacuum=INCREMENTAL; VACUUM;"
+# 4. 执行（thumbs 迁移 + auto_vacuum 转换，幂等，可重跑）
+opendiscordctl upgrade --run --hot-db /var/lib/opendiscord/data/hot.db
 
-# 3. 校验：必须返回 2（2 = INCREMENTAL）
-sudo -u opendiscord sqlite3 "$HOT" "PRAGMA auto_vacuum;"
-
-# 4. 启动
+# 5. 校验并启动：auto_vacuum 必须为 2（INCREMENTAL）
+opendiscordctl doctor --hot-db /var/lib/opendiscord/data/hot.db   # 应全 OK
 sudo systemctl start opendiscord
-opendiscordctl doctor --hot-db "$HOT"    # 应全 OK
 ```
 
-转换后，trim 作业每轮结束会执行 `PRAGMA incremental_vacuum`，文件随删除收缩。
+计划输出示例（dry-run）：
 
-**升级检查清单（v1.0.0 → v1.1.0）**
+```
+upgrade: dry-run（未改库；加 --run 执行）
+  hot_db      : /var/lib/opendiscord/data/hot.db (auto_vacuum=0)
+  [!] thumbs       1234 行旧 thumb_data 待迁移到 /var/lib/opendiscord/media
+  [!] auto_vacuum  auto_vacuum=0 → 需转换为 INCREMENTAL（PRAGMA auto_vacuum=INCREMENTAL; VACUUM;）
+图例: ! 待执行  ✓ 已执行  - 无需  ✗ 失败
+```
+
+已转换的库重跑为 no-op（两个步骤均报「无需」）。等价的手工路径（不使用 CLI 时）：
+`VACUUM INTO` 备份 → `sqlite3 "$HOT" "PRAGMA auto_vacuum=INCREMENTAL; VACUUM;"` →
+`PRAGMA auto_vacuum;` 返回 2。
+
+**升级检查清单（→ v1.4）**
 
 | 步骤 | 命令 / 动作 | 失败会怎样 |
 |---|---|---|
 | 1 | 备份热库与配置（`deploy/backup.sh`） | 无备份可回滚 |
-| 2 | 上面 7.4 的 auto_vacuum 转换（一次性） | 磁盘只涨不落 |
+| 2 | `opendiscordctl upgrade`（dry-run 预览 → `--run` 执行；含 auto_vacuum 转换与 thumbs 迁移，一次性） | 磁盘只涨不落 / 热库虚胖 |
 | 3 | 确认 `rate_limit_enabled` 未显式为 false | 生产环境会**拒绝启动**（这是有意的护栏） |
 | 4 | 确认 `public_origin` 已设为 https 域名 | 同源校验与安全 Cookie 走宽松分支 |
 | 5 | 若用短信/邮件登录：配置供应商（未配则仅 dev 模式可用） | 生产注册登录不可用 |
 | 6 | 若要开视频/语音通话：`feature_flags.call_enabled=true` + 配 TURN | 通话按钮不出现/建连失败 |
 | 7 | 替换二进制 → `systemctl restart opendiscord` | — |
 | 8 | `opendiscordctl doctor` + `opendiscordctl status` | 逐项排查 |
-
-**新增配置项（v1.1.0）**
-
-| key | 位置 | 默认 | 说明 |
-|---|---|---|---|
-| `rate_limit_enabled` | `opendiscord.toml` | `true` | 生产置 false 会拒绝启动；仅供压测 |
-| `require_audit_store` | `opendiscord.toml` | `false` | true 时冷库不可用则拒启（合规部署建议开） |
-| `admin_rest_listen` | `opendiscord.toml` | `127.0.0.1:7781` | 管理 REST 监听，仅环回 |
-| `feature_flags.call_enabled` | `opendiscord.toml` / 管理面 | `false` | WebRTC 通话总开关 |
-
----
 
 ## 8. 备份与恢复（backup.sh）
 
@@ -1063,7 +1058,7 @@ adminctl --server http://127.0.0.1:7780 audit --since-id $((N-5)) --limit 11 --o
       `PrivateTmp/PrivateDevices=true`、`ProtectKernel{Tunables,Modules,Logs,ControlGroups,Clock}=true`、
       `RestrictSUIDSGID/LockPersonality/RestrictNamespaces=true`（§6.1 红线）。
       验证：`systemd-analyze security --offline=true /etc/systemd/system/opendiscord.service`。
-- [ ] **2. 非 root 独立用户 + EnvironmentFile 0600**：embedded 用 `opendiscord`，split 每层独立用户；
+- [ ] **2. 非 root 独立用户 + EnvironmentFile 0600**：embedded 用 `opendiscord`（embedded-only）；
       `EnvironmentFile=/etc/opendiscord/env`（§6.1 红线）。
       验证：`ps -o user= -p $(systemctl show -p MainPID --value opendiscord)`。
 - [ ] **3. 最小权限边界**：`CapabilityBoundingSet=` 与 `AmbientCapabilities=` 为空；
@@ -1127,7 +1122,6 @@ adminctl --server http://127.0.0.1:7780 audit --since-id $((N-5)) --limit 11 --o
 /etc/opendiscord/keys/{*.pem,*_key,backup.key}
 /etc/opendiscord/config/chatd.toml -> ../opendiscord.toml
 /var/lib/opendiscord/{chatd.db,admin.db,media/,backup/}
-/run/opendiscord/*.sock                            # split 层间 UDS，0600
 /etc/systemd/system/opendiscord*.service
 /etc/systemd/journald.conf.d/opendiscord.conf     # SystemMaxUse=200M
 /usr/local/sbin/opendiscord-backup                 # §8.2 手动安装

@@ -64,8 +64,8 @@ registration = true
 readonly = false
 call_enabled = false
 
-# split 形态示例（把 mode 改为 "split" 并安装 opendiscord-{bridge,user,data,admin}.service）：
-# mode = "split"
+# embedded-only：chatd 为单进程形态，split 多进程未实现（lts-1.4-plan §5 #4）。
+# [mode] 段与 [socket] 段保留为前瞻占位，勿改为 "split"。
 # [socket]
 # bus = "unix:///run/opendiscord/bus.sock"
 # user = "unix:///run/opendiscord/user.sock"

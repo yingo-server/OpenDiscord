@@ -86,6 +86,9 @@ const usageText = `opendiscordctl — OpenDiscord 系统级运维 CLI（直连�
             经管理 API 触发归档（未登录时提示 adminctl archive）
   migrate   thumbs [--dry-run] [--batch N] [--hot-db PATH] [--media-dir DIR]
             一次性把旧 thumb_data 内联缩略图迁移到 media_dir/thumbs/ 文件并清空该列
+  upgrade   [--run] [--force] [--hot-db PATH] [--media-dir DIR] [--batch N] [--unit NAME]
+            一次性升级维护计划（默认 dry-run 只读）：旧 thumb_data 迁移 +
+            auto_vacuum=0 → INCREMENTAL 转换（VACUUM；执行前须停服，--force 跳过检查）
   flags     list | set KEY=VALUE
             功能开关（经管理 API，policy-as-flag）
   ban       <uid> [--days N] [--reason TEXT] [--level 1..3]

@@ -2,8 +2,7 @@
 # ---------------------------------------------------------------------------
 # OpenDiscord 单机安装 / 升级引导脚本（幂等，可反复执行）
 #
-#   sudo ./deploy/install.sh                 # embedded 单进程（默认）
-#   sudo ./deploy/install.sh --split         # split 五进程
+#   sudo ./deploy/install.sh                 # embedded 单进程（1.4 起 embedded-only）
 #   sudo ./deploy/install.sh --no-start      # 只装文件，不 enable/start（CI/镜像构建）
 #
 # 做四件事：建用户与目录（按 security-spec §6.2 权限矩阵）→ 生成密钥
@@ -46,7 +45,6 @@ usage() {
   cat <<'EOF'
 用法: install.sh [选项]
 
-  --split          安装 split 形态（bridge/user/data/admin 四个 unit）
   --no-start       不执行 systemctl enable --now（仅落盘）
   --skip-keys      跳过密钥生成（密钥由 KMS/配置管理下发时使用）
   --prefix DIR     安装前缀（默认 /opt/opendiscord）
@@ -83,7 +81,7 @@ t_msg() {
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --split)     MODE="split" ;;
+    --split)     die "--split 已移除：split 多进程部署未实现，OpenDiscord 为 embedded-only（lts-1.4-plan §5 #4）" ;;
     --no-start)  START=0 ;;
     --skip-keys) SKIP_KEYS=1 ;;
     --domain)    DOMAIN="${2:?--domain 需要参数}"; shift ;;
@@ -113,7 +111,7 @@ need getent
 # ---------------------------------------------------------------------------
 # 1. 用户与组
 # ---------------------------------------------------------------------------
-log "创建系统用户与组（mode=$MODE）"
+log "创建系统用户与组（embedded-only）"
 
 if ! getent group opendiscord >/dev/null 2>&1; then
   groupadd --system opendiscord
@@ -132,14 +130,7 @@ make_user() {
   fi
 }
 
-if [ "$MODE" = "split" ]; then
-  make_user opendiscord-bridge
-  make_user opendiscord-user
-  make_user opendiscord-data
-  make_user opendiscord-admin
-else
-  make_user opendiscord
-fi
+make_user opendiscord
 
 # ---------------------------------------------------------------------------
 # 2. 目录与权限（security-spec §6.2）
@@ -154,18 +145,9 @@ install -d -m 0750 -o root -g opendiscord "$ETC/keys"
 install -d -m 0750 -o root -g opendiscord "$ETC/config"
 
 # 运行数据 0700；媒体 0750（经 LUKS 卷）；备份 0700
-if [ "$MODE" = "split" ]; then
-  install -d -m 0700 -o opendiscord-data  -g opendiscord "$STATE/data"
-  install -d -m 0700 -o opendiscord-admin -g opendiscord "$STATE/admin"
-  install -d -m 0700 -o opendiscord-user  -g opendiscord "$STATE/user"
-  install -d -m 0700 -o opendiscord-bridge -g opendiscord "$STATE/bridge"
-  install -d -m 0750 -o opendiscord-data  -g opendiscord "$STATE/media"
-  install -d -m 0700 -o opendiscord-data  -g opendiscord "$STATE/backup"
-else
-  install -d -m 0700 -o opendiscord -g opendiscord "$STATE"
-  install -d -m 0750 -o opendiscord -g opendiscord "$STATE/media"
-  install -d -m 0700 -o opendiscord -g opendiscord "$STATE/backup"
-fi
+install -d -m 0700 -o opendiscord -g opendiscord "$STATE"
+install -d -m 0750 -o opendiscord -g opendiscord "$STATE/media"
+install -d -m 0700 -o opendiscord -g opendiscord "$STATE/backup"
 
 # 二进制目录：/opt/opendiscord 0755 root:root，运行用户不可写
 install -d -m 0755 -o root -g root "$PREFIX"
@@ -219,15 +201,7 @@ if [ -n "$TURN_SERVER" ]; then
   admin_env_extra+="# TURN server: $TURN_SERVER (see deploy/coturn)"$'\n'
 fi
 
-if [ "$MODE" = "split" ]; then
-  install -d -m 0750 -o root -g opendiscord "$ETC/env.d"
-  write_env "$ETC/env.d/bridge.env" "OPENDISCORD_LAYER=bridge"$'\n'"$admin_env_extra"
-  write_env "$ETC/env.d/user.env"   "OPENDISCORD_LAYER=user"$'\n'"$admin_env_extra"
-  write_env "$ETC/env.d/data.env"   "OPENDISCORD_LAYER=data"$'\n'"$admin_env_extra"
-  write_env "$ETC/env.d/admin.env"  "OPENDISCORD_LAYER=admin"$'\n'"$admin_env_extra"
-else
-  write_env "$ETC/env" "OPENDISCORD_LAYER=embedded"$'\n'"$admin_env_extra"
-fi
+write_env "$ETC/env" "OPENDISCORD_LAYER=embedded"$'\n'"$admin_env_extra"
 # ---------------------------------------------------------------------------
 # 4. 密钥（security-spec §6.4.1 清单）
 #    Ed25519 用 openssl genpkey（OpenSSL ≥1.1.1）；
@@ -333,7 +307,7 @@ log "安装二进制与内嵌前端"
 
 BOOT="$PREFIX/releases/bootstrap"
 installed_bin=0
-for b in chatd chatd-bridge chatd-user chatd-data chatd-admin; do
+for b in chatd; do
   if [ -f "$REPO_DIR/dist/$b" ]; then
     install -m 0755 -o root -g root "$REPO_DIR/dist/$b" "$BOOT/bin/$b"
     installed_bin=1
@@ -371,22 +345,11 @@ log "安装 systemd unit"
 
 UNIT_DIR="/etc/systemd/system"
 install -d -m 0755 -o root -g root "$UNIT_DIR"
-if [ "$MODE" = "split" ]; then
-  for u in opendiscord-bridge opendiscord-user opendiscord-data opendiscord-admin; do
-    install -m 0644 -o root -g root "$SCRIPT_DIR/systemd/$u.service" "$UNIT_DIR/$u.service"
-    log "  $u.service"
-  done
-  # split 形态下不启用 embedded 单元，避免端口/目录冲突
-  systemctl disable --now opendiscord.service >/dev/null 2>&1 || true
-else
-  install -m 0644 -o root -g root "$SCRIPT_DIR/systemd/opendiscord.service" "$UNIT_DIR/opendiscord.service"
-  log "  opendiscord.service"
-fi
+install -m 0644 -o root -g root "$SCRIPT_DIR/systemd/opendiscord.service" "$UNIT_DIR/opendiscord.service"
+log "  opendiscord.service"
 
 install -d -m 0755 -o root -g root /etc/systemd/journald.conf.d
-install -m 0644 -o root -g root "$SCRIPT_DIR/journald/opendiscord.conf" /etc/systemd/journald.conf.d/opendiscord.conf
-log "  journald 配额 drop-in（SystemMaxUse=200M）"
-
+install -m 0644 -o root -g root "$SCRIPT_DIR/journald/opendiscord.conf" /etc/systemd/journald.
 # ---------------------------------------------------------------------------
 # 8. 生效
 # ---------------------------------------------------------------------------
@@ -396,11 +359,7 @@ elif [ "$START" -eq 1 ]; then
   log "daemon-reload + enable --now"
   systemctl daemon-reload
   systemctl try-restart systemd-journald >/dev/null 2>&1 || true
-  if [ "$MODE" = "split" ]; then
-    systemctl enable --now opendiscord-bridge.service opendiscord-user.service opendiscord-data.service opendiscord-admin.service
-  else
-    systemctl enable --now opendiscord.service
-  fi
+  systemctl enable --now opendiscord.service
   sleep 1
   systemctl --no-pager --lines=0 status opendiscord.service 2>/dev/null | head -5 || true
 else
@@ -423,7 +382,7 @@ fi
 # ---------------------------------------------------------------------------
 cat <<EOF
 
-安装完成（mode=$MODE）
+安装完成（embedded-only）
 
 下一步：
   1. 编辑 $ETC/opendiscord.toml
@@ -431,7 +390,7 @@ cat <<EOF
        - cold_dsn      = postgres://...（冷库）
        - listen/admin_listen 保持仅监听 127.0.0.1
   2. 编辑 $ETC/policy.json（保留天数/归档 cron/备份 cron/限流），改完：
-       systemctl reload opendiscord      # 或 opendiscord-{bridge,data}
+       systemctl reload opendiscord
   3. 配置 Caddy（参考 $ETC/Caddyfile.reference）：
        OPENDISCORD_DOMAIN=chat.example.com
        把 /api/admin/* 的 remote_ip 白名单改成你的运维出口 IP

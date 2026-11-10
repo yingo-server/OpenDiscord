@@ -12,7 +12,7 @@
 # piped stdin, e.g. printf 'zh\nchat.example.com\nroot\n...\n').
 #
 #   ./deploy/install-interactive [--dry-run] [--prefix DIR] [--etc DIR]
-#                                [--state DIR] [--split] [--no-start]
+#                                [--state DIR] [--no-start]   （embedded-only：--split 已移除）
 #                               [--skip-keys] [--pass-file PATH]
 # ---------------------------------------------------------------------------
 set -euo pipefail
@@ -108,7 +108,7 @@ while [ $# -gt 0 ]; do
     --prefix)     PREFIX="${2:?}"; shift ;;
     --etc)        ETC="${2:?}"; shift ;;
     --state)      STATE="${2:?}"; shift ;;
-    --split)      MODE="split" ;;
+    --split)      die "--split 已移除：embedded-only（lts-1.4-plan §5 #4）" ;;
     --no-start)   START=0 ;;
     --skip-keys)  SKIP_KEYS=1 ;;
     --lang)       LANG_SEL="${2:?}"; shift ;;
@@ -180,7 +180,6 @@ if [ "$DRYRUN" -eq 1 ]; then
     "$DOMAIN" "$ADMIN_USER" "$PASS_FILE" "$LANG_SEL"
   [ -n "$COLD_DSN" ]     && printf ' --cold-dsn %s' "$COLD_DSN"
   [ -n "$TURN_SERVER" ]  && printf ' --turn-server %s' "$TURN_SERVER"
-  [ "$MODE" = "split" ]  && printf ' --split'
   [ "$START" -eq 0 ]     && printf ' --no-start'
   [ "$SKIP_KEYS" -eq 1 ] && printf ' --skip-keys'
   printf ' --prefix %s --etc %s --state %s\n' "$PREFIX" "$ETC" "$STATE"
@@ -199,6 +198,5 @@ exec "$SCRIPT_DIR/install.sh" \
   ${COLD_DSN:+--cold-dsn "$COLD_DSN"} \
   ${TURN_SERVER:+--turn-server "$TURN_SERVER"} \
   --prefix "$PREFIX" --etc "$ETC" --state "$STATE" \
-  $([ "$MODE" = "split" ] && echo --split) \
   $([ "$START" -eq 0 ] && echo --no-start) \
   $([ "$SKIP_KEYS" -eq 1 ] && echo --skip-keys)

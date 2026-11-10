@@ -94,7 +94,7 @@ else
 
   log "构建 Go 二进制（trimpath, -s -w）"
   mkdir -p dist
-  for bin in chatd chatd-bridge chatd-user chatd-data chatd-admin; do
+  for bin in chatd; do
     if [ -d "server/cmd/$bin" ]; then
       CGO_ENABLED="${CGO_ENABLED:-1}" go build -trimpath -ldflags "-s -w" -o "dist/$bin" "./server/cmd/$bin"
       log "  dist/$bin"
@@ -112,7 +112,7 @@ STAGE="dist/pkg-$VERSION"
 rm -rf "$STAGE"
 mkdir -p "$STAGE/bin" "$STAGE/web" "$STAGE/deploy"
 
-for f in dist/chatd dist/chatd-bridge dist/chatd-user dist/chatd-data dist/chatd-admin; do
+for f in dist/chatd; do
   [ -f "$f" ] && install -m 0755 "$f" "$STAGE/bin/"
 done
 

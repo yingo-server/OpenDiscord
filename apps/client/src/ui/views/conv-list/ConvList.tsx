@@ -2,7 +2,8 @@
  * 会话列表（§3.4）：行组件按 convId 订阅，未读数变化不触发兄弟项重渲染。
  * 搜索、置顶/静音快捷操作、空状态与骨架屏。
  */
-import { memo, useMemo, useState } from 'react';
+import { memo, useMemo, useRef, useState } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { useConvStore } from '../../../core/stores/conv-store';
 import { usePresenceStore } from '../../../core/stores/presence-store';
 import { useConnStore } from '../../../core/stores/conn-store';
@@ -28,12 +29,19 @@ const PREVIEW_KEYS: Record<string, I18nKey> = {
   system: 'conv.preview.system',
 };
 
+/** FE-1b：虚拟化开启条件 —— 连接中（骨架屏）或无可渲染会话（空状态）时不虚拟化。 */
+export function shouldVirtualize(connecting: boolean, renderableCount: number): boolean {
+  return !connecting && renderableCount > 0;
+}
+
 export function ConvList({ className = '' }: { className?: string }) {
   const order = useConvStore((state) => state.order);
   const convs = useConvStore((state) => state.convs);
   const conn = useConnStore((state) => state.state);
   const [query, setQuery] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const connecting = conn === 'connecting' || conn === 'reconnecting';
 
   const filtered = useMemo(() => {
     const keyword = query.trim().toLowerCase();
@@ -47,6 +55,15 @@ export function ConvList({ className = '' }: { className?: string }) {
       );
     });
   }, [order, convs, query]);
+
+  const virtualizer = useVirtualizer({
+    count: shouldVirtualize(connecting, filtered.length) ? filtered.length : 0,
+    getScrollElement: () => scrollRef.current,
+    // 行高随内容/换行变化：动态测量（measureElement），估算值取移动端行高
+    estimateSize: () => 72,
+    overscan: 10,
+    getItemKey: (index) => filtered[index] ?? index,
+  });
 
   return (
     <section className={`flex min-h-0 flex-col bg-surface ${className}`} aria-label={t('conv.title')}>
