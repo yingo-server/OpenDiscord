@@ -256,6 +256,20 @@ func (p *Pipe) SetWritePolicy(pol any) {
 	}
 }
 
+// SetAdaptiveStore installs the CORE-2 effective[cid] parameter table
+// (universal-pull-spec §2.2). The assembly (chatd) owns the policy loop that
+// writes it from the adaptive controller; the pipe/fanout mechanism layer only
+// reads per-conversation snapshots. Not calling this (or passing nil) leaves
+// the static flag defaults — the deterministic fallback of spec §2.2.
+func (p *Pipe) SetAdaptiveStore(a *adaptiveStore) {
+	if a == nil {
+		a = newAdaptiveStore()
+	}
+	if p.fanout != nil {
+		p.fanout.setAdaptiveStore(a)
+	}
+}
+
 // Outbound exposes the outbound env lane (tests/assembly tapping).
 func (p *Pipe) Outbound() <-chan *env { return p.outCh }
 

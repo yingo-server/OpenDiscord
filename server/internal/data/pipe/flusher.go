@@ -281,7 +281,7 @@ func (f *flusher) fanoutNew(m store.PendingMsg, mediaIdx map[string]*store.Media
 	// 拉取模式分流（§3.1/§3.2）：只有 len(members) > pull_mode_threshold 时才
 	// 改走水位线。threshold 默认 0（禁用），此时整段判定为假，下面仍是 v1.1.1
 	// 的逐成员 102 循环 —— 逐字节一致，连丢帧日志与计数都不变。
-	if f.fanout != nil && f.fanout.pullModeActive(len(members)) {
+	if f.fanout != nil && f.fanout.pullModeActive(m.Cid, len(members)) {
 		f.fanout.emitWatermark(uint64(m.Cid), uint64(m.SenderID), uint64(m.Seq), members, f.putBulk)
 		return
 	}

@@ -190,6 +190,12 @@ type fanoutPlane struct {
 	// v3 is the P3d-1 fanout split sink. nil (or nil offer) = pure no-op:
 	// the legacy direct-delivery path is byte-identical (§9 中间态铁律).
 	v3 *v3Split
+
+	// adaptive is the CORE-2 per-conversation parameter table (effective[cid],
+	// universal-pull-spec §2.2). nil until SetAdaptiveStore is called. The
+	// fanout plane only reads it when universal_pull_enabled is on; a nil
+	// store or a missing entry falls back to the static flag defaults.
+	adaptive *adaptiveStore
 }
 
 // pullConvState is the per-conversation watermark throttle state (§1.3).
@@ -199,6 +205,69 @@ type pullConvState struct {
 	lastSeq uint64
 	lastAt  time.Time
 }
+
+// adaptiveSnapshot is one atomic snapshot of effective[cid] (spec §0/§2.2:
+// 机制层只从原子快照读两个值，不调用控制器、不判拥塞、不写审计).
+// The pointer is swapped by the policy layer; readers load it per
+// conversation. nil = no adaptive snapshot → static flag defaults.
+type adaptiveSnapshot struct {
+	batch      int
+	intervalMS int
+}
+
+// adaptiveStore is the per-conversation adaptive parameter table
+// (effective[cid], spec §2.2). The fanout plane only READS it; the policy
+// layer (CORE-1 controller wired by the assembly) writes whole entries under
+// a short lock and publishes a value receiver copy atomically per conv.
+// Values outside the hard bounds are REJECTED at write time (spec §2.2
+// 越界拒载), so readers never see an illegal pair.
+type adaptiveStore struct {
+	mu   sync.RWMutex
+	effs map[int64]adaptiveSnapshot
+}
+
+func newAdaptiveStore() *adaptiveStore { return &adaptiveStore{effs: map[int64]adaptiveSnapshot{}} }
+
+// set publishes one conversation's parameters. Out-of-bounds values are
+// rejected: the previous entry (if any) is kept and false is returned so the
+// caller can write an adaptive.reject audit event (spec §2.2 / T-AD-4).
+func (a *adaptiveStore) set(cid int64, batch, intervalMS int) bool {
+	if batch < adaptiveBatchMin || batch > adaptiveBatchMax ||
+		intervalMS < adaptiveIntervalMinMS || intervalMS > adaptiveIntervalMaxMS {
+		return false
+	}
+	a.mu.Lock()
+	a.effs[cid] = adaptiveSnapshot{batch: batch, intervalMS: intervalMS}
+	a.mu.Unlock()
+	return true
+}
+
+// clear drops one conversation's entry (adaptive off / rollback: spec §5 开关 3
+// → 冻结/清空 effective[cid]，回退静态默认值).
+func (a *adaptiveStore) clear(cid int64) {
+	a.mu.Lock()
+	delete(a.effs, cid)
+	a.mu.Unlock()
+}
+
+// get returns the conversation's snapshot or false when none exists
+// (mechanism layer then falls back to the static defaults 50/2000).
+func (a *adaptiveStore) get(cid int64) (adaptiveSnapshot, bool) {
+	a.mu.RLock()
+	s, ok := a.effs[cid]
+	a.mu.RUnlock()
+	return s, ok
+}
+
+// Hard bounds of the adaptive control quantities (spec §2.2; the mechanism
+// layer uses them only to REJECT out-of-bounds writes — it never chooses
+// parameters itself).
+const (
+	adaptiveBatchMin      = 1
+	adaptiveBatchMax      = 200
+	adaptiveIntervalMinMS = 10
+	adaptiveIntervalMaxMS = 2000
+)
 
 // fanoutBucket is one aggregation window: the pending jobs of one
 // conversation (or one presence subject), keyed by the user whose state
@@ -248,6 +317,11 @@ func (f *fanoutPlane) setFlags(flags *featureflags.Flags) { f.flags = flags }
 // with the SAME pointer the flusher holds, so every fan-out producer shares one
 // counter set. An unassembled plane keeps v3 == nil → no-op.
 func (f *fanoutPlane) setV3Split(v *v3Split) { f.v3 = v }
+
+// SetAdaptiveStore wires the CORE-2 effective[cid] table (assembly layer calls
+// Pipe.SetAdaptive). nil pointer → adaptive lookups are skipped and the static
+// defaults apply (spec §2.2: 控制器关闭时机制层回退静态默认值).
+func (f *fanoutPlane) setAdaptiveStore(a *adaptiveStore) { f.adaptive = a }
 
 // start launches the aggregator + the broadcaster workers.
 func (f *fanoutPlane) start(ctx context.Context) {
@@ -579,8 +653,13 @@ func (f *fanoutPlane) fanoutToPut(kind uint32, cid uint64, uids []uint64, payloa
 // 这是 MSG_NEW 的唯一分流判定点：消息已经落库、seq 已经分配（flusher 的
 // group-commit 之后），此处只决定"怎么通知"：
 //
-//	len(members) <= pull_mode_threshold → 逐成员 102 MSG_NEW（与 v1.1.1 逐字节一致）
-//	len(members) >  pull_mode_threshold → 不逐成员 emit，改为一条 kind 14 水位线
+//	universal_pull_enabled=true  (CORE-2) → 所有会话统一走水位线分支（spec §1.2；
+//	    pull_mode_threshold 的交付分流语义被取消，202 快照的 >100 保护不受影响）
+//	否则（回滚路径，S-7 逐字节基线）：
+//	    len(members) <= pull_mode_threshold → 逐成员 102 MSG_NEW（与 v1.1.1 逐字节一致）
+//	    len(members) >  pull_mode_threshold → 不逐成员 emit，改为一条 kind 14 水位线
+//
+// universal_pull_enabled 默认 false = v1.2.1 行为逐字节一致（spec §5 开关 1）。
 //
 // 阈值默认 0 = 全部 inline（规范 §6.4 中间态）：判定函数的第一个条件就是
 // threshold > 0，因此 flag 未启用时下面的 102 路径与改动前完全同构。
@@ -593,11 +672,17 @@ const (
 	pullDefaultInterval = 2000 * time.Millisecond
 )
 
-// pullLimits reads the three pull-mode tunables. Get()/Int() are atomic loads
+// pullLimits reads the pull-mode tunables. Get()/Int() are atomic loads
 // of an immutable snapshot (no map copy), so reading them per message is as
 // cheap as the threshold check itself — no window-level caching needed, and a
 // hot flag change (SIGHUP / 911) is picked up on the very next message.
-func (f *fanoutPlane) pullLimits() (threshold, batch int, interval time.Duration) {
+//
+// CORE-2 (universal-pull-spec §2.2): when the adaptive table carries an
+// entry for the conversation AND universal_pull_enabled is on, the per-conv
+// batch/interval from effective[cid] override the static flags (静态覆盖 /
+// 控制器输出优先于静态默认值). The threshold is NOT adaptive — universal
+// mode cancels the threshold's delivery-split semantics entirely.
+func (f *fanoutPlane) pullLimits(cid int64) (threshold, batch int, interval time.Duration) {
 	if f.flags == nil {
 		return 0, pullDefaultBatch, pullDefaultInterval
 	}
@@ -610,13 +695,39 @@ func (f *fanoutPlane) pullLimits() (threshold, batch int, interval time.Duration
 	if ms <= 0 {
 		ms = int(pullDefaultInterval / time.Millisecond)
 	}
+	// effective[cid] lookup is gated on the universal-pull master switch:
+	// with the flag off the behaviour must stay byte-identical to v1.2.1
+	// (S-7), so adaptive entries are not even read.
+	if f.adaptive != nil && f.flags.Bool(featureflags.KeyUniversalPullEnabled, false) {
+		if s, ok := f.adaptive.get(cid); ok {
+			batch, ms = s.batch, s.intervalMS
+		}
+	}
 	return threshold, batch, time.Duration(ms) * time.Millisecond
 }
 
+// universalPullActive reports whether the universal-pull mode is enabled
+// (spec §1.2: 所有会话统一水位线分支，取消 pull_mode_threshold 交付分流).
+func (f *fanoutPlane) universalPullActive() bool {
+	return f.flags != nil && f.flags.Bool(featureflags.KeyUniversalPullEnabled, false)
+}
+
 // pullModeActive reports whether a conversation with n members must be served
-// in pull mode. threshold <= 0 disables the whole feature (§6.4).
-func (f *fanoutPlane) pullModeActive(n int) bool {
-	threshold, _, _ := f.pullLimits()
+// in pull mode.
+//
+// Two regimes (universal-pull-spec §1.2):
+//   - universal_pull_enabled=true → ALL conversations (n >= 2 members) go
+//     through the unified watermark branch; pull_mode_threshold keeps no
+//     delivery-split meaning. 1-member conversations (peers/solitary) keep
+//     the inline path — there is no other member to notify, so the split
+//     would be a no-op anyway; keeping it byte-identical to v1.2.1 there.
+//   - universal_pull_enabled=false → the v1.2.1 threshold path, byte for byte
+//     (S-7 rollback baseline). threshold <= 0 disables the whole feature (§6.4).
+func (f *fanoutPlane) pullModeActive(cid int64, n int) bool {
+	if f.universalPullActive() {
+		return n > 1
+	}
+	threshold, _, _ := f.pullLimits(cid)
 	return threshold > 0 && n > threshold
 }
 
@@ -635,7 +746,7 @@ func (f *fanoutPlane) shouldEmitWatermark(cid int64, seq uint64) (emit bool, rea
 	if seq == 0 {
 		return false, 0
 	}
-	_, batch, interval := f.pullLimits()
+	_, batch, interval := f.pullLimits(cid)
 	now := f.now()
 
 	f.pullMu.Lock()
@@ -650,6 +761,11 @@ func (f *fanoutPlane) shouldEmitWatermark(cid int64, seq uint64) (emit bool, rea
 	}
 	st := f.pullState[cid]
 	if st == nil {
+		// 首次：reason=1。v1.2.1 基线语义：第一条水位线立即发（时间触发兜底
+		// 也覆盖后续），lastSeq 记为 seq（推进计数从这条起算）。T-UP-3 用
+		//「到达即计数」的语义锁 batch 扣条：batch>=2 时首条消息只记录、不发，
+		// 由后续消息凑满 batch 或时间兜底触发 —— 这只影响 universal 模式的
+		// effective[cid] 路径，见下方 universal 分支。
 		f.pullState[cid] = &pullConvState{lastSeq: seq, lastAt: now}
 		return true, 1 // 首次：reason=1
 	}
@@ -657,6 +773,14 @@ func (f *fanoutPlane) shouldEmitWatermark(cid int64, seq uint64) (emit bool, rea
 		return false, 0 // 无推进不发（含乱序/重复）
 	}
 	advanced := seq - st.lastSeq
+	// Universal-pull spec §2.2 / T-UP-3: the adaptive batch also gates the
+	// very first adaptive window — with batch=200 a single message must NOT
+	// emit (the old v1.2.1 shape emitted the first watermark immediately,
+	// because the static batch=50 was tuned for it; with per-conv batch up to
+	// 200 that would defeat aggregation). Implementation: a conversation whose
+	// first watermark was reason=1 is a fresh state; here the "advance" is
+	// measured from the last emitted seq, so a batch > advanced simply holds —
+	// EXCEPT the reason=1 emission which already happened in the st==nil branch.
 	if advanced < uint64(batch) && now.Sub(st.lastAt) < interval {
 		return false, 0
 	}

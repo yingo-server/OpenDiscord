@@ -34,6 +34,14 @@ const (
 
 	// v3 消息总线灰度（docs/v3-bus-design.md §6）。
 	//
+	// KeyUniversalPullEnabled 是 1.4 CORE-2 的普遍拉取总开关（docs/universal-pull-spec.md
+	// §5 开关 1）。默认 false：中间态铁律。true 时取消 pull_mode_threshold 的
+	// 交付分流语义——所有会话统一走水位线分支（inline 仅作回滚路径，逐字节一致）。
+	KeyUniversalPullEnabled = "universal_pull_enabled"
+	// KeyAdaptiveControlEnabled 是 1.4 CORE-2 策略层开关（spec §5 开关 3）。
+	// 默认 false：机制层回退静态默认值 watermark_batch=50 / watermark_interval_ms=2000。
+	KeyAdaptiveControlEnabled = "adaptive_control_enabled"
+
 	// KeyV3BusEnabled 默认 false：主干合入时旧路径为唯一投递路径（§9 中间态铁律），
 	// T-SV-5 常驻锁定旧路径行为逐字节同主干。热回滚 = SIGHUP 改此 flag。
 	KeyV3BusEnabled = "v3_bus_enabled"
@@ -59,6 +67,9 @@ func Defaults() map[string]any {
 		KeyWatermarkBatch:      50,
 		KeyWatermarkIntervalMS: 2000,
 		KeyWatermarkJitterMS:   2000,
+
+		KeyUniversalPullEnabled:   false, // CORE-2 普遍拉取：默认关（universal-pull-spec §5 开关 1，S-7 回滚基线）
+		KeyAdaptiveControlEnabled: false, // CORE-2 自适应策略层：默认关（spec §5 开关 3）
 
 		KeyV3BusEnabled: false, // v3 总线：主干合入默认关（v3-bus-design §6/§9）
 		KeyV3BusPercent: 0,     // 灰度百分比：P4 阶段 5% 起步

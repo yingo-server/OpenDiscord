@@ -487,11 +487,26 @@ func (d *convDomain) pullThreshold() int {
 }
 
 // pullSnapshot reports whether a conversation with n members must not receive
-// full member snapshots in its 202 events (§1.4/§3.4).
+// full member snapshots in its 202 events.
+//
+// CORE-2 (universal-pull-spec §1.2): the 202 snapshot protection is a FIXED
+// member-count rule — ">100 members ⇒ members_omitted" — and must NOT read
+// pull_mode_threshold any more (the threshold's delivery-split semantics is
+// cancelled, but the snapshot protection is NOT). A fixed local bound of 100
+// keeps the behaviour identical to v1.2.1's compiled default in both regimes:
+//   - universal pull on: identical (threshold flag ignored, rule stays >100);
+//   - flag-off rollback (S-7): the threshold path reads the flag as before.
 func (d *convDomain) pullSnapshot(n int) bool {
+	if d.flags != nil && d.flags.Bool(featureflags.KeyUniversalPullEnabled, false) {
+		return n > universalSnapshotMemberBound
+	}
 	th := d.pullThreshold()
 	return th > 0 && n > th
 }
+
+// universalSnapshotMemberBound is the fixed 202 snapshot protection bound of
+// universal-pull-spec §1.2 ("202 CONV_PAYLOAD 仍按固定成员数判定 >100").
+const universalSnapshotMemberBound = 100
 
 // eventPayload applies the §1.4 snapshot substitution to a 202 CONV_PAYLOAD
 // body: pull-mode conversations carry members_omitted=true + member_count
