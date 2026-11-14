@@ -2,6 +2,62 @@
 
 本文件记录 OpenDiscord 的版本变更。格式参考 Keep a Changelog，版本号遵循语义化版本。
 
+## [1.4.0] - 未发布（工作区进行中，验收以 CI S-1~S-7 为准）
+
+1.4 LTS 主题：普遍拉取、参数自适应、v3 消息总线三条核心，加功能补齐与运维收敛。
+**本段为进行中状态：所有新投递/消息域行为均 flag 默认关闭，主线行为与 1.2.1 一致；
+未压测项一律不算发布完成。**
+
+### Added
+- **普遍拉取模式（CORE-2）**：`universal_pull_enabled`（默认 false）取消
+  `pull_mode_threshold` 分流语义，所有会话统一走「水位线通知 + 客户端批量拉取」，
+  inline 逐成员推送仅作回滚路径（逐字节一致，T-SV-5 常驻回归）。机制层参数
+  硬界 batch 1~200 / interval 10~2000ms。
+- **参数自适应控制器（CORE-1）**：`server/internal/bus/adaptive` AIMD + 双维
+  控制器（每会话 batch/interval，变更限速 25%、冷却 1s、SafeTick panic 旁路
+  回退静态默认）。控制循环（chatd/adaptive.go）已接线，`adaptive_control_enabled`
+  （默认 false）时不启动/不写，开启前机制层用静态默认 50/2000ms；热生效单测待补。
+- **供应商适配器（OPS-2）**：SMSSender / Mailer / CaptchaVerifier 通用 HTTP
+  webhook 实现（POST JSON、3s 超时、非 2xx 失败）+ `deploy/providers.example.toml`
+  示例（阿里云/腾讯云/通用，不含真实密钥）；生产未配置保持 fail-closed。
+- **TURN 自检（OPS-2）**：管理面 `GET /api/v1/diagnostics/turn` 连通性探测
+  （3s 超时，仅管理面权限可见），不新增端点前缀。
+- **`opendiscordctl upgrade`（OPS-1）**：一次性升级计划合并 auto_vacuum 转换
+  与旧 thumb_data 迁移，dry-run 默认、`--run` 执行。
+- **`chatd-pg` 构建变体（OPS-1）**：内嵌 pgx driver 的冷库变体，启动自检并落
+  审计；普通 `chatd` 仍不 import driver。
+- **前端功能补齐（FE-1/FE-2）**：106 编辑 / 109 转发元数据 / @ 提及广播 /
+  453 举报入库的服务端实现与客户端接线（`msg_domain_v2_enabled` 门控，默认 false）；
+  会话列表虚拟滚动（react-virtual，无门控）；PWA（manifest + service worker，
+  production-only 注册）与 Web Push VAPID 订阅封装（服务端接口未实现时 fail-closed）。
+- **压测场景（REL）**：`scripts/stress` 新增 `--universal-pull` 模式（水位线驱动、
+  水位线/秒、SYNC QPS、收敛延迟、下行帧三分统计）、`--slow-ratio/--slow-factor`
+  慢消费者注入（S-4）、重启风暴复用（S-5）、`--adaptive-compare` static vs adaptive
+  对照输出（S-6 判定证据）；stress workflow 增加 dispatch 输入（不改 ci.yml）。
+
+### Fixed
+- 删除指向不存在二进制的 systemd 多进程单元（bridge/user/data/admin），
+  不再留会启动失败的运维指引；文档明确 embedded-only。
+- 会话列表上千会话时首屏 DOM 偏多：接虚拟滚动。
+- Windows ARM/ARM64 由「无产物」收敛为 CI 显式 skip + 源码构建文档（不再含糊）。
+
+### Experimental（全部 flag-off，代码在位·待 CI/压测验证，发布前须 S-1~S-7 守门）
+- `universal_pull_enabled=false`：普遍拉取分流已实现，未灰度、未压测。
+- `adaptive_control_enabled=false`：控制器与控制循环均已落盘；热生效单测与
+  S-6 对照压测未跑，开启前无行为。
+- `v3_bus_enabled=false`（percent=0）：MailboxHub / DeliveryPlane / 双写旁路 /
+  客户端 kind 15/16/17 在位；钩子注册、灰度关旧直投、kind 15 上行路由、背压
+  指标 dump 四项接线**已落盘**，按 uid 单一路径判定避免双投递。控制器热生效
+  单测、灰度切换全链路不双投递 e2e 断言未写，最终编译未复跑（交 CI）。
+- `msg_domain_v2_enabled=false`：106/109/@/453 服务端实现已落，未灰度。
+- Web Push 服务端（`/api/push/subscribe` 与 push 事件下发）未实现，前端
+  fail-closed；手机锁屏通知在 1.4.0 内仍未解决。
+- 群人数默认上限保持 100（放大到 1000 的决策待三核心压测达标后执行）。
+
+### 明确不做（1.4 范围内，单列以免含糊）
+朋友圈/动态、支付/红包、公众号/小程序、自建 SFU 群通话、split 多进程部署、
+端到端加密（E2EE）——理由见 `docs/roadmap.md` 与 `docs/known-issues.md`。
+
 ## [1.2.1] - 2026-11-07
 
 项目更名 OpenDiscord 后的首个可用版本。**v1.2 拉取模式 + 全部稳定性修复；v3 消息总线代码在位但默认关闭（零行为影响）。**

@@ -270,6 +270,43 @@ func (p *Pipe) SetAdaptiveStore(a *adaptiveStore) {
 	}
 }
 
+// NewAdaptiveStore 创建空的 effective[cid] 表（装配层持有并经 SetAdaptiveStore
+// 注入；adaptiveWrite 允许装配层的控制循环写入条目，机制层只读）。
+// adaptive_control_enabled=false（默认）时装配层不创建、不注入——机制层
+// 保持静态 flag 默认（50/2000，spec §2.2 确定回退）。
+func NewAdaptiveStore() *adaptiveStore { return newAdaptiveStore() }
+
+// AdaptiveStoreHandle 是 NewAdaptiveStore 返回值的导出别名（cmd/ 装配层持有
+// 句柄用；机制层内部类型 adaptiveStore 不直接暴露，读写都经 Pipe 方法）。
+type AdaptiveStoreHandle = adaptiveStore
+
+// AdaptiveWrite 写入一条 effective[cid]（装配层控制循环专用，CORE-1 接线）。
+// 越界值由 adaptiveStore.set 拒绝（返回 false，保留旧值——spec §2.2 拒载），
+// 调用方据此写 adaptive.reject 审计事件。cid<=0 视为非法直接拒绝。
+func (p *Pipe) AdaptiveWrite(st *adaptiveStore, cid int64, batch, intervalMS int) bool {
+	if st == nil || cid <= 0 {
+		return false
+	}
+	return st.set(cid, batch, intervalMS)
+}
+
+// AdaptiveClear 清除一条 effective[cid]（控制器关闭/回滚：冻结后回退静态
+// 默认，spec §5 开关 3）。
+func (p *Pipe) AdaptiveClear(st *adaptiveStore, cid int64) {
+	if st != nil {
+		st.clear(cid)
+	}
+}
+
+// FanoutStatsSnapshot 暴露扇出计数快照（控制器输入信号：队列深度/丢弃增量，
+// universal-pull-spec §2.1 同名计数器纪律；不新增探针）。
+func (p *Pipe) FanoutStatsSnapshot() FanoutStats {
+	if p.fanout == nil {
+		return FanoutStats{}
+	}
+	return p.fanout.Stats()
+}
+
 // Outbound exposes the outbound env lane (tests/assembly tapping).
 func (p *Pipe) Outbound() <-chan *env { return p.outCh }
 

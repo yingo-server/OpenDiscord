@@ -179,6 +179,9 @@ func printPullStats(r *levelResult) {
 	fmt.Printf("convergence (watermark latestSeq → lastSeq caught up): p50=%s p95=%s samples=%d unsettled=%d\n",
 		fmtDur(percentile(conv, 0.50)), fmtDur(percentile(conv, 0.95)),
 		len(conv), r.ConvergenceOpen)
+	// REL/S-6 evidence line: rate-limit hits (kind 13) as a proxy for the
+	// adaptive controller's rate-limit-hit counter on the server dump.
+	fmt.Printf("rate-limit hits (kind 13): %d\n", r.DownRateLimited)
 }
 
 // heading helpers ------------------------------------------------------------

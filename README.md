@@ -36,6 +36,10 @@
 
 ## 容量（实测，非估算）
 
+> **1.4 数据待 S-1~S-7 压测刷新**：1.4 的普遍拉取 + 自适应 + v3 总线代码已合入
+> 但全部 flag 默认关闭，下表数字未受影响；flag 灰度启用后由 CI 压测刷新本表，
+> 当前请继续按表中实测值做容量规划。
+
 ### 三列对照：v1.1.1 基线 → 负优化版（已回滚）→ 7cb04fc（当前）
 
 CI 2 核 runner、无限流、20 秒稳态、mixed 负载。7cb04fc = 发送路径回退到 v1.1.1 形态后的提交（见 `docs/perf-postmortem-v1.2-draft.md`）：
@@ -175,6 +179,7 @@ sudo opendiscordctl doctor
 - [开发文档索引](docs/README.md)：架构、协议、各层设计
 - [API 参考](docs/api-reference.md) / [CLI 参考](docs/cli-reference.md) / [WS 协议](docs/ws-protocol.md)
 - [路线图](docs/roadmap.md) / [变更日志](CHANGELOG.md) / [已知问题](docs/known-issues.md)
+- [1.4 LTS 规划](docs/lts-1.4-plan.md)：普遍拉取 + 自适应 + v3 总线的决策与验收门槛
 
 ## 许可
 

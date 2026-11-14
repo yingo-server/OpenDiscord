@@ -15,6 +15,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"sync/atomic"
 
 	"github.com/yingo-server/OpenDiscord/server/internal/bus/delivery"
 	"github.com/yingo-server/OpenDiscord/server/internal/bus/mailbox"
@@ -34,6 +35,18 @@ type WireV3 struct {
 
 	// InBucket 判定 uid 是否落在 v3 灰度桶（uid 哈希，与连接/重启无关）。
 	InBucket func(uid int64) bool
+
+	// v3Skip 是双投递保护的可观测计数：Router 抑制旧直投时 +1
+	//（dump 的 v3_bus.legacy_skipped；SIGUSR1 暴露，§5.2）。
+	v3Skip atomic.Uint64
+}
+
+// v3LegacySkipped 返回双投递保护抑制计数（dump 用；nil 安全）。
+func (w *WireV3) v3LegacySkipped() uint64 {
+	if w == nil {
+		return 0
+	}
+	return w.v3Skip.Load()
 }
 
 // newV3Wire 构造 v3 投递栈（P3c 主干装配点；newAssembly 成功路径末尾调用）。

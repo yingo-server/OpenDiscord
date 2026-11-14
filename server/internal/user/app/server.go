@@ -264,6 +264,10 @@ func (s *Server) Forwarder() *bridge.Forwarder { return s.fwd }
 // Policy 暴露策略快照。
 func (s *Server) Policy() *policy.Policy { return s.pol }
 
+// Router 暴露调度器（装配层注入 v3 双投递保护 / kind 15 ACK 钩子用；
+// 钩子本身是 nil 安全的函数指针，见 router.Router 字段注释）。
+func (s *Server) Router() *router.Router { return s.rtr }
+
 // ReloadPolicy 原子替换策略（SIGHUP 热更入口）。
 func (s *Server) ReloadPolicy(cfg policy.Config) {
 	s.pol.Replace(cfg)

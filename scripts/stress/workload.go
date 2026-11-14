@@ -100,11 +100,15 @@ type worker struct {
 	ops         map[string]*opLocal
 	// pull-mode (§4.4): nil unless --pull-mode. Counters are per-connection
 	// and merged into levelResult by the runner; lastSeq is per-conv cursor.
-	pull       *pullTracker
-	downWM     atomic.Int64 // watermark frames received
-	downMsgNew atomic.Int64 // MSG_NEW frames received (live + catch-up replay)
-	downCtrl   atomic.Int64 // every other downstream frame (ack/receipt/typing/presence/error/...)
-	syncQPS    atomic.Int64 // kind 8 uplink requests sent
+	pull            *pullTracker
+	downWM          atomic.Int64 // watermark frames received
+	downMsgNew      atomic.Int64 // MSG_NEW frames received (live + catch-up replay)
+	downCtrl        atomic.Int64 // every other downstream frame (ack/receipt/typing/presence/error/...)
+	downRateLimited atomic.Int64 // kind 13 RATE_LIMITED frames observed (S-6 adaptive evidence)
+	syncQPS         atomic.Int64 // kind 8 uplink requests sent
+	// S-4 slow-consumer injection (REL): set by the runner before run().
+	isSlow   bool
+	slowMult float64
 }
 
 var opNames = []string{"msg_send", "typing", "receipt", "presence"}
@@ -149,6 +153,9 @@ func (w *worker) readLoop(peer *peerRecorder) {
 		case kindRateLimited, kindError:
 			w.downCtrl.Add(1)
 			w.serverDrop.Add(1)
+			if env.Kind == kindRateLimited {
+				w.downRateLimited.Add(1)
+			}
 		case kindMsgNew:
 			w.downMsgNew.Add(1)
 			var m msgNewPayload
@@ -223,7 +230,12 @@ func (w *worker) run(deadline time.Time, interval time.Duration, m *mixer, peer 
 		w.doOp(m.next(i), peer)
 		i++
 		if interval > 0 {
-			time.Sleep(interval)
+			pause := interval
+			if w.slowMult > 1 {
+				// S-4: slow consumers pace slower; read loop untouched.
+				pause = time.Duration(float64(pause) * w.slowMult)
+			}
+			time.Sleep(pause)
 		}
 	}
 }

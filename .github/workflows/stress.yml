@@ -27,6 +27,18 @@ on:
       pull_mode:
         description: "enable pull-mode client (kind 14 WATERMARK → SYNC(8))"
         default: "false"
+      universal_pull:
+        description: "REL/lts-1.4: universal-pull mode — ALL sessions watermark-driven (implies pull_mode); reports watermark/s, SYNC QPS, convergence, 3-way frame split"
+        default: "false"
+      slow_ratio:
+        description: "S-4: fraction of connections injected as slow consumers (0..1, e.g. 0.05 = 50/1000; 0 = off)"
+        default: "0"
+      slow_factor:
+        description: "S-4: pacing multiplier for slow-consumer connections (>=1)"
+        default: "5"
+      adaptive_compare:
+        description: "S-6: comma pair 'static.json,adaptive.json' — skip load, merge two recorded --universal-pull runs and print batch/interval + rate-limit evidence"
+        default: ""
   push:
     tags: ['v*']
 
@@ -85,6 +97,10 @@ jobs:
           CONV_MEMBERS: ${{ github.event.inputs.conv_members || '10' }}
           NO_RATELIMIT: ${{ github.event.inputs.no_ratelimit || 'true' }}
           PULL_MODE: ${{ github.event.inputs.pull_mode || 'false' }}
+          UNIVERSAL_PULL: ${{ github.event.inputs.universal_pull || 'false' }}
+          SLOW_RATIO: ${{ github.event.inputs.slow_ratio || '0' }}
+          SLOW_FACTOR: ${{ github.event.inputs.slow_factor || '5' }}
+          ADAPTIVE_COMPARE: ${{ github.event.inputs.adaptive_compare || '' }}
         run: |
           set -e
           EXTRA=""
@@ -96,37 +112,57 @@ jobs:
           if [ "$PULL_MODE" = "true" ]; then
             EXTRA="$EXTRA --pull-mode"
           fi
-          echo "rate limiting: $RL_STATE" | tee stress.log
-          /tmp/stressd -ladder "$LADDER" -duration "$DURATION" \
-            -mode mixed --conv-members "$CONV_MEMBERS" $EXTRA \
-            -out ladder.json 2>&1 | tee -a stress.log
+          if [ -n "$ADAPTIVE_COMPARE" ]; then
+            # S-6: offline comparison of two recorded runs; no load generated.
+            echo "rate limiting: $RL_STATE" | tee stress.log
+            /tmp/stressd -adaptive-compare "$ADAPTIVE_COMPARE" 2>&1 | tee -a stress.log
+            {
+              echo '## S-6 adaptive comparison (static vs adaptive, same scenario)'
+              echo '```'
+              sed -n '/== S-6 adaptive comparison/,$p' stress.log || true
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            if [ "$UNIVERSAL_PULL" = "true" ]; then
+              EXTRA="$EXTRA --universal-pull"
+            fi
+            if [ "$SLOW_RATIO" != "0" ]; then
+              EXTRA="$EXTRA --slow-ratio $SLOW_RATIO --slow-factor $SLOW_FACTOR"
+            fi
+            echo "rate limiting: $RL_STATE" | tee stress.log
+            /tmp/stressd -ladder "$LADDER" -duration "$DURATION" \
+              -mode mixed --conv-members "$CONV_MEMBERS" $EXTRA \
+              -out ladder.json 2>&1 | tee -a stress.log
 
-          {
-            echo '## OpenDiscord capacity ladder'
-            echo ''
-            echo "- **rate limiting:** $RL_STATE"
-            echo "- **conv members / fanout width:** $CONV_MEMBERS"
-            echo "- **mode:** mixed (MSG_SEND 70% / TYPING 15% / RECEIPT 10% / PRESENCE 5%)"
-            echo ''
-            echo '```'
-            grep -E '^\s+[0-9]+ ' stress.log || true
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+            {
+              echo '## OpenDiscord capacity ladder'
+              echo ''
+              echo "- **rate limiting:** $RL_STATE"
+              echo "- **conv members / fanout width:** $CONV_MEMBERS"
+              echo "- **mode:** mixed (MSG_SEND 70% / TYPING 15% / RECEIPT 10% / PRESENCE 5%)"
+              [ "$UNIVERSAL_PULL" = "true" ] && echo "- **universal-pull:** all sessions watermark-driven (S-6/S-7 per universal-pull-spec §4)"
+              if [ "$SLOW_RATIO" != "0" ]; then echo "- **S-4 slow-consumer injection:** ratio=$SLOW_RATIO factor=$SLOW_FACTOR"; fi
+              echo ''
+              echo '```'
+              grep -E '^\s+[0-9]+ ' stress.log || true
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
 
-          # 可信度声明（预注册用户数 / 是否关限流 / 样本是否足够 / ramp 是否超时）
-          {
-            echo '### 可信度声明'
-            echo '```'
-            sed -n '/== 可信度声明/,/send->peer_recv/p' stress.log || true
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+            # 可信度声明（预注册用户数 / 是否关限流 / 样本是否足够 / ramp 是否超时）
+            {
+              echo '### 可信度声明'
+              echo '```'
+              sed -n '/== 可信度声明/,/send->peer_recv/p' stress.log || true
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
 
-          LAST_PASS=$(grep -E '^\s+[0-9]+ ' stress.log | grep 'PASS' | tail -1 | awk '{print $1}')
-          FIRST_FAIL=$(grep -E '^\s+[0-9]+ ' stress.log | grep -E 'FAIL|SATURATED|RAMP_TIMEOUT' | head -1 | awk '{print $1}')
-          {
-            echo "- **last passing level:** ${LAST_PASS:-n/a} conns"
-            echo "- **first failing level:** ${FIRST_FAIL:-none reached}"
-          } >> "$GITHUB_STEP_SUMMARY"
+            LAST_PASS=$(grep -E '^\s+[0-9]+ ' stress.log | grep 'PASS' | tail -1 | awk '{print $1}')
+            FIRST_FAIL=$(grep -E '^\s+[0-9]+ ' stress.log | grep -E 'FAIL|SATURATED|RAMP_TIMEOUT' | head -1 | awk '{print $1}')
+            {
+              echo "- **last passing level:** ${LAST_PASS:-n/a} conns"
+              echo "- **first failing level:** ${FIRST_FAIL:-none reached}"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       # 结果同时落地到仓库的 bench 分支：artifact 与 job log 走 Azure blob，
       # 在某些网络环境下不可达；commit 一个分支则可通过 git 稳定取回。

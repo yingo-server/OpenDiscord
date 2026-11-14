@@ -39,6 +39,13 @@ cold_dsn = "postgres://opendiscord@db.internal:5432/opendiscord?sslmode=require"
 # 策略真源
 policy_path = "/etc/opendiscord/policy.json"
 
+# 供应商 webhook 配置（v1.4 OPS-2，示例见 deploy/providers.example.toml；
+# 缺省不配置 → 短信/邮件/验证码全部 fail-closed）
+# providers_path = "/etc/opendiscord/providers.toml"
+
+# 自备 TURN 地址（v1.4 OPS-2，管理后台诊断页一键自检用）
+# turn_url = "turn:turn.example.com:3478?transport=udp"
+
 # 日志级别：debug | info | warn | error（stdout JSON lines → journald）
 log_level = "info"
 

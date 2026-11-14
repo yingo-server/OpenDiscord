@@ -80,6 +80,13 @@ type assembly struct {
 	jobs      *jobPlane
 	adminKey  []byte
 	v3        *WireV3 // P3c：v3 总线句柄（构造但不接线，§9 中间态）
+	// v3Hooks 是 P3d-2 接线的双投递保护判定（唯一路径真相源），由
+	// AttachV3Deliver 在 newAssembly 末尾构造；runCtx 是 run() 的根 ctx。
+	v3Hooks *v3ConnLifecycle
+	runCtx  context.Context
+	// adaptiveStore 是 CORE-1 控制循环的 effective[cid] 表；仅在
+	// adaptive_control_enabled=true 时由 startAdaptiveControl 创建并注入。
+	adaptiveStore *pipe.AdaptiveStoreHandle
 
 	started time.Time
 }
@@ -260,6 +267,16 @@ func newAssembly(cfg *config, lg *log.Logger) (*assembly, error) {
 	installEmit(p)
 
 	// 9. auth service (same HTTP port as the gateway).
+	// Provider webhooks (OPS-2): a missing/empty providers file keeps all
+	// Deps nil — the service keeps its existing fail-closed behavior. A
+	// malformed file aborts startup (loud, never silently ignored).
+	sms, mailer, captcha, perr := authsvc.LoadProviders(cfg.ProvidersPath)
+	if perr != nil {
+		return nil, fmt.Errorf("chatd: providers config: %w", perr)
+	}
+	if sms == nil && mailer == nil && captcha == nil && cfg.ProvidersPath != "" {
+		lg.Info("providers: no channel URLs configured, sms/mail/captcha stay fail-closed")
+	}
 	authSvc, err := authsvc.New(authsvc.Deps{
 		DB:       hot.DB,
 		Identity: hot,
@@ -268,6 +285,9 @@ func newAssembly(cfg *config, lg *log.Logger) (*assembly, error) {
 		Verifier: verifier,
 		Hasher:   hasher,
 		HMACKey:  hmacKey,
+		SMS:      sms,
+		Mailer:   mailer,
+		Captcha:  captcha,
 	}, authsvc.Config{
 		PublicOrigin:  cfg.PublicOrigin,
 		AccessTTL:     time.Duration(cfg.AccessTTLSec) * time.Second,
@@ -348,6 +368,13 @@ func newAssembly(cfg *config, lg *log.Logger) (*assembly, error) {
 	if w := newV3Wire(hot.DB, a.flags.Snapshot, delivery.Config{}); w != nil {
 		a.v3 = w
 		w.AttachV3Split(p)
+		// P3d-2 接线（docs/lts-1.4-remaining.md §1）：把 v3 投递循环接进
+		// 连接生命周期（OnConnect → Subscribe + deliverLoop；OnDisconnect →
+		// cleanup），并把双投递保护判定 / kind 15 ACK sink 注入 user 层
+		// Router。句柄不齐时 no-op（旁路设施故障不阻断启动，§9）。
+		// v3_bus_enabled=false（默认）时：钩子全部零成本 no-op，旧直投路径
+		// 逐字节不变（T-SV-5）。
+		AttachV3Deliver(a)
 	} else {
 		lg.Warn("v3 bus wire unavailable; continuing on legacy delivery path (P3d split not attached)")
 	}
@@ -454,6 +481,10 @@ func (a *assembly) healthz(w http.ResponseWriter, r *http.Request) {
 // run starts the four long-lived components and blocks until one of them fails
 // or ctx is canceled.
 func (a *assembly) run(ctx context.Context) error {
+	a.runCtx = ctx // v3 deliverLoop 的根 ctx（SIGTERM cancel → 全部收敛）
+	// CORE-1 自适应控制器：adaptive_control_enabled=false（默认）时不启动、
+	// 不写 effective[cid]——机制层保持静态 flag 默认（50/2000）。
+	startAdaptiveControl(ctx, a)
 	errCh := make(chan error, 4)
 	go func() { errCh <- a.user.Run(ctx) }()
 	go func() { a.pipe.Run(ctx); errCh <- nil }()
@@ -643,6 +674,21 @@ func (a *assembly) dump(w io.Writer) {
 	}
 	if a.policy != nil {
 		snap["policy_version"] = a.policy.Current().Version
+	}
+	// v3 背压指标（v3-bus-design §5.2 / 任务书 §1 要求 6）：现有 dump 暴露，
+	// 不新增 HTTP 端点。PausedConns = credit 耗尽的连接数；Backpressured =
+	// 全 conn PAUSED 的 uid 数；Suppressed = 双投递保护跳过的旧直投帧数。
+	if a.v3 != nil && a.v3.Plane != nil {
+		st := a.v3.Plane.Stats()
+		snap["v3_bus"] = map[string]any{
+			"paused_conns":   st.PausedConns,
+			"backpressured":  st.Backpressured,
+			"legacy_skipped": a.v3.v3LegacySkipped(),
+		}
+	}
+	if h := a.v3Hooks; h != nil {
+		// 全局开关视图（无 uid 语境）：只看 Enabled()，不判桶。
+		snap["v3_bus_enabled"] = h.w != nil && h.w.Enabled != nil && h.w.Enabled()
 	}
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"event":  "status_dump",

@@ -261,6 +261,10 @@ export const zhCN = {
   'call.you': '你',
   'call.localPreview': '本地画面',
   'call.remoteVideo': '对方画面',
+
+  // PWA / Web Push（FE-2）
+  'push.subscribeFailed': '推送订阅登记失败（服务端未开放，已静默跳过）',
+  'push.notification.title': 'OpenDiscord',
 } as const;
 
 export type I18nKey = keyof typeof zhCN;

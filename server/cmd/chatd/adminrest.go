@@ -54,6 +54,7 @@ func newAdminREST(cfg *config, hot *sqlite.DB, adminDB *adminstore.DB, cold *pg.
 	srv, err := adminprod.NewAdminServer(
 		admin.Config{
 			ListenAddr: cfg.AdminRESTListen,
+			TurnURL:    cfg.TurnURL,
 		},
 		hot.DB,
 		adminDB.DB,

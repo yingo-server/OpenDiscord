@@ -70,3 +70,23 @@ sudo systemctl restart opendiscord
 ```
 
 详细架构与开发信息见 [开发文档](README.md)。
+
+## 供应商接入与 TURN 自检（v1.4）
+
+### 供应商适配器（短信 / 邮件 / 验证码）
+
+三个通道均为**通用 HTTP webhook**：POST JSON 到配置 URL，超时 3 秒，非 2xx 即失败。阿里云/腾讯云等云厂商 SDK 不内置——自建轻量 relay 持有云厂商密钥，OpenDiscord 只见 webhook。示例模板见 `deploy/providers.example.toml`（不含真实密钥）。
+
+部署步骤：
+1. 复制示例并填入 relay 地址：`sudo install -m 0640 deploy/providers.example.toml /etc/opendiscord/providers.toml`
+2. 在 `/etc/opendiscord/opendiscord.toml` 加一行 `providers_path = "/etc/opendiscord/providers.toml"`，然后 `systemctl reload opendiscord`
+3. 未配置该文件（或某通道 url 为空）时，该通道保持 **fail-closed**：短信/邮件验证码照常签发但不投递，图形验证码请求按 `CAPTCHA_REQUIRED` 拒绝——绝不 panic，也绝不静默放行
+
+### TURN 连通性自检
+
+通话沿用「自备 TURN」策略。管理后台新增一键自检（挂在现有诊断面，`GET /api/v1/diagnostics/turn`，需 `metrics.read` 权限）：
+
+1. 在 chatd 配置加 `turn_url = "turn:turn.example.com:3478?transport=udp"`（或 `turns:`）
+2. reload 后在管理后台诊断页点击「测试 TURN 连通性」；TCP 探测为一次成功连接，UDP 探测发送一个最小 STUN Binding Request，收到任意合法应答即视为存活
+3. 整体预算 3 秒；结果（ok / transport / addr / detail / duration_ms）只在管理面显示，不暴露凭据、不影响用户面
+4. 未配置 `turn_url` 时返回 `ok=false, detail="turn not configured"`，不会报错

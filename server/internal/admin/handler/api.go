@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/yingo-server/OpenDiscord/server/internal/admin/auditshim"
+	"github.com/yingo-server/OpenDiscord/server/internal/admin/diagnostics"
 	"github.com/yingo-server/OpenDiscord/server/internal/admin/middleware"
 	"github.com/yingo-server/OpenDiscord/server/internal/admin/service"
 	"github.com/yingo-server/OpenDiscord/server/internal/pkg/log"
@@ -52,6 +53,10 @@ type Deps struct {
 	OpLimiter     *middleware.OpLimiter
 	AuditShim     *auditshim.Shim
 	Logger        *log.Logger
+
+	// TurnURL is the self-hosted TURN URI (turn:/turns:) from the chatd
+	// config; empty = self-check answers "not configured" (fail-closed).
+	TurnURL string
 }
 
 // API is the admin HTTP application.
@@ -138,6 +143,8 @@ func (a *API) Routes() []Route {
 		{Method: http.MethodPost, Pattern: "/api/v1/archive/run", Permission: middleware.PermArchiveRun, HighRisk: true, Handler: a.handleArchiveRun},
 		// metrics
 		{Method: http.MethodGet, Pattern: "/api/v1/metrics", Permission: middleware.PermMetricsRead, Handler: a.handleMetrics},
+		// diagnostics: TURN reachability self-check (admin-visible only).
+		{Method: http.MethodGet, Pattern: "/api/v1/diagnostics/turn", Permission: middleware.PermMetricsRead, Handler: a.handleTURNCheck},
 		// liveness (no auth: fronted by Caddy's admin IP allow-list)
 		{Method: http.MethodGet, Pattern: "/health", Public: true, Handler: a.handleHealth},
 	}
@@ -179,4 +186,28 @@ func (a *API) Handler() http.Handler {
 
 func (a *API) handleHealth(w http.ResponseWriter, r *http.Request) {
 	middleware.WriteJSON(w, r, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// handleTURNCheck runs the one-shot TURN reachability probe (OPS-2). The TURN
+// URI comes from the injected TurnURL seam (chatd config → admin.Deps); an
+// unconfigured check answers ok=false with "not configured" — it never
+// panics and never exposes credentials. Result stays inside the admin plane.
+func (a *API) handleTURNCheck(w http.ResponseWriter, r *http.Request) {
+	if a.deps.TurnURL == "" {
+		middleware.WriteJSON(w, r, http.StatusOK, map[string]any{
+			"ok":      false,
+			"detail":  "turn not configured (set turn_url in chatd config)",
+			"checked": false,
+		})
+		return
+	}
+	res := diagnostics.ProbeTURN(r.Context(), a.deps.TurnURL)
+	middleware.WriteJSON(w, r, http.StatusOK, map[string]any{
+		"ok":          res.OK,
+		"transport":   res.Transport,
+		"addr":        res.Addr,
+		"detail":      res.Detail,
+		"duration_ms": res.Duration,
+		"checked_at":  res.CheckedAt,
+	})
 }

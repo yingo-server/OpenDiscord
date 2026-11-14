@@ -172,6 +172,19 @@ func (p *Plane) Unsubscribe(c *Conn) {
 	}
 }
 
+// ConnOf 返回该 (uid, dev) 连接的订阅（kind 15 上行 ACK 的定位入口，
+// P3d-2 接线：Router 解析 MAILBOX_ACK 后按连接转调 OnAck）；无订阅返回 nil。
+func (p *Plane) ConnOf(uid int64, dev string) *Conn {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, c := range p.conns[uid] {
+		if c.dev == dev {
+			return c
+		}
+	}
+	return nil
+}
+
 // Pump 按 mailbox_seq 升序把 cursor+1..head 的条目逐条 sendFn（§3.1）。
 // 每发 1 条 credit--；credit 耗尽 → PAUSED 并停止拉取（不丢、不标记）。
 // 同一 conn 内严格有序；PAUSED 只发生在窗口边界（§3.3）。

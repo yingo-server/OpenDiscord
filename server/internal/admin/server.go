@@ -48,6 +48,9 @@ type Config struct {
 	BreakerThreshold int
 	BreakerOpen      time.Duration
 
+	// TurnURL is the TURN URI used by the admin diagnostics self-check.
+	TurnURL string
+
 	Now func() time.Time
 }
 
@@ -231,6 +234,7 @@ func New(cfg Config, deps Deps) (*Server, error) {
 		OpLimiter:     opLimiter,
 		AuditShim:     shim,
 		Logger:        logger,
+		TurnURL:       cfg.TurnURL,
 	})
 
 	s := &Server{

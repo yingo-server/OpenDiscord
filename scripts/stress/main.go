@@ -235,6 +235,8 @@ type levelResult struct {
 	DownMsgNew      int64           // msg_new frames (live fanout + catch-up replay)
 	DownCtrl        int64           // every other downstream frame (ack/typing/presence/error/...)
 	SyncRequests    int64           // uplink kind 8 pulls (client QPS numerator)
+	DownRateLimited int64           // kind 13 RATE_LIMITED frames observed (S-6 adaptive evidence)
+	SlowInjected    int             // S-4: connections pacing slowFactor× slower
 	Convergence     []time.Duration // watermark latestSeq → lastSeq caught-up samples
 	ConvergenceOpen int64           // watermarks still unsettled at window end
 }
@@ -258,6 +260,12 @@ type levelPlan struct {
 	mix         *mixer
 	rampBudget  time.Duration
 	pullMode    bool
+	// S-4 slow-consumer injection (REL): a deterministic subset of workers
+	// paces their ops slowFactor× slower. Reads are untouched — a slow
+	// consumer here is a connection whose send loop stalls, exercising server
+	// backpressure, not a closed TCP window.
+	slowRatio  float64
+	slowFactor float64
 }
 
 func runLevel(p levelPlan) *levelResult {
@@ -337,6 +345,12 @@ func runLevel(p levelPlan) *levelResult {
 	deadline := time.Now().Add(p.duration)
 	var swg sync.WaitGroup
 	for _, w := range workers {
+		slow, mult := slowFor(w.id, len(workers), p.slowRatio, p.slowFactor)
+		w.slowMult = mult
+		if slow {
+			w.isSlow = true
+			res.SlowInjected++
+		}
 		go w.readLoop(peer)
 		swg.Add(1)
 		go func(w *worker) {
@@ -373,6 +387,7 @@ func runLevel(p levelPlan) *levelResult {
 			res.DownMsgNew += w.downMsgNew.Load()
 			res.DownCtrl += w.downCtrl.Load()
 			res.SyncRequests += w.syncQPS.Load()
+			res.DownRateLimited += w.downRateLimited.Load()
 			if w.pull != nil {
 				conv = append(conv, w.pull.convergence())
 			}
@@ -397,25 +412,40 @@ func runLevel(p levelPlan) *levelResult {
 
 func main() {
 	var (
-		mode     = flag.String("mode", "both", "load mode: http | ws | both | mixed (mixed = WS with MSG_SEND/TYPING/RECEIPT/PRESENCE)")
-		conns    = flag.Int("conns", 64, "concurrent WS connections (workers)")
-		secs     = flag.Int("duration", 10, "steady-state measurement window in seconds, per level")
-		interval = flag.Duration("interval", 100*time.Millisecond, "per-worker pacing between ops (raise to stay under per-conn rate limits)")
-		convMem  = flag.Int("conv-members", 2, "members per seeded conversation (fanout width); each sender is a member of its conv")
-		skipBoot = flag.Bool("no-boot", false, "use an already-running chatd at -base (set CHATD_DB to its hot.db)")
-		base     = flag.String("base", "http://127.0.0.1:18080", "chatd base URL (used with -no-boot)")
-		out      = flag.String("out", "result.json", "result JSON file")
-		assert   = flag.Bool("assert", false, "exit 1 when thresholds are missed")
-		ladder   = flag.String("ladder", "", "auto-scale: 'start=N,max=M'; doubles conns until availability < 70%")
-		noRL     = flag.Bool("no-ratelimit", false, "DISABLE rate limiting (raw-ceiling mode; the run is flagged)")
-		metrics  = flag.String("metrics-url", "", "optional admin REST /api/v1/metrics URL to scrape server-side counters")
-		sendR    = flag.Int("send-ratio", 70, "mixed mode: % of MSG_SEND")
-		typingR  = flag.Int("typing-ratio", 15, "mixed mode: % of TYPING")
-		receiptR = flag.Int("receipt-ratio", 10, "mixed mode: % of RECEIPT")
-		presR    = flag.Int("presence-ratio", 5, "mixed mode: % of PRESENCE")
-		pullMode = flag.Bool("pull-mode", false, "enable pull-mode client behaviour: handle kind 14 WATERMARK, reply with 8 SYNC pulls (spec pull-mode-spec §4.4); default false = push-mode, byte-identical to pre-§4.4 behaviour")
+		mode       = flag.String("mode", "both", "load mode: http | ws | both | mixed (mixed = WS with MSG_SEND/TYPING/RECEIPT/PRESENCE)")
+		conns      = flag.Int("conns", 64, "concurrent WS connections (workers)")
+		secs       = flag.Int("duration", 10, "steady-state measurement window in seconds, per level")
+		interval   = flag.Duration("interval", 100*time.Millisecond, "per-worker pacing between ops (raise to stay under per-conn rate limits)")
+		convMem    = flag.Int("conv-members", 2, "members per seeded conversation (fanout width); each sender is a member of its conv")
+		skipBoot   = flag.Bool("no-boot", false, "use an already-running chatd at -base (set CHATD_DB to its hot.db)")
+		base       = flag.String("base", "http://127.0.0.1:18080", "chatd base URL (used with -no-boot)")
+		out        = flag.String("out", "result.json", "result JSON file")
+		assert     = flag.Bool("assert", false, "exit 1 when thresholds are missed")
+		ladder     = flag.String("ladder", "", "auto-scale: 'start=N,max=M'; doubles conns until availability < 70%")
+		noRL       = flag.Bool("no-ratelimit", false, "DISABLE rate limiting (raw-ceiling mode; the run is flagged)")
+		metrics    = flag.String("metrics-url", "", "optional admin REST /api/v1/metrics URL to scrape server-side counters")
+		sendR      = flag.Int("send-ratio", 70, "mixed mode: % of MSG_SEND")
+		typingR    = flag.Int("typing-ratio", 15, "mixed mode: % of TYPING")
+		receiptR   = flag.Int("receipt-ratio", 10, "mixed mode: % of RECEIPT")
+		presR      = flag.Int("presence-ratio", 5, "mixed mode: % of PRESENCE")
+		pullMode   = flag.Bool("pull-mode", false, "enable pull-mode client behaviour: handle kind 14 WATERMARK, reply with 8 SYNC pulls (spec pull-mode-spec §4.4); default false = push-mode, byte-identical to pre-§4.4 behaviour")
+		univPull   = flag.Bool("universal-pull", false, "REL/lts-1.4: universal-pull stress mode — ALL sessions watermark-driven (kind 14 → 8 SYNC, reuses pullTracker); implies --pull-mode. Reports watermark/s, SYNC QPS, convergence latency and the 3-way downstream frame split (spec universal-pull-spec §4)")
+		slowRatio  = flag.Float64("slow-ratio", 0, "S-4: fraction of connections injected as slow consumers (0..1), e.g. 0.05 = 50/1000")
+		slowFactor = flag.Float64("slow-factor", 5, "S-4: pacing multiplier applied to slow-consumer connections (>=1)")
+		adaptCmp   = flag.String("adaptive-compare", "", "S-6: compare two recorded --universal-pull result JSONs (static.json,adaptive.json), print batch/interval evidence + rate-limit hits, then exit (no load is generated)")
 	)
 	flag.Parse()
+
+	// S-6 offline comparison: no load, just merge the two recorded runs.
+	if *adaptCmp != "" {
+		runAdaptiveCompare(*adaptCmp)
+		return
+	}
+
+	// universal-pull is watermark-driven end to end, so it implies pull-mode.
+	if *univPull {
+		*pullMode = true
+	}
 
 	rateLimit := !*noRL
 
@@ -514,7 +544,8 @@ func main() {
 			conns: *conns, convMembers: convMembers, convIDs: convIDs, pool: pool,
 			base: *base, duration: time.Duration(*secs) * time.Second,
 			interval: *interval, mix: mkMixer(), rampBudget: 120 * time.Second,
-			pullMode: *pullMode,
+			pullMode:  *pullMode,
+			slowRatio: *slowRatio, slowFactor: *slowFactor,
 		})
 		fmt.Printf("\nws handshakes: %d / %d\n", res.Handshakes, *conns)
 		printLevelDetail(res, convMembers, rateLimit)
@@ -722,6 +753,10 @@ func printLevelDetail(r *levelResult, convMembers int, rateLimit bool) {
 	fmt.Printf("availability(ACK/send)= %.1f%%   rpm= %.0f   write_err(total)=%d   server_drop=%d\n",
 		avail, rpm, totalWriteErr(r), r.ServerDrop)
 	fmt.Printf("send->peer_recv: %s\n", peer)
+	if r.SlowInjected > 0 {
+		fmt.Printf("S-4 slow-consumer injection: %d/%d conns slowed (read loops untouched)\n",
+			r.SlowInjected, r.Conns)
+	}
 	var notes []string
 	if len(ms.Samples) < 1000 {
 		notes = append(notes, "insufficient samples (<1000): p95/p99 unreliable")
@@ -805,6 +840,15 @@ func writeJSON(path string, ladder bool, rows []*levelResult, preregUsers int, r
 		"ladder": ladder, "rate_limit_enabled": rateLimit,
 		"pre_registered_users": preregUsers, "conv_members": convMembers,
 		"generated_at": time.Now().UTC().Format(time.RFC3339), "levels": outRows,
+	}
+	// REL/universal-pull: persist the pull-mode measurement block so the S-6
+	// static-vs-adaptive comparison (-adaptive-compare) can replay it.
+	if len(rows) > 0 && rows[0].PullMode {
+		pullRows := make([]pullJSONRow, 0, len(rows))
+		for _, r := range rows {
+			pullRows = append(pullRows, pullRowFromLevel(r))
+		}
+		doc["pull_levels"] = pullRows
 	}
 	blob, _ := json.MarshalIndent(doc, "", "  ")
 	os.WriteFile(path, blob, 0o644)

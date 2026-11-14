@@ -10,6 +10,7 @@ package router
 import (
 	"context"
 	"encoding/binary"
+	"encoding/json"
 	"time"
 
 	"github.com/yingo-server/OpenDiscord/server/internal/pkg/featureflags"
@@ -46,6 +47,23 @@ type Router struct {
 	OnForward func(kind uint32)
 	OnDeliver func(kind uint32, connID uint64)
 	OnKick    func(uid int64, reason string)
+
+	// V3DirectEnabled 是双投递保护开关（docs/v3-bus-design.md §6 灰度切换，
+	// universal-pull-spec §1.5「同一 uid 不允许两路径同时投递」）：
+	// 返回 true = 允许旧逐成员直投；false = 该 uid 的连接已由 v3 deliverLoop
+	// 从 mailbox 推送，本函数不得再写。nil = 恒允许（未装配 v3，行为与主干
+	// 逐字节一致）。判定实现在装配层（chatd v3hooks.go，唯一路径真相源），
+	// Router 只持有指针，不 import bus 包。
+	V3DirectEnabled func(uid int64) bool
+
+	// V3SkipCounter 是 v3 抑制的观测计数（双投递保护指标）：每跳过一次旧
+	// 直投 +1。nil = 不计数（零开销）。
+	V3SkipCounter func()
+
+	// V3AckSink 是 kind 15 MAILBOX_ACK 上行处理回调（nil = 丢弃该帧，与
+	// 未知 kind 同路径）：Router 解析 {cursor, ackedCount?} 后按连接定位
+	// 转调 Plane.OnAck（→ hub.Ack → Store.MarkAcked，装配层闭包）。
+	V3AckSink func(c session.Conn, cursor int64, ackedCount int)
 }
 
 // New 构造 router。
@@ -163,6 +181,36 @@ func (r *Router) handleLocal(ev *UpEvent) {
 	case kinds.KindResume:
 		// 补拉需要数据层 seq：本地不处理，转交桥接（RESUME 白名单只免限流）。
 		r.forward(ev, env)
+	case kinds.KindMailboxAck:
+		// kind 15 MAILBOX_ACK（v3 §4.2 累积确认，C→S）：解析 {cursor,
+		// ackedCount?} 后转调 V3AckSink（装配层闭包 → Plane.OnAck →
+		// hub.Ack → Store.MarkAcked）。不新增 kind、不改 Envelope；
+		// sink 为 nil（未装配 v3）时与未知 kind 同路径丢弃，零行为差异。
+		if r.V3AckSink == nil {
+			return
+		}
+		var raw struct {
+			Cursor      uint64 `json:"cursor"`
+			CursorSnake uint64 `json:"cursor_snake"`
+			AckedCount  uint32 `json:"ackedCount"`
+			AckedSnake  uint32 `json:"acked_count"`
+		}
+		if err := json.Unmarshal(env.Payload, &raw); err != nil {
+			if r.logger != nil {
+				r.logger.Debug("mailbox ack: bad payload", "conn", ev.Conn.ID())
+			}
+			return
+		}
+		cursor := raw.Cursor
+		if cursor == 0 {
+			cursor = raw.CursorSnake
+		}
+		n := int(raw.AckedCount)
+		if n == 0 {
+			n = int(raw.AckedSnake)
+		}
+		r.V3AckSink(ev.Conn, int64(cursor), n)
+		return
 	case kinds.KindFeatureFlags:
 		// 订阅：直接回当前进程 flag 快照（写库 ack 由数据层负责）。
 		flags := map[string]string{}
@@ -260,6 +308,19 @@ func (r *Router) deliver(env *chatpb.Envelope, connID uint64, preEncoded []byte)
 		if err != nil {
 			return
 		}
+	}
+	// 双投递保护（v3 灰度切换）：灰度 uid 的连接已由 mailbox deliverLoop 推送，
+	// 本函数跳过旧逐成员直投。判定在装配层（唯一路径真相源，flag 快照 +
+	// InV3Bucket），nil 开关 = 未装配 v3 = 恒直投（逐字节主干行为）。
+	if r.V3DirectEnabled != nil && env.GetUserId() > 0 && !r.V3DirectEnabled(int64(env.GetUserId())) {
+		if r.V3SkipCounter != nil {
+			r.V3SkipCounter()
+		}
+		if r.logger != nil {
+			r.logger.Debug("v3: legacy direct delivery suppressed", "uid", env.GetUserId(),
+				"kind", kinds.KindName(env.Kind))
+		}
+		return
 	}
 	if uid := int64(env.GetUserId()); uid > 0 {
 		if n := r.sess.Broadcast(uid, b); n > 0 {

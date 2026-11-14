@@ -50,6 +50,14 @@ type config struct {
 	// Flags are the boot-time feature-flag defaults written into the hot DB
 	// and served to clients (SIGHUP re-publishes them).
 	Flags map[string]bool
+
+	// TurnURL 是自建 TURN 地址（turn:/turns:），仅管理面 TURN 自检用
+	//（OPS-2：admin diagnostics ProbeTURN；空 = 自检返回"未配置"）。
+	TurnURL string
+
+	// ProvidersPath 是供应商 webhook 配置文件路径（OPS-2：authsvc 适配器；
+	// 空/缺失 = 通道保持 fail-closed，不发送、不 panic）。
+	ProvidersPath string
 }
 
 func defaultConfig() *config {
@@ -140,6 +148,10 @@ func loadConfig(path string) (*config, error) {
 			if n, e := strconv.Atoi(v); e == nil && n > 0 {
 				cfg.RefreshTTLSec = n
 			}
+		case "providers_path":
+			cfg.ProvidersPath = v
+		case "turn_url":
+			cfg.TurnURL = v
 		}
 	}
 	// [feature_flags] section overrides the compiled defaults.

@@ -30,12 +30,33 @@ import { toast } from '../ui/components/Toast';
 import { t } from '../ui/i18n';
 import { setAppServices } from '../ui/services/app-services';
 import { callController } from '../net/call/controller';
+import { ensureNotificationPermission, registerServiceWorker, subscribeAndReport } from '../net/push';
 
 const IS_MOCK = import.meta.env.VITE_MOCK === '1';
+
+/** PWA / Web Push（FE-2）：production only，dev/mock 不注册；全程 fail-closed。 */
+async function initPush(): Promise<void> {
+  const registration = await registerServiceWorker();
+  if (!registration) return;
+  if (!(await ensureNotificationPermission())) {
+    console.info('[push] notification permission not granted, skip subscribe');
+    return;
+  }
+  // 服务端接口缝未实现时内部 fail-closed，只记日志。
+  void subscribeAndReport({ registration });
+  // SW 点击通知 → focus 会话。
+  navigator.serviceWorker.addEventListener('message', (event) => {
+    const data = event.data as { type?: string; convId?: unknown } | null;
+    if (data?.type === 'push-focus-conv' && typeof data.convId === 'number' && data.convId > 0) {
+      navigate(`/chat/${data.convId}`);
+    }
+  });
+}
 
 export async function bootstrap(registry: HandlerRegistry): Promise<void> {
   applyTheme(getThemePref());
   watchSystemTheme();
+  void initPush();
 
   const tokenStore = new TokenStore();
   const cache = await openCache();

@@ -16,6 +16,9 @@ OpenDiscord 采用分层 socket 架构：总线层为骨架，桥接层为枢纽
 | [CLI 参考](cli-reference.md) | `adminctl` / `opendiscordctl` / `opchat` 完整参数与退出码 |
 | [WS 协议](ws-protocol.md) | 帧格式、kind 号段、各 kind payload、时序、限流语义 |
 | [路线图](roadmap.md) | 已完成 / v1.2 计划 / 明确不做及理由 |
+| [1.4 LTS 规划](lts-1.4-plan.md) | 普遍拉取 / 参数自适应 / v3 总线三核心、12 条已知问题决策（§5）、S-1~S-7 验收门槛（§6） |
+| [普遍拉取规范](universal-pull-spec.md) | 水位线协议、自适应 AIMD 算法与边界、兼容矩阵、S-6/S-7 断言、回滚开关清单 |
+| [v3 消息总线设计](v3-bus-design.md) | MailboxHub / DeliveryPlane / 灰度双写 / kind 15-17、接线与回滚铁律 |
 | [v1.1 升级说明](release-notes-v1.1.0.md) | 升级步骤、配置变更、破坏性变更、回滚 |
 | [已知问题](known-issues.md) | 已知缺陷、影响范围与计划修复版本 |
 | [LTS 发布清单](lts-checklist.md) | 三轮审查的全部结论与当前状态（发布门槛） |
