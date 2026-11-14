@@ -52,7 +52,21 @@ func newPullRig(t *testing.T, nMembers int) *pullRig {
 		}
 	}
 	go p.fl.run(ctx)
-	return &pullRig{p: p, msgs: msgs, convs: convs, flags: featureflags.New(), cid: cid, n: nMembers, stop: cancel}
+	return &pullRig{p: p, msgs: msgs, convs: convs, flags: newOffFlags(), cid: cid, n: nMembers, stop: cancel}
+}
+
+// newOffFlags 显式构造 off 语义快照（§F.2）：1.4 转生产后 Defaults() 已把
+// universal_pull / adaptive_control / v3_bus / msg_domain_v2 全部默认开启，
+// 需要 off 基线的测试不得再依赖 Defaults()，一律用 NewFromMap 显式构造。
+func newOffFlags() *featureflags.Flags {
+	return featureflags.NewFromMap(map[string]any{
+		featureflags.KeyPullModeThreshold:      0,
+		featureflags.KeyUniversalPullEnabled:   false,
+		featureflags.KeyAdaptiveControlEnabled: false,
+		featureflags.KeyV3BusEnabled:           false,
+		featureflags.KeyV3BusPercent:           0,
+		featureflags.KeyMsgDomainV2:            false,
+	})
 }
 
 // send commits one message (waits for its ACK, i.e. the group commit is done)
@@ -111,7 +125,7 @@ func firstOfKind(envs []*env, kind uint32) *env {
 func newDeciderPlane(t *testing.T) (*fanoutPlane, *featureflags.Flags, *time.Time) {
 	t.Helper()
 	f := newFanoutPlane(nil, func(*env) bool { return true }, log.For("fanout-test"))
-	fl := featureflags.New()
+	fl := newOffFlags()
 	f.setFlags(fl)
 	clk := time.Unix(1700000000, 0)
 	f.now = func() time.Time { return clk }
@@ -464,7 +478,7 @@ type legacyConvPayloadJSON struct {
 func TestTSV6_MembersOmittedBackwardCompatible(t *testing.T) {
 	// 101 人群：202 事件必须 members_omitted=true、不带全量成员。
 	members := membersN(101)
-	d := &convDomain{flags: featureflags.New()}
+	d := &convDomain{flags: newOffFlags()}
 	d.flags.Apply(map[string]any{featureflags.KeyPullModeThreshold: 100})
 
 	full, err := wire.Marshal(fullConvPayloadForEvents(3, members, 77))

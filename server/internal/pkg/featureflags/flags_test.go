@@ -42,6 +42,27 @@ func TestPullModeThrottleDefaults(t *testing.T) {
 	}
 }
 
+// TestProductionDefaults 锁定 1.4 转生产默认（lts-1.4-acceptance §F.3）：
+// 四个实验性 flag 默认 true、v3 灰度 percent=100、消息域 v2 默认 true。
+// 回滚路径 = SIGHUP 热改对应 flag 为 false / percent=0（S-7 逐字节基线）。
+func TestProductionDefaults(t *testing.T) {
+	f := New()
+	for k, want := range map[string]any{
+		KeyUniversalPullEnabled:   true,
+		KeyAdaptiveControlEnabled: true,
+		KeyV3BusEnabled:           true,
+		KeyV3BusPercent:           100,
+		KeyMsgDomainV2:            true,
+	} {
+		if got, ok := Defaults()[k]; !ok || got != want {
+			t.Errorf("Defaults()[%s] = %v (present=%v), want %v", k, got, ok, want)
+		}
+		if got, ok := f.Get(k); !ok || got != want {
+			t.Errorf("New().Get(%s) = %v (present=%v), want %v", k, got, ok, want)
+		}
+	}
+}
+
 // TestIntCoercion 覆盖 flag 值的三种来源：Go 默认(int)、DB/JSON 装载(float64)、
 // 911 下发的字符串。类型不符时回退 def，绝不 panic。
 func TestIntCoercion(t *testing.T) {

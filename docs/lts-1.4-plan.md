@@ -131,11 +131,19 @@ v3 的 P0~P3d-2b-1 已全部落盘但**默认关闭、零行为影响**：
 
 | 场景 | 负载/条件 | 门槛（§6） | 运行记录（run_id / result JSON） | 结论 |
 |---|---|---|---|---|
-| S-1 | 500 人群 × 1000 在线 | 可用性 ≥95%、p95 ≤100ms、`Conn.Dropped` 数据帧 = 0 | | |
-| S-2 | 1000 × 50 人群 | 可用性 ≥90% | | |
-| S-3 | 512 × 10 人群 | 可用性 ≥99%、p95 ≤80ms，不劣于 v1.1.1 | | |
-| S-4 | 慢消费者注入（50/1000 慢连接） | 其余 950 连接 ≥99%、慢连接重连续传无 gap | | |
-| S-5 | 重启风暴 | 续传 QPS ≤800、无 5xx、cursor 不回退 | | |
-| S-6 | 自适应振荡（static vs adaptive 两组，负载阶跃 3 次） | 参数收敛且不跨硬界，p95 不出现 >2× 抖动 | | |
-| S-7 | flag 回滚（`universal_pull_enabled=false` + `v3_bus_enabled=false`） | 行为逐字节同 v1.2.1 | | |
+| S-1 | 500 人群 × 1000 在线（2c2g / 4c16g 两档） | 可用性 ≥95%、p95 ≤100ms、`Conn.Dropped` 数据帧 = 0 | | |
+| S-2 | 1000 × 50 人群（2c2g / 4c16g 两档） | 可用性 ≥90% | | |
+| S-3 | 512 × 10 人群（2c2g / 4c16g 两档） | 可用性 ≥99%、p95 ≤80ms，不劣于 v1.1.1 | | |
+| S-4 | 慢消费者注入（50/1000 慢连接；2c2g / 4c16g 两档） | 其余 950 连接 ≥99%、慢连接重连续传无 gap | | |
+| S-5 | 重启风暴（2c2g / 4c16g 两档） | 续传 QPS ≤800、无 5xx、cursor 不回退 | | |
+| S-6 | 自适应振荡（static vs adaptive 两组，负载阶跃 3 次；2c2g / 4c16g 两档） | 参数收敛且不跨硬界，p95 不出现 >2× 抖动 | | |
+| S-7 | flag 回滚（`universal_pull_enabled=false` + `v3_bus_enabled=false`；2c2g / 4c16g 两档） | 行为逐字节同 v1.2.1 | | |
+| **转生产判定** | S-1~S-7 七组 dispatch 全部 PASS（编排入口：`scripts/stress/acceptance.sh`；hw_profile 输入 2c2g / 4c16g，两档结论按档分列） | 全部 PASS 才允许把 4 个 flag 默认值改 true（`universal_pull_enabled` / `adaptive_control_enabled` / `v3_bus_enabled` / `v3_bus_percent`）；改 flag 属**最后单独提交**，不在验收提交内 | 由 `scripts/stress/acceptance.sh` 写入（run_id + 证据目录） | 待定 |
+
+> §9 表由 `scripts/stress/acceptance.sh` 填写：脚本按 `hw_profile`（2c2g / 4c16g）两档依次 dispatch S-1~S-7、
+> 收集 result JSON、按 `docs/lts-1.4-acceptance.md` §C 的门槛常量判定 PASS/FAIL/BLOCKED，
+> 并回写「运行记录」与「结论」两列（结论列按 `2c2g: …；4c16g: …` 分档合并）。
+> 2c2g 档在 workflow 侧用 cgroup v2（memory.max=2G / cpu.max 2 核）+ taskset + `GOMAXPROCS=2`
+> 约束 chatd 与 stressd；约束机制全部不可用时标 BLOCKED，不假跑。
+> 任一项 FAIL 或证据缺失（BLOCKED）时保持中间态：flag 默认值不变。
 

@@ -11,6 +11,7 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"strings"
 	"time"
 
 	"github.com/yingo-server/OpenDiscord/server/internal/pkg/featureflags"
@@ -64,6 +65,13 @@ type Router struct {
 	// 未知 kind 同路径）：Router 解析 {cursor, ackedCount?} 后按连接定位
 	// 转调 Plane.OnAck（→ hub.Ack → Store.MarkAcked，装配层闭包）。
 	V3AckSink func(c session.Conn, cursor int64, ackedCount int)
+
+	// CapSink 是旧客户端能力协商的登记回调（lts-1.4-acceptance §B）：
+	// Router 在 HELLO(1) / CLIENT_CAPS(18) 上行帧里解析出 pull_capable
+	// 后转调它，把能力记进连接注册表（session.SetPullCapable）。
+	// nil = 不登记（等价于「所有客户端都是旧客户端」→ 一律 inline，
+	// 与装配层未接入时的主干行为逐字节一致）。
+	CapSink func(connID uint64, pullCapable bool)
 }
 
 // New 构造 router。
@@ -168,11 +176,23 @@ func (r *Router) handleLocal(ev *UpEvent) {
 	case kinds.KindPong:
 		// 客户端 pong：读超时已由 acceptor 的 pong handler 续期，这里无需处理。
 	case kinds.KindHello:
-		// 连接生命周期状态由 acceptor 持有；HELLO 只记录客户端版本。
+		// 连接生命周期状态由 acceptor 持有；HELLO 只记录客户端版本 + 能力。
 		if r.logger != nil {
 			var hello chatpb.Hello
 			_ = hello.Unmarshal(env.Payload)
 			r.logger.Debug("hello", "conn", ev.Conn.ID(), "client", hello.ClientVersion, "device", ev.Conn.DeviceID())
+		}
+		// 旧客户端能力协商（§B）：HELLO 载荷里带 pull_capable / "pull_capable"
+		// 能力串即视为「具备拉取能力」。缺省 false = 老客户端 → 保持 inline。
+		r.recordCapability(ev.Conn, parseClientCaps(env.Payload))
+	case kinds.KindClientCaps:
+		// kind 18 CLIENT_CAPS（C→S）：客户端显式上报能力，payload =
+		// JSON {"pull_capable":bool}（或 protobuf Hello）。纯记录，不回帧、
+		// 不改变任何投递路径（投递判定在数据层 + universal_pull_enabled）。
+		ok := parseClientCaps(env.Payload)
+		r.recordCapability(ev.Conn, ok)
+		if r.logger != nil {
+			r.logger.Debug("client caps", "conn", ev.Conn.ID(), "pull_capable", ok)
 		}
 	case kinds.KindAuth:
 		// upgrade 前已完成鉴权；帧内 AUTH 视为幂等确认。
@@ -232,6 +252,74 @@ func (r *Router) handleLocal(ev *UpEvent) {
 	default:
 		r.forward(ev, env)
 	}
+}
+
+// recordCapability 把一条连接的能力登记到连接注册表（CapSink 为 nil 时
+// 不做登记 —— 未装配 = 全部按旧客户端对待，行为与主干逐字节一致）。
+func (r *Router) recordCapability(c session.Conn, pullCapable bool) {
+	if r == nil || r.CapSink == nil || c == nil {
+		return
+	}
+	r.CapSink(c.ID(), pullCapable)
+}
+
+// parseClientCaps 解析客户端能力上报，返回该连接是否具备拉取能力
+// （pull_capable）。两种载荷形态都接受：
+//
+//	protobuf：chatpb.Hello{ pull_capable = 10 } 或 capabilities 里的
+//	          "pull_capable" 能力串；
+//	JSON：    {"pull_capable":bool} / {"pullCapable":bool} / {"capabilities":[...]}。
+//
+// 载荷以 '{' 开头按 JSON 解析，否则按 protobuf 解析。解析失败一律返回
+// false（缺省 = 老客户端 → inline，宁可多发不漏消息）。
+func parseClientCaps(payload []byte) bool {
+	if len(payload) == 0 {
+		return false
+	}
+	if payload[0] == '{' {
+		var raw struct {
+			PullCapable  *bool    `json:"pull_capable"`
+			PullCapableC *bool    `json:"pullCapable"`
+			Capabilities []string `json:"capabilities"`
+		}
+		if err := json.Unmarshal(payload, &raw); err != nil {
+			return false
+		}
+		if raw.PullCapable != nil && *raw.PullCapable {
+			return true
+		}
+		if raw.PullCapableC != nil && *raw.PullCapableC {
+			return true
+		}
+		for _, c := range raw.Capabilities {
+			if isPullCapabilityToken(c) {
+				return true
+			}
+		}
+		return false
+	}
+	var hello chatpb.Hello
+	if err := hello.Unmarshal(payload); err != nil {
+		return false
+	}
+	if hello.GetPullCapable() {
+		return true
+	}
+	for _, c := range hello.GetCapabilities() {
+		if isPullCapabilityToken(c) {
+			return true
+		}
+	}
+	return false
+}
+
+// isPullCapabilityToken 判定能力串是否表示「支持拉取模式（kind 14）」。
+func isPullCapabilityToken(token string) bool {
+	switch strings.ToLower(strings.TrimSpace(token)) {
+	case "pull_capable", "pull-capable", "pull", "pull_mode", "pull-mode", "watermark":
+		return true
+	}
+	return false
 }
 
 // mustMarshal is a tiny helper for locally built error payloads.

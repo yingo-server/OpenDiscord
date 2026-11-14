@@ -26,6 +26,9 @@ export const KINDS = {
   MAILBOX_PAUSE: 16, // S→C 仅诊断：正常暂停靠 credit==0 停发，不发帧
   MAILBOX_RESUME: 17, // C→S 续传：{cursor}，语义 = RESUME(6) 的 mailbox 形态
 
+  // 旧客户端能力协商（lts-1.4-acceptance §B，15-19 号段）
+  CLIENT_CAPS: 18, // C→S 能力上报：payload JSON {"pull_capable":bool}；服务端据此决定是否走水位线
+
   // 100-199 消息层
   MSG_SEND: 101,
   MSG_NEW: 102,

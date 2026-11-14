@@ -270,6 +270,29 @@ func (p *Pipe) SetAdaptiveStore(a *adaptiveStore) {
 	}
 }
 
+// PullCapabilityFn 报告某个 uid 是否具备拉取模式能力（kind 14 handler）。
+// 由装配层注入（cmd/chatd）：它读用户层连接注册表的能力表
+// （session.PullCapableUID），返回 false = 老客户端 → 必须保持 inline 逐成员推。
+type PullCapabilityFn func(uid int64) bool
+
+// SetPullCapability installs the old-client capability probe
+// (lts-1.4-acceptance §B).
+//
+// universal_pull_enabled=true 时，MSG_NEW 的分流判定从「整会话一个口径」
+// 变成「按收件人能力口径」：
+//   - fn(uid) == true  → 该 uid 收水位线（kind 14）+ 拉取；
+//   - fn(uid) == false → 该 uid 收 inline 102（老客户端，宁可多发不漏消息）。
+//
+// 三条边界：
+//   - fn == nil（未注入 / 单测装配）→ 全部 uid 走 inline，行为与 v1.2.1 一致；
+//   - universal_pull_enabled=false → 本回调根本不被调用（S-7 逐字节基线）；
+//   - 本回调只做「读能力」，不写 DB、不发帧、不改 flag。
+func (p *Pipe) SetPullCapability(fn PullCapabilityFn) {
+	if p.fanout != nil {
+		p.fanout.setPullCapability(fn)
+	}
+}
+
 // NewAdaptiveStore 创建空的 effective[cid] 表（装配层持有并经 SetAdaptiveStore
 // 注入；adaptiveWrite 允许装配层的控制循环写入条目，机制层只读）。
 // adaptive_control_enabled=false（默认）时装配层不创建、不注入——机制层

@@ -75,7 +75,8 @@ func newTestWire(t *testing.T, db *sql.DB, fs *flagStore) *WireV3 {
 	return NewWireV3(db, fs.snapshot, delivery.Config{})
 }
 
-// 默认关闭快照：v3_bus_enabled=false（§6/§9 主干默认）。
+// 默认关闭快照：显式 off 构造（§F.2）。注释保留旧定调（§6/§9 主干默认），
+// 1.4 转生产后 Defaults() 已默认开启，off 语义一律显式构造，不依赖 Defaults()。
 func closedFlags() map[string]any {
 	return map[string]any{
 		featureflags.KeyV3BusEnabled: false,
@@ -90,8 +91,10 @@ func TestTSV5GrayToggle(t *testing.T) {
 	w := newTestWire(t, db, fs)
 
 	ctx := context.Background()
-	if w.Enabled() {
-		t.Fatal("default flags: Enabled() must be false")
+	// §F.2：off 基线来自显式 closedFlags() 构造，不依赖 Defaults()（1.4
+	// 转生产后 Defaults() 已将 v3_bus_enabled 默认 true）。
+	if !w.Enabled() {
+		t.Fatal("explicit closedFlags() store: Enabled() must be false (defaults are on, see TestProductionDefaults)")
 	}
 	seq, err := w.Hub.Offer(ctx, 42, mailbox.Envelope{Kind: 103, MsgID: 1, Blob: []byte("a")})
 	if err != nil {

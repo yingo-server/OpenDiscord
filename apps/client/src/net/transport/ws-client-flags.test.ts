@@ -67,3 +67,50 @@ describe('WsClient 连接建立后请求 feature flags（P0-4）', () => {
     client.stop();
   });
 });
+
+/**
+ * 旧客户端能力协商（lts-1.4-acceptance §D，转生产阻断项）：
+ * 连接 open 后必须立即上报 CLIENT_CAPS(18) {"pull_capable":true}，且每次
+ * open（含重连）恰好一帧 —— 服务端按连接注册能力，重连必须重新登记。
+ */
+function capsOf(socket: RecordingSocket): Array<{ kind: number; payload: string }> {
+  return socket.sent
+    .filter((frame): frame is string => typeof frame === 'string')
+    .map((frame) => decodeEnvelope(frame))
+    .filter((env) => env.kind === KINDS.CLIENT_CAPS)
+    .map((env) => ({ kind: env.kind, payload: new TextDecoder().decode(env.payload) }));
+}
+
+describe('WsClient 能力上报（§D CLIENT_CAPS / pull_capable）', () => {
+  it('open 后立即上报一帧 CLIENT_CAPS(18)，payload {"pull_capable":true}', () => {
+    const { client, sockets } = makeClient();
+    client.start();
+    const socket = sockets[0];
+    socket.onopen?.();
+    const caps = capsOf(socket);
+    expect(caps).toHaveLength(1);
+    expect(JSON.parse(caps[0].payload)).toEqual({ pull_capable: true });
+    client.stop();
+  });
+
+  it('同一次连接 open 只发一帧（不重复上报）', () => {
+    const { client, sockets } = makeClient();
+    client.start();
+    const socket = sockets[0];
+    socket.onopen?.();
+    // 心跳 / 其他活动不额外触发能力帧
+    expect(capsOf(socket)).toHaveLength(1);
+    client.stop();
+  });
+
+  it('重连后重新上报（能力随连接生命周期重新登记）', () => {
+    const { client, sockets } = makeClient();
+    client.start();
+    sockets[0].onopen?.();
+    expect(capsOf(sockets[0])).toHaveLength(1);
+    // 模拟重连：再次 open
+    sockets[0].onopen?.();
+    expect(capsOf(sockets[0])).toHaveLength(2);
+    client.stop();
+  });
+});

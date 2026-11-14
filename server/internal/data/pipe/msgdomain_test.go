@@ -20,6 +20,10 @@ import (
 	"github.com/yingo-server/OpenDiscord/server/internal/proto/kinds"
 )
 
+func newOffFlags() *featureflags.Flags {
+	return featureflags.NewFromMap(map[string]any{featureflags.KeyMsgDomainV2: false})
+}
+
 // v2Pipe assembles a test pipe with the FE-1a flag ON and (optionally) an
 // audit journal.
 func v2Pipe(t *testing.T, fa *FakeAudit) (*Pipe, *pipefakes.FakeMsgStore, *pipefakes.FakeConvStore) {
@@ -34,7 +38,7 @@ func v2Pipe(t *testing.T, fa *FakeAudit) (*Pipe, *pipefakes.FakeMsgStore, *pipef
 	}
 	p := NewStores(nil, hot, cold, log.For("data-test"))
 	p.fl.interval = 5 * time.Millisecond
-	flags := featureflags.New()
+	flags := newOffFlags()
 	flags.Apply(map[string]any{featureflags.KeyMsgDomainV2: true})
 	p.SetFeatureFlags(flags)
 	return p, msgs, convs
@@ -70,7 +74,9 @@ func TestMsgDomainFlagOffIsNoop(t *testing.T) {
 	p := NewStores(nil, hotBundle{w: msgs, r: msgs, conv: convs, sys: pipefakes.NewFakeSysStore()},
 		ColdDeps{}, log.For("data-test"))
 	p.fl.interval = 5 * time.Millisecond
-	// Default flags: msg_domain_v2_enabled = false (do NOT apply the v2 delta).
+	// Default flags: msg_domain_v2_enabled = false（§F.2：显式 NewFromMap(off)，
+	// 不依赖 Defaults() —— 1.4 转生产后 Defaults 已默认 true）。
+	p.SetFeatureFlags(featureflags.NewFromMap(map[string]any{featureflags.KeyMsgDomainV2: false}))
 	ctx := context.Background()
 	cid, _ := convs.CreateConv(ctx, &store.ConvMeta{CType: 2, CreatedBy: 7, CreatedAt: 1}, 7)
 	seedMsg(t, msgs, cid, 7, 55, `{"text":"hi","media":[]}`)

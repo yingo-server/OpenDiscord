@@ -421,6 +421,9 @@ type Hello struct {
 	DeviceId      string
 	Capabilities  []string
 	Nonce         string
+	// PullCapable 旧客户端能力协商（lts-1.4-acceptance §B）：true = 客户端已
+	// 实现 kind 14 WATERMARK 处理器。缺省 false = 旧客户端，服务端保持 inline。
+	PullCapable bool
 }
 
 func (m *Hello) GetClientVersion() string {
@@ -451,6 +454,14 @@ func (m *Hello) GetNonce() string {
 	return ""
 }
 
+// GetPullCapable 报告客户端是否具备拉取模式能力（kind 14 handler）。
+func (m *Hello) GetPullCapable() bool {
+	if m != nil {
+		return m.PullCapable
+	}
+	return false
+}
+
 func (m *Hello) sizeHint() int {
 	if m == nil {
 		return 0
@@ -462,6 +473,9 @@ func (m *Hello) sizeHint() int {
 		n += 1 + pbVarintLen(uint64(len(e))) + len(e)
 	}
 	n += 1 + pbVarintLen(uint64(len(m.Nonce))) + len(m.Nonce)
+	if m.PullCapable {
+		n += 1 + pbVarintLen(1)
+	}
 	return n
 }
 
@@ -478,6 +492,9 @@ func (m *Hello) Marshal() ([]byte, error) {
 	}
 	if m.Nonce != "" {
 		b = pbAppendString(b, 4, m.Nonce)
+	}
+	if m.PullCapable {
+		b = pbAppendVarint(b, 10, 1)
 	}
 	return b, nil
 }
@@ -518,6 +535,21 @@ func (m *Hello) Unmarshal(b []byte) error {
 			}
 			b = r
 			m.Nonce = string(v)
+		case 10:
+			if wire != 0 {
+				r, ok := pbSkip(b, wire)
+				if !ok {
+					return ErrBadWire
+				}
+				b = r
+				break
+			}
+			v, r, ok := pbReadVarint(b)
+			if !ok {
+				return ErrBadWire
+			}
+			b = r
+			m.PullCapable = v != 0
 		default:
 			r, ok := pbSkip(b, wire)
 			if !ok {

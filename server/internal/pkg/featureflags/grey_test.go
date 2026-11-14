@@ -2,14 +2,15 @@ package featureflags
 
 import "testing"
 
-// TestV3BusDefaults 锁定 v3 总线默认关闭（v3-bus-design §9 中间态铁律）。
+// TestV3BusDefaults 锁定 1.4 转生产默认：v3 总线全量开启（S-1~S-7 压测守门）。
+// 回滚路径由显式 NewFromMap(off) 构造，见 TestInV3BucketKillSwitch。
 func TestV3BusDefaults(t *testing.T) {
 	f := New()
-	if f.Bool(KeyV3BusEnabled, true) {
-		t.Fatal("v3_bus_enabled default must be false (mainline rule)")
+	if !f.Bool(KeyV3BusEnabled, false) {
+		t.Fatal("v3_bus_enabled default must be true after 1.4 production rollout")
 	}
-	if got := f.Int(KeyV3BusPercent, -1); got != 0 {
-		t.Fatalf("v3_bus_percent default = %d, want 0", got)
+	if got := f.Int(KeyV3BusPercent, -1); got != 100 {
+		t.Fatalf("v3_bus_percent default = %d, want 100", got)
 	}
 }
 

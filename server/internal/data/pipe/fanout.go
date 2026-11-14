@@ -196,6 +196,14 @@ type fanoutPlane struct {
 	// fanout plane only reads it when universal_pull_enabled is on; a nil
 	// store or a missing entry falls back to the static flag defaults.
 	adaptive *adaptiveStore
+
+	// pullCapable is the old-client capability probe (lts-1.4-acceptance §B):
+	// it reports whether a recipient uid implements the kind 14 WATERMARK
+	// handler. nil = not wired (every uid is treated as an old client →
+	// inline, byte-identical to the pre-1.4 behaviour). It is consulted ONLY
+	// when universal_pull_enabled is on, so flag-off stays byte-identical
+	// (S-7 rollback baseline).
+	pullCapable PullCapabilityFn
 }
 
 // pullConvState is the per-conversation watermark throttle state (§1.3).
@@ -322,6 +330,11 @@ func (f *fanoutPlane) setV3Split(v *v3Split) { f.v3 = v }
 // Pipe.SetAdaptive). nil pointer → adaptive lookups are skipped and the static
 // defaults apply (spec §2.2: 控制器关闭时机制层回退静态默认值).
 func (f *fanoutPlane) setAdaptiveStore(a *adaptiveStore) { f.adaptive = a }
+
+// setPullCapability attaches the old-client capability probe (§B). nil →
+// every recipient is treated as an old client (inline), i.e. the pre-1.4
+// behaviour.
+func (f *fanoutPlane) setPullCapability(fn PullCapabilityFn) { f.pullCapable = fn }
 
 // start launches the aggregator + the broadcaster workers.
 func (f *fanoutPlane) start(ctx context.Context) {
@@ -789,6 +802,50 @@ func (f *fanoutPlane) shouldEmitWatermark(cid int64, seq uint64) (emit bool, rea
 	return true, 0
 }
 
+// splitPullUids partitions the recipients of one conversation by client
+// capability (lts-1.4-acceptance §B):
+//
+//	pull   —— 该 uid 具备拉取能力（实现了 kind 14 handler）：收水位线；
+//	inline —— 该 uid 是老客户端 / 没上报能力：收逐成员 102（绝不漏消息）。
+//
+// 探针未注入（nil）或探针报错（panic 被吞并按“无能力”处理）时，全部收件人
+// 落 inline 分支：宁可多发一条 102，也不让老客户端收不到消息。
+//
+// 本函数只在 universal_pull_enabled=true 时被调用（flag-off 走 v1.2.1 的
+// 整会话阈值路径，逐字节不变，S-7）。
+func (f *fanoutPlane) splitPullUids(uids []uint64) (pull, inline []uint64) {
+	if len(uids) == 0 {
+		return nil, nil
+	}
+	if f.pullCapable == nil {
+		return nil, append([]uint64(nil), uids...)
+	}
+	for _, uid := range uids {
+		if f.pullCapableOK(int64(uid)) {
+			pull = append(pull, uid)
+			continue
+		}
+		inline = append(inline, uid)
+	}
+	return pull, inline
+}
+
+// pullCapableOK calls the capability probe defensively: a panicking probe
+// must never break delivery — it is treated as "no capability" (inline).
+func (f *fanoutPlane) pullCapableOK(uid int64) (ok bool) {
+	if f.pullCapable == nil {
+		return false
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			ok = false
+			f.lg.Warn("fanout: pull capability probe panicked; treating uid as old client",
+				"uid", uid, "err", r)
+		}
+	}()
+	return f.pullCapable(uid)
+}
+
 // emitWatermark is the pull-mode branch of the MSG_NEW decision point
 // (§3.1/§3.2): the message is already committed and readable through 920/8,
 // so the only thing members need is the new high-water mark.
@@ -801,8 +858,31 @@ func (f *fanoutPlane) shouldEmitWatermark(cid int64, seq uint64) (emit bool, rea
 // The inline branch is untouched: flusher.fanoutNew only calls this when
 // len(members) > pull_mode_threshold, and keeps the pre-v1.2 loop otherwise.
 func (f *fanoutPlane) emitWatermark(cid, senderID, seq uint64, members []store.Member, put func(*env) bool) {
+	uids := make([]uint64, 0, len(members))
+	for _, m := range members {
+		if uint64(m.UID) == senderID {
+			continue
+		}
+		uids = append(uids, uint64(m.UID))
+	}
+	f.emitWatermarkTo(cid, seq, len(members), uids, put)
+}
+
+// emitWatermarkTo emits ONE watermark frame for an explicit recipient set.
+//
+// The throttle state is per CONVERSATION (§1.3), not per recipient: the
+// watermark is a conversation-level high-water mark, so the batch/interval
+// gate is evaluated once per committed seq and the frame is addressed to the
+// recipients that can act on it (pull-capable clients, §B).
+//
+// memberCount stays the conversation's member count (diagnostics only — the
+// client must not switch behaviour on it, §1.1).
+func (f *fanoutPlane) emitWatermarkTo(cid, seq uint64, memberCount int, uids []uint64, put func(*env) bool) {
 	if seq == 0 {
 		return // 未分配 seq 的消息不可能可拉，不产生水位线
+	}
+	if len(uids) == 0 {
+		return
 	}
 	emit, reason := f.shouldEmitWatermark(int64(cid), seq)
 	if !emit {
@@ -815,18 +895,11 @@ func (f *fanoutPlane) emitWatermark(cid, senderID, seq uint64, members []store.M
 		ConvID:      cid,
 		LatestSeq:   seq,
 		Reason:      reason,
-		MemberCount: uint32(len(members)),
+		MemberCount: uint32(memberCount),
 	})
 	if err != nil {
 		f.lg.Warn("fanout: watermark marshal failed", "cid", cid, "err", err.Error())
 		return
-	}
-	uids := make([]uint64, 0, len(members))
-	for _, m := range members {
-		if uint64(m.UID) == senderID {
-			continue
-		}
-		uids = append(uids, uint64(m.UID))
 	}
 	// fanoutToPut 会顺带把这条水位线按灰度 uid 投进 mailbox（§2.4）；
 	// 大群消息本体（102）不进 mailbox，避免 O(N) 复活。

@@ -141,6 +141,10 @@ export class MockBridge implements NetClient {
         return true;
       case KINDS.MSG_READ:
         return true;
+      case KINDS.CLIENT_CAPS:
+        // §D-3：mock 不模拟能力协商 —— 不发能力帧即视为旧客户端，保持现有
+        // inline/逐条 mock 投递行为不变；收到该帧仅静默吞掉（兼容真实链路形态）。
+        return true;
       default:
         return true;
     }

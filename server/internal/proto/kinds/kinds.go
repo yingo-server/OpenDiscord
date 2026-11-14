@@ -39,6 +39,13 @@ const (
 	KindMailboxAck    Kind = 15 // C→S 累积 ACK {cursor}
 	KindMailboxPause  Kind = 16 // S→C 仅诊断
 	KindMailboxResume Kind = 17 // C→S 续传 {cursor, limit?}
+
+	// 18 = CLIENT_CAPS（旧客户端能力协商，lts-1.4-acceptance §B）。
+	// C→S：客户端上报自身能力，payload = JSON {"pull_capable":bool}。
+	// 服务端把能力记进连接注册表；universal_pull_enabled=true 时只有
+	// pull_capable 的连接走水位线，无能力连接保持 inline 逐成员推（不漏消息）。
+	// 18/19 属 15-19 空号段，不改 Envelope 任何字段号。
+	KindClientCaps Kind = 18
 )
 
 // -------------------------------------------------------------------
@@ -244,6 +251,7 @@ func init() {
 	register(KindMailboxAck, "MAILBOX_ACK")
 	register(KindMailboxPause, "MAILBOX_PAUSE")
 	register(KindMailboxResume, "MAILBOX_RESUME")
+	register(KindClientCaps, "CLIENT_CAPS")
 
 	register(KindMsgSend, "MSG_SEND")
 	register(KindMsgNew, "MSG_NEW")

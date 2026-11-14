@@ -140,6 +140,7 @@ export class WsClient implements NetClient {
       this.setState('online');
       this.sendResumeFrames();
       this.requestFeatureFlags();
+      this.reportClientCaps();
       this.startHeartbeat();
     });
 
@@ -221,6 +222,24 @@ export class WsClient implements NetClient {
     const env = createEnvelope({
       kind: KINDS.FEATURE_FLAGS,
       requestId: 'feature-flags',
+    });
+    this.send(env);
+  }
+
+  /**
+   * 旧客户端能力协商（lts-1.4-acceptance §D，转生产阻断项）：
+   * 连接 open 后立即上报 CLIENT_CAPS(18)，payload JSON {"pull_capable":true}。
+   * 服务端 user 层 Router 据此在连接注册表记该能力；universal_pull_enabled
+   * 为 true 时仅 pull_capable 连接走水位线，无能力连接保持 inline 逐成员推。
+   * 服务端同时兼容 proto Hello.pull_capable（字段号 10）与该 JSON 上报帧
+   * （assemble.go:327 / core3_test.go:75 的载荷形态），二者语义等价。
+   * 每次连接 open（含重连）都上报：能力随连接注册表生命周期，重连必须重新登记。
+   */
+  private reportClientCaps(): void {
+    const env = createEnvelope({
+      kind: KINDS.CLIENT_CAPS,
+      requestId: 'client-caps',
+      payload: new TextEncoder().encode(JSON.stringify({ pull_capable: true })),
     });
     this.send(env);
   }

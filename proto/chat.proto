@@ -33,6 +33,11 @@ message Hello {
   repeated string capabilities = 3;
   string nonce = 4;
   reserved 5 to 9;
+  // pull_capable：旧客户端能力协商（lts-1.4-acceptance §B）。true = 该客户端
+  // 已实现 kind 14 WATERMARK 处理器，可在普遍拉取模式下改走水位线 + 拉取；
+  // false/缺省 = 旧客户端，服务端必须保持 inline 逐成员推（不漏消息）。
+  // 与 capabilities 里的 "pull_capable" 能力串等价（二者取或）。
+  bool pull_capable = 10;
 }
 
 message Auth {

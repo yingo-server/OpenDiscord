@@ -122,7 +122,20 @@ func newTestRouter(t *testing.T) (*Router, *fakeSession, *fakePeer) {
 	lim := limit.New(cfg.Limits)
 	peer := newFakePeer()
 	fwd := bridge.NewForwarder(peer, nil, 100)
-	return New(sess, lim, pol, fwd, featureflags.New(), nil), sess, peer
+	return New(sess, lim, pol, fwd, newOffFlags(), nil), sess, peer
+}
+
+// newOffFlags 显式 off 快照（§F.2）：不依赖 Defaults()——1.4 转生产后
+// Defaults() 已将 universal_pull / adaptive_control / v3_bus / msg_domain_v2
+// 默认开启，需要 off 基线的测试必须显式构造。
+func newOffFlags() *featureflags.Flags {
+	return featureflags.NewFromMap(map[string]any{
+		featureflags.KeyUniversalPullEnabled:   false,
+		featureflags.KeyAdaptiveControlEnabled: false,
+		featureflags.KeyV3BusEnabled:           false,
+		featureflags.KeyV3BusPercent:           0,
+		featureflags.KeyMsgDomainV2:            false,
+	})
 }
 
 // ---------- upstream ----------
@@ -279,7 +292,7 @@ func TestRateLimitThrottle(t *testing.T) {
 	pol := policy.New(cfg)
 	lim := limit.New(cfg.Limits)
 	fwd := bridge.NewForwarder(newFakePeer(), nil, 10)
-	r := New(sess, lim, pol, fwd, featureflags.New(), nil)
+	r := New(sess, lim, pol, fwd, newOffFlags(), nil)
 	c := &fakeConn{id: 1, uid: 2}
 	sess.add(c)
 	env := &chatpb.Envelope{Kind: kinds.KindMsgSend}

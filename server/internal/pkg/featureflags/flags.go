@@ -68,13 +68,15 @@ func Defaults() map[string]any {
 		KeyWatermarkIntervalMS: 2000,
 		KeyWatermarkJitterMS:   2000,
 
-		KeyUniversalPullEnabled:   false, // CORE-2 普遍拉取：默认关（universal-pull-spec §5 开关 1，S-7 回滚基线）
-		KeyAdaptiveControlEnabled: false, // CORE-2 自适应策略层：默认关（spec §5 开关 3）
+		// 1.4 转生产：四项实验性功能全部默认开启，由 CI 的 S-1~S-7 扫测与压测
+		// 守门；回滚 = SIGHUP 热改对应 flag 为 false / percent=0（S-7 逐字节基线）。
+		KeyUniversalPullEnabled:   true, // 普遍拉取：所有会话走水位线（无 kind14 能力的旧客户端自动保持 inline）
+		KeyAdaptiveControlEnabled: true, // AIMD 自适应：effective[cid] 由控制循环写入
 
-		KeyV3BusEnabled: false, // v3 总线：主干合入默认关（v3-bus-design §6/§9）
-		KeyV3BusPercent: 0,     // 灰度百分比：P4 阶段 5% 起步
+		KeyV3BusEnabled: true, // v3 总线：mailbox + credit 流控为默认投递路径
+		KeyV3BusPercent: 100,  // 全量（按 uid 哈希分桶，100 = 所有 uid 在桶内）
 
-		KeyMsgDomainV2: false, // FE-1a 消息域（106/109/@/453）：默认关，行为零变化
+		KeyMsgDomainV2: true, // FE-1a 消息域（106 编辑 / 109 转发 / @ / 453 举报）默认启用
 	}
 }
 

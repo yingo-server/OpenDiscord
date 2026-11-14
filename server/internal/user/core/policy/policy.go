@@ -59,6 +59,7 @@ func Default() Config {
 		Limits: limit.DefaultConfig(),
 		LocalKinds: map[uint32]bool{
 			kinds.KindHello:        true,
+			kinds.KindClientCaps:   true,
 			kinds.KindAuth:         true,
 			kinds.KindPing:         true,
 			kinds.KindPong:         true,

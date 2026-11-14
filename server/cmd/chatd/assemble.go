@@ -323,6 +323,21 @@ func newAssembly(cfg *config, lg *log.Logger) (*assembly, error) {
 	}
 	a.user = srv
 
+	// 旧客户端能力协商（lts-1.4-acceptance §B）：客户端在 HELLO(1) 或
+	// CLIENT_CAPS(18) 里上报 pull_capable，user 层 Router 把能力记进连接
+	// 注册表；数据层在 universal_pull_enabled=true 时按收件人能力分流：
+	// 有能力 → 水位线（kind 14），无能力 → 保持 inline 逐成员推（不漏消息）。
+	// universal_pull_enabled=false 时数据层根本不调用探针 ⇒ flag-off 逐字节
+	// 不变（S-7 回滚基线）。
+	if r := a.user.Router(); r != nil {
+		r.CapSink = func(connID uint64, pullCapable bool) {
+			a.user.Session().SetPullCapable(connID, pullCapable)
+		}
+	}
+	a.pipe.SetPullCapability(func(uid int64) bool {
+		return a.user.Session().PullCapableUID(uid)
+	})
+
 	// P0-2 wiring: the policy.json rate_limit section is the user-level
 	// aggregate budget; converge the limiter's MSG_SEND rule onto it
 	// (never looser — see limitwire.go). Applied post-construction via the

@@ -278,19 +278,37 @@ func (f *flusher) fanoutNew(m store.PendingMsg, mediaIdx map[string]*store.Media
 		return
 	}
 	payload := buildMsgNewPayloadWithMedia(m, mediaLookupFromIndex(mediaIdx))
-	// 拉取模式分流（§3.1/§3.2）：只有 len(members) > pull_mode_threshold 时才
-	// 改走水位线。threshold 默认 0（禁用），此时整段判定为假，下面仍是 v1.1.1
-	// 的逐成员 102 循环 —— 逐字节一致，连丢帧日志与计数都不变。
-	if f.fanout != nil && f.fanout.pullModeActive(m.Cid, len(members)) {
-		f.fanout.emitWatermark(uint64(m.Cid), uint64(m.SenderID), uint64(m.Seq), members, f.putBulk)
-		return
-	}
 	uids := make([]uint64, 0, len(members))
 	for _, member := range members {
 		if member.UID == m.SenderID {
 			continue
 		}
 		uids = append(uids, uint64(member.UID))
+	}
+	// 拉取模式分流（§3.1/§3.2）：只有 len(members) > pull_mode_threshold 时才
+	// 改走水位线。threshold 默认 0（禁用），此时整段判定为假，下面仍是 v1.1.1
+	// 的逐成员 102 循环 —— 逐字节一致，连丢帧日志与计数都不变。
+	if f.fanout != nil && f.fanout.pullModeActive(m.Cid, len(members)) {
+		if f.fanout.universalPullActive() {
+			// 普遍拉取 + 旧客户端能力协商（lts-1.4-acceptance §B）：
+			// 具备拉取能力的收件人收水位线（kind 14），没有能力上报的
+			// 收件人（老客户端）仍然收 inline 102 —— 绝不漏消息。
+			// 两组收件人互斥 ⇒ 同一 uid 不会同时收到水位线与 102（无双投递）。
+			pullUids, inlineUids := f.fanout.splitPullUids(uids)
+			if len(pullUids) > 0 {
+				f.fanout.emitWatermarkTo(uint64(m.Cid), uint64(m.Seq), len(members), pullUids, f.putBulk)
+			}
+			if len(inlineUids) == 0 {
+				return
+			}
+			uids = inlineUids
+			// 落到下面的 inline 分支：只给老客户端发逐成员 102。
+		} else {
+			// 回滚路径（universal_pull_enabled=false）：整会话一条水位线，
+			// 与 v1.2.1 逐字节一致（S-7）。
+			f.fanout.emitWatermark(uint64(m.Cid), uint64(m.SenderID), uint64(m.Seq), members, f.putBulk)
+			return
+		}
 	}
 	// FE-1a #3 (@mentions): a stored mentions list triggers a targeted
 	// CONV_PAYLOAD(202) notification frame per mentioned uid (kind reuse —

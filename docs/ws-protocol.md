@@ -62,7 +62,7 @@
 
 | kind | 名称 | 层 | 状态 |
 |------|------|----|------|
-| 1 | HELLO | system | 实现（本地记录客户端版本） |
+| 1 | HELLO | system | 实现（本地记录客户端版本 + 能力 pull_capable） |
 | 2 | AUTH | system | 实现（本地幂等确认→AUTH_RESULT） |
 | 3 | AUTH_RESULT | system | 实现（本地应答） |
 | 4 | PING | system | 实现（本地→PONG） |
@@ -75,6 +75,11 @@
 | 11 | KICKED | system | 实现（下行 executeKicked：写帧+断连） |
 | 12 | FEATURE_FLAGS | system | 实现（本地回 flag 快照） |
 | 13 | RATE_LIMITED | system | 实现（conn 桶降级 NACK） |
+| 14 | WATERMARK | system | 实现（拉取模式水位线；普遍拉取下发给具备 pull_capable 的客户端） |
+| 15 | MAILBOX_ACK | system | 实现（v3 累积 ACK） |
+| 16 | MAILBOX_PAUSE | system | 实现（v3 诊断） |
+| 17 | MAILBOX_RESUME | system | 实现（v3 续传） |
+| 18 | CLIENT_CAPS | system | 实现（C→S 能力上报：payload JSON {"pull_capable":bool}；旧客户端能力协商，见 lts-1.4-acceptance §B） |
 
 **100–199 消息层**
 
