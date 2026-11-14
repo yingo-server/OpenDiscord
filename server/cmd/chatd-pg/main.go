@@ -28,6 +28,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -140,6 +141,20 @@ func run() error {
 		return execChatd(bin, os.Args[1:])
 	}
 	fmt.Println("chatd-pg: CHATD_BIN unset — self-check only, exiting 0 (CI/smoke mode)")
+	return nil
+}
+
+// execChatd 把控制权交给标准 chatd（CHATD_BIN 移交路径），退出码透传。
+// driver 已通过 blank import 注册，移交后 assemble.go 第 8 步会真正开冷库。
+func execChatd(bin string, args []string) error {
+	cmd := exec.Command(bin, args...)
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	if err := cmd.Run(); err != nil {
+		if ee, ok := err.(*exec.ExitError); ok {
+			os.Exit(ee.ExitCode())
+		}
+		return err
+	}
 	return nil
 }
 
