@@ -43,8 +43,8 @@ func waitMailboxRows(t *testing.T, a *assembly, n int) {
 // 零抑制；同时路由/投递照常（复用真实 pipe 派发路径）。
 func TestV3DeliverFlagOffLegacyByteIdentical(t *testing.T) {
 	a, _ := startAssembly(t)
-	if a.v3Hooks != nil {
-		t.Fatal("flag-off assembly must still construct hooks (nil-safe), got non-nil without v3")
+	if a.v3Hooks == nil {
+		t.Fatal("flag-off assembly must construct nil-safe hooks (no v3 behavior, but hooks present for kill-switch tests)")
 	}
 	// 钩子已注入但判定恒放行（未装配 v3 时 V3DirectEnabled 为 nil）。
 	cid, err := a.hot.CreateConv(context.Background(), &store.ConvMeta{

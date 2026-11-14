@@ -21,9 +21,9 @@ export function vapidPublicKey(): string {
 }
 
 /** 当前环境是否允许注册 SW / 订阅推送：production only，dev/mock 不注册。 */
-export function pushEnabled(): boolean {
-  const isMock = import.meta.env?.VITE_MOCK === '1';
-  const isDev = Boolean(import.meta.env?.DEV);
+export function pushEnabled(env: { DEV?: boolean; VITE_MOCK?: string } = import.meta.env ?? {}): boolean {
+  const isMock = env.VITE_MOCK === '1';
+  const isDev = Boolean(env.DEV);
   return !isDev && !isMock;
 }
 
@@ -34,8 +34,9 @@ export function pushEnabled(): boolean {
 export async function registerServiceWorker(
   register: (script: string) => Promise<ServiceWorkerRegistration> = (script) =>
     navigator.serviceWorker.register(script),
+  env: { DEV?: boolean; VITE_MOCK?: string } = import.meta.env ?? {},
 ): Promise<ServiceWorkerRegistration | null> {
-  if (!pushEnabled()) {
+  if (!pushEnabled(env)) {
     console.info('[push] disabled (dev/mock mode), skip service worker registration');
     return null;
   }

@@ -34,8 +34,8 @@ describe('sw-strategy decide', () => {
     expect(decide('/assets/index-abc.js', 'POST', true)).toBe('pass');
   });
 
-  it('treats GET /api/media/ as media (cache only if already cached)', () => {
-    expect(decide('/api/media/abc', 'GET', true)).toBe('media');
+  it('bypasses GET /api/media/ like all /api/ paths (never cached)', () => {
+    expect(decide('/api/media/abc', 'GET', true)).toBe('bypass');
   });
 
   it('passes everything else through', () => {
@@ -49,31 +49,23 @@ describe('sw-strategy decide', () => {
 
 describe('pushEnabled', () => {
   it('disabled when DEV', () => {
-    vi.stubGlobal('import.meta', { env: { DEV: true, VITE_MOCK: '' } });
-    expect(pushEnabled()).toBe(false);
-    vi.unstubAllGlobals();
+    expect(pushEnabled({ DEV: true, VITE_MOCK: '' })).toBe(false);
   });
 
   it('disabled when mock mode', () => {
-    vi.stubGlobal('import.meta', { env: { DEV: false, VITE_MOCK: '1' } });
-    expect(pushEnabled()).toBe(false);
-    vi.unstubAllGlobals();
+    expect(pushEnabled({ DEV: false, VITE_MOCK: '1' })).toBe(false);
   });
 
   it('enabled in production non-mock', () => {
-    vi.stubGlobal('import.meta', { env: { DEV: false, VITE_MOCK: '' } });
-    expect(pushEnabled()).toBe(true);
-    vi.unstubAllGlobals();
+    expect(pushEnabled({ DEV: false, VITE_MOCK: '' })).toBe(true);
   });
 });
 
 describe('registerServiceWorker dev skip', () => {
   it('does not register in dev/mock mode', async () => {
-    vi.stubGlobal('import.meta', { env: { DEV: true, VITE_MOCK: '' } });
     const register = vi.fn();
-    expect(await registerServiceWorker(register)).toBeNull();
+    expect(await registerServiceWorker(register, { DEV: true, VITE_MOCK: '' })).toBeNull();
     expect(register).not.toHaveBeenCalled();
-    vi.unstubAllGlobals();
   });
 });
 
@@ -83,66 +75,48 @@ describe('registerServiceWorker dev skip', () => {
 
 describe('vapidPublicKey', () => {
   it('returns empty string when not configured', () => {
-    vi.stubGlobal('import.meta', { env: { DEV: false, VITE_MOCK: '' } });
     expect(vapidPublicKey()).toBe('');
-    vi.unstubAllGlobals();
   });
 });
 
 describe('subscribeAndReport fail-closed', () => {
-  const prodEnv = { DEV: false, VITE_MOCK: '' };
-
-  function stubEnv(env: Record<string, unknown>) {
-    vi.stubGlobal('import.meta', { env });
-  }
-
   it('returns null without subscribing when VAPID key missing', async () => {
-    stubEnv(prodEnv);
     const post = vi.fn();
     const result = await subscribeAndReport({ vapidKey: '', post });
     expect(result).toBeNull();
     expect(post).not.toHaveBeenCalled();
-    vi.unstubAllGlobals();
   });
 
   it('returns null when no registration available', async () => {
-    stubEnv(prodEnv);
     const subscribe = vi.fn();
     const result = await subscribeAndReport({ vapidKey: 'pub-key', registration: null, subscribe });
     expect(result).toBeNull();
     expect(subscribe).not.toHaveBeenCalled();
-    vi.unstubAllGlobals();
   });
 
   it('reports to server endpoint on success', async () => {
-    stubEnv(prodEnv);
     const subscribe = vi.fn().mockResolvedValue({ endpoint: 'https://push.example/x', toJSON: () => ({ endpoint: 'https://push.example/x' }) });
     const post = vi.fn().mockResolvedValue(true);
     const result = await subscribeAndReport({ vapidKey: 'pub-key', registration: {} as never, subscribe, post });
-    expect(result).toEqual({ endpoint: 'https://push.example/x' });
+    expect(result?.toJSON()).toEqual({ endpoint: 'https://push.example/x' });
     expect(post).toHaveBeenCalledWith(PUSH_SUBSCRIBE_ENDPOINT, {
       subscription: { endpoint: 'https://push.example/x' },
     });
-    vi.unstubAllGlobals();
   });
 
   it('server not implemented (non-2xx) → no throw, returns subscription', async () => {
-    stubEnv(prodEnv);
     const subscribe = vi.fn().mockResolvedValue({ endpoint: 'e', toJSON: () => ({ endpoint: 'e' }) });
     const post = vi.fn().mockResolvedValue(false);
     const result = await subscribeAndReport({ vapidKey: 'pub-key', registration: {} as never, subscribe, post });
-    expect(result).toEqual({ endpoint: 'e' });
-    vi.unstubAllGlobals();
+    expect(result?.toJSON()).toEqual({ endpoint: 'e' });
   });
 
   it('pushManager.subscribe rejection → null, no post', async () => {
-    stubEnv(prodEnv);
     const subscribe = vi.fn().mockRejectedValue(new Error('denied'));
     const post = vi.fn();
     const result = await subscribeAndReport({ vapidKey: 'pub-key', registration: {} as never, subscribe, post });
     expect(result).toBeNull();
     expect(post).not.toHaveBeenCalled();
-    vi.unstubAllGlobals();
   });
 });
 
@@ -150,12 +124,10 @@ describe('ensureNotificationPermission fail-closed', () => {
   it('false when permission denied', async () => {
     vi.stubGlobal('Notification', { permission: 'denied', requestPermission: vi.fn() });
     expect(await ensureNotificationPermission()).toBe(false);
-    vi.unstubAllGlobals();
   });
 
   it('false when Notification API missing', async () => {
     vi.stubGlobal('Notification', undefined);
     expect(await ensureNotificationPermission()).toBe(false);
-    vi.unstubAllGlobals();
   });
 });
