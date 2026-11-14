@@ -20,12 +20,9 @@ import (
 	"github.com/yingo-server/OpenDiscord/server/internal/proto/kinds"
 )
 
-func newOffFlags() *featureflags.Flags {
-	return featureflags.NewFromMap(map[string]any{featureflags.KeyMsgDomainV2: false})
-}
-
-// v2Pipe assembles a test pipe with the FE-1a flag ON and (optionally) an
-// audit journal.
+// v2Pipe assembles a test pipe with the FE-1a flag ON (production default after
+// 1.4 rollout) and (optionally) an audit journal. The off-baseline tests use
+// the shared newOffFlags() from pullmode_test.go.
 func v2Pipe(t *testing.T, fa *FakeAudit) (*Pipe, *pipefakes.FakeMsgStore, *pipefakes.FakeConvStore) {
 	t.Helper()
 	msgs := pipefakes.NewFakeMsgStore()
