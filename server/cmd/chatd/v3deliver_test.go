@@ -11,6 +11,7 @@ import (
 
 	"github.com/yingo-server/OpenDiscord/server/internal/bus/mailbox"
 	"github.com/yingo-server/OpenDiscord/server/internal/data/store"
+	"github.com/yingo-server/OpenDiscord/server/internal/pkg/featureflags"
 	"github.com/yingo-server/OpenDiscord/server/internal/proto/gen/chatpb"
 	"github.com/yingo-server/OpenDiscord/server/internal/proto/kinds"
 	"github.com/yingo-server/OpenDiscord/server/internal/user/net/frame"
@@ -43,6 +44,15 @@ func waitMailboxRows(t *testing.T, a *assembly, n int) {
 // 零抑制；同时路由/投递照常（复用真实 pipe 派发路径）。
 func TestV3DeliverFlagOffLegacyByteIdentical(t *testing.T) {
 	a, _ := startAssembly(t)
+	// 1.4 转生产后 Defaults() 已全开；本测试要的是显式 flag-off 基线，
+	// 必须在 startAssembly 之后立刻把实验性 flag 全部关断（§F 纪律）。
+	a.flags.Apply(map[string]any{
+		featureflags.KeyV3BusEnabled:           false,
+		featureflags.KeyV3BusPercent:           0,
+		featureflags.KeyUniversalPullEnabled:   false,
+		featureflags.KeyAdaptiveControlEnabled: false,
+		featureflags.KeyMsgDomainV2:            false,
+	})
 	if a.v3Hooks == nil {
 		t.Fatal("flag-off assembly must construct nil-safe hooks (no v3 behavior, but hooks present for kill-switch tests)")
 	}

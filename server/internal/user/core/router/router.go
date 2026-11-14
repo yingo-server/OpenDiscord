@@ -397,10 +397,17 @@ func (r *Router) deliver(env *chatpb.Envelope, connID uint64, preEncoded []byte)
 			return
 		}
 	}
-	// 双投递保护（v3 灰度切换）：灰度 uid 的连接已由 mailbox deliverLoop 推送，
-	// 本函数跳过旧逐成员直投。判定在装配层（唯一路径真相源，flag 快照 +
-	// InV3Bucket），nil 开关 = 未装配 v3 = 恒直投（逐字节主干行为）。
-	if r.V3DirectEnabled != nil && env.GetUserId() > 0 && !r.V3DirectEnabled(int64(env.GetUserId())) {
+	// 双投递保护（v3 灰度切换）：灰度 uid 的连接已由 mailbox deliverLoop 推送
+	// 数据帧，本函数跳过旧逐成员直投。判定在装配层（唯一路径真相源，flag
+	// 快照 + InV3Bucket），nil 开关 = 未装配 v3 = 恒直投（逐字节主干行为）。
+	//
+	// 关键豁免：reply lane 的结果/ACK/控制帧（931 CONV_DATA_RESULT、103
+	// MSG_ACK、10 ERROR、心跳、FEATURE_FLAGS 等）从不进 mailbox（它们不经
+	// fanoutPlane.Offer），若一并抑制会全部丢失——客户端等不到 931/ACK 的
+	// e2e 超时正源于此。只抑制「fanout 产出且已进 mailbox」的数据帧 kind，
+	// 与 v3split.v3Eligible 对齐；其余一律直投。
+	if r.V3DirectEnabled != nil && env.GetUserId() > 0 &&
+		v3Suppressible(env.Kind) && !r.V3DirectEnabled(int64(env.GetUserId())) {
 		if r.V3SkipCounter != nil {
 			r.V3SkipCounter()
 		}
@@ -561,4 +568,24 @@ func appendEnvelopeTarget(base []byte, convID, userID uint64) []byte {
 	default:
 		return base
 	}
+}
+
+// v3Suppressible reports whether a downstream frame is produced by the fanout
+// plane AND offered into the mailbox (v3split.v3Eligible). Only these are
+// delivered by mailbox deliverLoop for greyed uids; reply-lane frames
+// (results/ACKs/errors/heartbeats/feature flags) never enter the mailbox and
+// must keep the legacy direct delivery, or the client never receives them.
+func v3Suppressible(kind uint32) bool {
+	switch kind {
+	case uint32(kinds.KindMsgNew), // 102
+		uint32(kinds.KindMsgRead),      // 104
+		uint32(kinds.KindMsgDelivered), // 105
+		uint32(kinds.KindMsgDelete),    // 107
+		uint32(kinds.KindMsgRecall),    // 108
+		uint32(kinds.KindWatermark),    // 14
+		uint32(kinds.KindConvPayload),  // 202
+		uint32(kinds.KindMemberUpdate):
+		return true
+	}
+	return false
 }
