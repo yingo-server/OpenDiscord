@@ -482,6 +482,9 @@ func (a *assembly) healthz(w http.ResponseWriter, r *http.Request) {
 // or ctx is canceled.
 func (a *assembly) run(ctx context.Context) error {
 	a.runCtx = ctx // v3 deliverLoop 的根 ctx（SIGTERM cancel → 全部收敛）
+	if a.v3Hooks != nil {
+		a.v3Hooks.runCtx = ctx
+	}
 	// CORE-1 自适应控制器：adaptive_control_enabled=false（默认）时不启动、
 	// 不写 effective[cid]——机制层保持静态 flag 默认（50/2000）。
 	startAdaptiveControl(ctx, a)

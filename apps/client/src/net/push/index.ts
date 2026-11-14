@@ -32,9 +32,9 @@ export function pushEnabled(): boolean {
  * @param register 注入以便单测；默认 navigator.serviceWorker.register。
  */
 export async function registerServiceWorker(
-  register: (script: string) => Promise<ServiceWorker> = (script) =>
+  register: (script: string) => Promise<ServiceWorkerRegistration> = (script) =>
     navigator.serviceWorker.register(script),
-): Promise<ServiceWorker | null> {
+): Promise<ServiceWorkerRegistration | null> {
   if (!pushEnabled()) {
     console.info('[push] disabled (dev/mock mode), skip service worker registration');
     return null;

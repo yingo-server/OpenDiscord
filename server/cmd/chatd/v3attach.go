@@ -20,6 +20,8 @@
 package main
 
 import (
+	"context"
+
 	"github.com/yingo-server/OpenDiscord/server/internal/user/app"
 	"github.com/yingo-server/OpenDiscord/server/internal/user/core/session"
 	"github.com/yingo-server/OpenDiscord/server/internal/user/net/ws"
@@ -43,7 +45,7 @@ func AttachV3Deliver(a *assembly) {
 	if w.Plane == nil {
 		return
 	}
-	if h := newV3ConnLifecycle(a, a.runCtx); h != nil {
+	if h := newV3ConnLifecycle(a, context.Background()); h != nil {
 		a.user.AddConnLifecycle(h)
 		a.v3Hooks = h.(*v3ConnLifecycle)
 		if r := a.user.Router(); r != nil {
