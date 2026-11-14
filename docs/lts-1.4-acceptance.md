@@ -46,3 +46,17 @@
 2. 凡需要 off 语义的测试，改为显式 `NewFromMap(map[...]{off})` 或 `flags.Apply(off)` 构造，不再依赖 Defaults()。
 3. 新增 TestProductionDefaults：断言 4 个 flag 默认 true / percent=100 / msg_domain_v2=true。
 4. 只碰测试文件，不改生产逻辑、不构建测试。
+
+## §G 转生产后 CI 失败统一修复（只读 CI 日志结论，代理用 file_read 读本段）
+文件域：server/cmd/chatd/*_test.go、server/cmd/opendiscord/*_test.go、server/internal/data/pipe/*_test.go、server/internal/user/core/router/*_test.go。允许改测试 helper，禁止改生产逻辑。
+CI ad4ce73 失败清单（go/Test）：
+1. DATA RACE：adaptive.go 控制循环读 a.adaptiveStore 与测试写竞争 —— 主会话已修（goroutine 捕获局部 st），代理不得回退。
+2. v3wire_test.go:33 `TestV3WireDefaultOff`：断言默认 Enabled() false —— 转生产默认 true。改为显式构造 off 快照验证 kill-switch，断言改名为 TestV3WireKillSwitch。
+3. v3wire_test.go:112 flag-off fanout 仍写 mailbox 2 行 —— 测试没显式关 flag。用显式 off 快照（不是 Defaults()）。
+4. v3_test.go:97（cmd/opendiscord）closedFlags() 断言 —— 同理显式构造。
+5. v3deliver_test.go:91 flag-off 恒放行 —— 主会话已加显式关 flag，若仍失败检查 Apply 时机（必须在 startAssembly 之后、sendAssemblyMsg 之前；若 startAssembly 内部已启动 run 循环，需要 quietFlags 同款）。
+6. pullmode14_test.go 三处（universal pull 应 0 inline 却 9 / watermark 0 条）：转生产后 pullModeActive 逻辑 + 能力探针默认「无能力→inline」导致。测试应显式构造「有能力 uid」或显式关 universal_pull 做 off 基线；不得改 fanout 生产逻辑来迎合测试。
+7. core3_test.go:162 / :297（watermark 0 条、pull-capable 收不到 14）：同 6，且 adaptive 控制循环默认启动会周期性写 effective[1] 干扰计数 —— 测试开头调 quietFlags(a) 关 adaptive。
+8. broadcast_e2e_test.go:268 MEMBER_UPDATE 超时、其它 e2e kinds=[]：转生产后 931/ACK 已在 Router 豁免（主会话修），若 212 仍丢，检查 v3Suppressible 是否误含 MemberUpdate —— 若是，把它从抑制集合移除（212 走 reply lane，不进 mailbox），这是生产代码修正，允许改 router.go 一处。
+9. 全部测试不得依赖 Defaults()；需要 off 一律 NewFromMap 显式构造。需要 on 一律显式构造或依赖新的生产默认并改名。
+10. 铁律同全局：不 commit/push、不本地 build/test、只 gofmt -l。汇报 ≤8 行。

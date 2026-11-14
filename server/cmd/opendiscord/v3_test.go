@@ -93,7 +93,7 @@ func TestTSV5GrayToggle(t *testing.T) {
 	ctx := context.Background()
 	// §F.2：off 基线来自显式 closedFlags() 构造，不依赖 Defaults()（1.4
 	// 转生产后 Defaults() 已将 v3_bus_enabled 默认 true）。
-	if !w.Enabled() {
+	if w.Enabled() {
 		t.Fatal("explicit closedFlags() store: Enabled() must be false (defaults are on, see TestProductionDefaults)")
 	}
 	seq, err := w.Hub.Offer(ctx, 42, mailbox.Envelope{Kind: 103, MsgID: 1, Blob: []byte("a")})

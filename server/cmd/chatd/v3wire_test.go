@@ -23,9 +23,23 @@ import (
 	"github.com/yingo-server/OpenDiscord/server/internal/proto/kinds"
 )
 
-// (a) 默认中间态：构造成功、Enabled=false、Offer 为 no-op（不落库）。
+// forceLegacyFlags 把实验性 flag 显式关断，供「flag-off 基线」类测试使用。
+// 1.4 转生产后 Defaults() 全部默认开启，回滚语义必须靠显式构造，不能靠
+// 依赖默认值（§F / §G 纪律）。SIGHUP 热改语义同源，kill-switch 立即生效。
+func forceLegacyFlags(a *assembly) {
+	a.flags.Apply(map[string]any{
+		featureflags.KeyV3BusEnabled:           false,
+		featureflags.KeyV3BusPercent:           0,
+		featureflags.KeyUniversalPullEnabled:   false,
+		featureflags.KeyAdaptiveControlEnabled: false,
+		featureflags.KeyMsgDomainV2:            false,
+	})
+}
+
+// (a) 显式 flag-off 基线：构造成功、Enabled=false、Offer 为 no-op（不落库）。
 func TestV3WireDefaultOff(t *testing.T) {
 	a, _ := startAssembly(t)
+	forceLegacyFlags(a)
 	if a.v3 == nil {
 		t.Fatal("assembly.v3 must be non-nil after newAssembly (P3c construct)")
 	}
@@ -88,6 +102,7 @@ func TestV3WireHotToggle(t *testing.T) {
 // 不经过 WS 会话，因此不需要 member/conn 之外的任何客户端行为。
 func TestV3WireFanoutSplitFlagOffAndHotToggle(t *testing.T) {
 	a, _ := startAssembly(t)
+	forceLegacyFlags(a)
 	ctx := context.Background()
 
 	// 造一个 3 人群（sender 4242 + 2 个灰度 uid），消息必须扇出给成员。

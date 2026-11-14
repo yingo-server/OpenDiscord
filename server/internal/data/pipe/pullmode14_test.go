@@ -35,6 +35,10 @@ func newUpRig(t *testing.T, nMembers int) *upRig {
 	r := newPullRig(t, nMembers)
 	r.flags.Apply(map[string]any{featureflags.KeyUniversalPullEnabled: true})
 	r.p.SetFeatureFlags(r.flags)
+	// §B 能力协商：普遍拉取只对 pull_capable 收件人走水位线，无能力的旧
+	// 客户端保持 inline。本 rig 测的是「全能力客户端」语义，装一个恒 true
+	// 探针，等价于生产中所有连接都上报了 CLIENT_CAPS(18)。
+	r.p.SetPullCapability(func(int64) bool { return true })
 	return &upRig{pullRig: r}
 }
 

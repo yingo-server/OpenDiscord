@@ -102,43 +102,37 @@ func quietFlags(a *assembly) {
 // 生效后每条消息都推进 → 3 条水位线；AdaptiveClear 后回到静态口径 → 0 条。
 // 越界值（batch>200 / interval>2000）由 AdaptiveWrite 拒载（返回 false）。
 func TestCORE3AdaptiveHotEffectAndStaticFallback(t *testing.T) {
-	a, _ := startAssembly(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
-	// 阶段 0：停掉默认控制循环（1.4 转产后 adaptive 默认 true，run() 已启动
-	// 它）；等 ≥1 个控制周期让循环自行 AdaptiveClear 并退出。
-	quietFlags(a)
-	a.flags.Apply(map[string]any{
-		featureflags.KeyUniversalPullEnabled: true,
-		featureflags.KeyWatermarkBatch:       50,
-		featureflags.KeyWatermarkIntervalMS:  60000,
+	// 观测装配：pair() 内部 startAssembly 的 pipe 才是真正跑消息的那个。
+	// 1.4 转产后 adaptive 默认 true、run() 已启动控制循环；quietFlags 关掉
+	// 它，避免周期写 effective[1] 干扰水位线计数（§G 纪律）。
+	a2, ca, cb, alice, _, cid := pair(t, "alice-adapt", "bob-adapt")
+	quietFlags(a2)
+	a2.flags.Apply(map[string]any{
+		featureflags.KeyUniversalPullEnabled:   true,
+		featureflags.KeyAdaptiveControlEnabled: true,
+		featureflags.KeyWatermarkBatch:         50,
+		featureflags.KeyWatermarkIntervalMS:    60000,
 	})
-	time.Sleep(1600 * time.Millisecond)
-
-	// 阶段 1：热开 false→true —— 装配层入口 startAdaptiveControl 创建
-	// effective[cid] 表并注入 pipe（热生效的接线面）。
-	a.flags.Apply(map[string]any{featureflags.KeyAdaptiveControlEnabled: true})
-	startAdaptiveControl(ctx, a)
-	if a.adaptiveStore == nil {
+	a2.pipe.SetPullCapability(func(int64) bool { return true })
+	startAdaptiveControl(ctx, a2)
+	if a2.adaptiveStore == nil {
 		t.Fatal("adaptive_control_enabled=true: controller must create + inject the effective[cid] table")
 	}
 
 	// 阶段 2：AdaptiveWrite 拒载越界值、接受合法值（spec §2.2 / T-AD-4）。
-	if a.pipe.AdaptiveWrite(a.adaptiveStore, 1, 500, 2000) {
+	if a2.pipe.AdaptiveWrite(a2.adaptiveStore, 1, 500, 2000) {
 		t.Fatal("out-of-bounds batch (500>200) must be rejected")
 	}
-	if a.pipe.AdaptiveWrite(a.adaptiveStore, 1, 50, 99999) {
+	if a2.pipe.AdaptiveWrite(a2.adaptiveStore, 1, 50, 99999) {
 		t.Fatal("out-of-bounds interval (99999>2000) must be rejected")
 	}
-	if !a.pipe.AdaptiveWrite(a.adaptiveStore, 1, 50, 2000) {
+	if !a2.pipe.AdaptiveWrite(a2.adaptiveStore, 1, 50, 2000) {
 		t.Fatal("in-bounds effective[cid] write must be accepted")
 	}
-
-	// 阶段 3：e2e 观测。两人直连会话；收水位线的连接必须具备 kind 14 能力
-	// （否则按老客户端走 inline 102，见 T3）。
-	a2, ca, cb, alice, _, cid := pair(t, "alice-adapt", "bob-adapt")
-	_ = a2
+	// 能力上报（CLIENT_CAPS 18）：收水位线的连接必须 pull_capable。
 	sendPullCapable(t, cb)
 
 	// 3a 静态口径：无 effective[cid] 条目 → flags 50/60000 → 3 条消息 1 条水位线。
@@ -151,7 +145,7 @@ func TestCORE3AdaptiveHotEffectAndStaticFallback(t *testing.T) {
 	}
 
 	// 3b 热生效：AdaptiveWrite(cid, batch=1, interval=10) → 每条消息推进 → 3 条。
-	if !a.pipe.AdaptiveWrite(a.adaptiveStore, cid, 1, 10) {
+	if !a2.pipe.AdaptiveWrite(a2.adaptiveStore, cid, 1, 10) {
 		t.Fatal("AdaptiveWrite(batch=1, interval=10) must be accepted")
 	}
 	sendMsg(t, ca, cid, alice, "adapt-eff-1", "m4")
@@ -164,7 +158,7 @@ func TestCORE3AdaptiveHotEffectAndStaticFallback(t *testing.T) {
 
 	// 3c 关断回退：AdaptiveClear（控制循环 kill-switch 对每个 state 条目做的
 	// 就是这个调用）→ 回退静态 50/2000 → 0 条新水位线。
-	a.pipe.AdaptiveClear(a.adaptiveStore, cid)
+	a2.pipe.AdaptiveClear(a2.adaptiveStore, cid)
 	sendMsg(t, ca, cid, alice, "adapt-clear-1", "m7")
 	sendMsg(t, ca, cid, alice, "adapt-clear-2", "m8")
 	sendMsg(t, ca, cid, alice, "adapt-clear-3", "m9")
@@ -265,16 +259,18 @@ func TestCORE3GreySwitchNoDoubleDelivery(t *testing.T) {
 //   - 未上报能力的连接（老客户端）仍收到 inline 102 —— 不漏消息；
 //   - 上报能力后改收 kind 14 水位线，且不再收 inline 102（互斥，无双投递）。
 func TestCORE3OldClientKeepsInlineUnderUniversalPull(t *testing.T) {
-	a, _ := startAssembly(t)
-	quietFlags(a)
-	a.flags.Apply(map[string]any{
+	a2, ca, cb, alice, _, cid := pair(t, "alice-cap", "bob-cap")
+	quietFlags(a2)
+	a2.flags.Apply(map[string]any{
 		featureflags.KeyUniversalPullEnabled: true,
 		featureflags.KeyWatermarkBatch:       50,
 		featureflags.KeyWatermarkIntervalMS:  60000,
 	})
-
-	_, ca, cb, alice, _, cid := pair(t, "alice-cap", "bob-cap")
-	// bob 不上报能力 ⇒ 老客户端路径。
+	// 能力探针：默认所有 uid 无能力（老客户端）；sendPullCapable 上报后
+	// session 能力表实时更新，pipe 按 uid 重新分流。
+	a2.pipe.SetPullCapability(func(uid int64) bool {
+		return a2.user.Session().PullCapableUID(uid)
+	})
 
 	// 消息 1：老客户端必须收到 inline 102（不漏消息），且绝不收 kind 14。
 	sendMsg(t, ca, cid, alice, "core3-old-1", "old client")

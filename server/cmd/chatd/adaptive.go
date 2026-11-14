@@ -79,7 +79,10 @@ func startAdaptiveControl(ctx context.Context, a *assembly) {
 
 	ctl := adaptive.New(adaptiveCfg(), time.Now)
 	lg := log.For("adaptive")
-	go func() {
+	// goroutine 只捕获局部 st，绝不读 a.adaptiveStore：转生产后该字段可能被
+	// 测试/二次装配在同一进程内重写，读字段会与写产生 data race（CI -race
+	// 实证）。局部 st 是本循环自己的 effective 表，生命周期由 ctx 决定。
+	go func(store *pipe.AdaptiveStoreHandle) {
 		t := time.NewTicker(adaptiveControlPeriod)
 		defer t.Stop()
 		var lastFanout uint64 // Enqueued 增量基线（同组计数器，§2.1）
@@ -93,10 +96,8 @@ func startAdaptiveControl(ctx context.Context, a *assembly) {
 				// 热改 flag-off → 立即清表回退静态默认（kill-switch，
 				// 不等待下一冷却）。
 				if !a.flags.Bool(featureflags.KeyAdaptiveControlEnabled, false) {
-					if a.adaptiveStore != nil {
-						for cid := range states {
-							a.pipe.AdaptiveClear(a.adaptiveStore, cid)
-						}
+					for cid := range states {
+						a.pipe.AdaptiveClear(store, cid)
 					}
 					return
 				}
@@ -122,7 +123,7 @@ func startAdaptiveControl(ctx context.Context, a *assembly) {
 				if eff.Batch <= 0 || eff.IntervalMS <= 0 {
 					continue // 无输出（冷却/中间带/旁路）：保持现值
 				}
-				if !a.pipe.AdaptiveWrite(a.adaptiveStore, cid, eff.Batch, eff.IntervalMS) {
+				if !a.pipe.AdaptiveWrite(store, cid, eff.Batch, eff.IntervalMS) {
 					lg.Debug("adaptive.reject", "cid", cid,
 						"batch", eff.Batch, "interval_ms", eff.IntervalMS)
 				} else {
@@ -131,7 +132,7 @@ func startAdaptiveControl(ctx context.Context, a *assembly) {
 				}
 			}
 		}
-	}()
+	}(st)
 }
 
 // activeConvs 保留为将来 per-cid 信号聚合的接缝（当前无 per-cid 计数器，

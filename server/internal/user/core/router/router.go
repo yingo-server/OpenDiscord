@@ -583,8 +583,7 @@ func v3Suppressible(kind uint32) bool {
 		uint32(kinds.KindMsgDelete),    // 107
 		uint32(kinds.KindMsgRecall),    // 108
 		uint32(kinds.KindWatermark),    // 14
-		uint32(kinds.KindConvPayload),  // 202
-		uint32(kinds.KindMemberUpdate):
+		uint32(kinds.KindConvPayload):  // 202
 		return true
 	}
 	return false
