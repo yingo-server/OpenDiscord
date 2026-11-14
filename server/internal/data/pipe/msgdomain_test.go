@@ -98,6 +98,9 @@ func TestMsgEditHappyPath(t *testing.T) {
 	fa := &FakeAudit{}
 	p, msgs, convs := v2Pipe(t, fa)
 	ctx := context.Background()
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	go p.fanout.start(ctx)
 	cid, _ := convs.CreateConv(ctx, &store.ConvMeta{CType: 2, CreatedBy: 7, CreatedAt: 1}, 7)
 	_ = convs.AddMember(ctx, &store.Member{Cid: cid, UID: 8})
 	seedMsg(t, msgs, cid, 7, 55, `{"client_msg_id":"m1","text":"hi","media":[]}`)
