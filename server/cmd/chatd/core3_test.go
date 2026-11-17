@@ -25,6 +25,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -52,10 +53,12 @@ func collectKinds(conn *websocket.Conn, window time.Duration) []uint32 {
 		}
 		env, derr := frame.Decode(data)
 		if derr != nil {
+			fmt.Printf("COLLECT-DIAG decode err: %v rawlen=%d\n", derr, len(data))
 			continue
 		}
 		out = append(out, env.Kind)
 	}
+	fmt.Printf("COLLECT-DIAG result=%v window=%s\n", out, window)
 	return out
 }
 
