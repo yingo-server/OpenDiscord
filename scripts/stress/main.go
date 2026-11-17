@@ -473,7 +473,7 @@ func main() {
 		start, maxConns := parseLadder(*ladder)
 		numConvs := (maxConns + convMembers - 1) / convMembers
 		poolSize := numConvs * convMembers
-		runLadder(*base, start, maxConns, *secs, *interval, convMembers, poolSize, rateLimit, mkMixer(), *out, *metrics)
+		runLadder(*base, start, maxConns, *secs, *interval, convMembers, poolSize, rateLimit, *skipBoot, mkMixer(), *out, *metrics)
 		return
 	}
 
@@ -601,13 +601,17 @@ func parseLadder(s string) (start, maxConns int) {
 // runLadder boots one chatd, pre-registers the whole pool once, seeds the max
 // conv set once, then doubles concurrency until availability < 70% or ramp
 // fails. Identity/conversation tables stay fixed across levels (defect #8).
-func runLadder(base string, start, maxConns, secs int, interval time.Duration, convMembers, poolSize int, rateLimit bool, mix *mixer, out, metricsURL string) {
+func runLadder(base string, start, maxConns, secs int, interval time.Duration, convMembers, poolSize int, rateLimit, skipBoot bool, mix *mixer, out, metricsURL string) {
 	dir, _ := os.MkdirTemp("", "ocladder-")
 	defer os.RemoveAll(dir)
-	chatd, baseURL, err := runChatd(dir, rateLimit)
-	if err != nil {
-		fmt.Println("boot:", err)
-		os.Exit(2)
+	var chatd *exec.Cmd
+	if !skipBoot {
+		var err error
+		chatd, base, err = runChatd(dir, rateLimit)
+		if err != nil {
+			fmt.Println("boot:", err)
+			os.Exit(2)
+		}
 	}
 	defer func() {
 		if chatd != nil && chatd.Process != nil {
@@ -615,7 +619,6 @@ func runLadder(base string, start, maxConns, secs int, interval time.Duration, c
 			chatd.Process.Wait()
 		}
 	}()
-	base = baseURL
 
 	fmt.Printf("== OpenDiscord stress ladder: start=%d max=%d duration=%ds conv_members=%d rate_limit=%s ==\n",
 		start, maxConns, secs, convMembers, rlLabel(rateLimit))
