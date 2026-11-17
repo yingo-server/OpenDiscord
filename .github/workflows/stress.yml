@@ -259,6 +259,9 @@ jobs:
               done
             fi
           } > "$SC/chatd.toml"
+          # chatd 的 dev_otp=true 仅在 APP_ENV=dev 时允许（authsvc 守门）；
+          # 压测注入账号依赖 dev OTP，故此处显式声明 dev 环境。
+          export APP_ENV=dev
           MEMBERS=10
           LADDER=""
           UNIV=0
