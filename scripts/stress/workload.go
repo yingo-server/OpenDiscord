@@ -307,6 +307,9 @@ func newPeerRecorder() *peerRecorder {
 }
 
 func (p *peerRecorder) mark(cmid string, t0 time.Time) {
+	if p == nil {
+		return // 场景不需要 send→peer_recv 统计时允许传 nil（如 restart-storm）
+	}
 	p.mu.Lock()
 	if len(p.pending) < 500000 {
 		p.pending[cmid] = t0
@@ -315,6 +318,9 @@ func (p *peerRecorder) mark(cmid string, t0 time.Time) {
 }
 
 func (p *peerRecorder) recv(cmid string) {
+	if p == nil {
+		return
+	}
 	p.mu.Lock()
 	t0, ok := p.pending[cmid]
 	if ok {
@@ -327,6 +333,9 @@ func (p *peerRecorder) recv(cmid string) {
 }
 
 func (p *peerRecorder) snapshot() []time.Duration {
+	if p == nil {
+		return nil
+	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	out := make([]time.Duration, len(p.samples))

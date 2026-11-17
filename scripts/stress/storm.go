@@ -142,11 +142,11 @@ func runRestartStorm(base string, conns, convMembers, secs int, interval time.Du
 		return
 	}
 	for _, w := range ws {
-		go w.readLoop(nil)
+		go w.readLoop(newPeerRecorder())
 	}
 	steadyDeadline := time.Now().Add(5 * time.Second)
 	for _, w := range ws {
-		go w.run(steadyDeadline, interval, newMixer(100, 0, 0, 0), nil)
+		go w.run(steadyDeadline, interval, newMixer(100, 0, 0, 0), newPeerRecorder())
 	}
 	time.Sleep(5 * time.Second)
 	var steadySyncs int64
@@ -176,11 +176,11 @@ func runRestartStorm(base string, conns, convMembers, secs int, interval time.Du
 	var qpsWG sync.WaitGroup
 	stopAfter := time.Now().Add(time.Duration(secs) * time.Second)
 	for _, w := range ws2 {
-		go w.readLoop(nil)
+		go w.readLoop(newPeerRecorder())
 		qpsWG.Add(1)
 		go func(w *worker) {
 			defer qpsWG.Done()
-			w.run(stopAfter, interval, newMixer(100, 0, 0, 0), nil)
+			w.run(stopAfter, interval, newMixer(100, 0, 0, 0), newPeerRecorder())
 		}(w)
 	}
 	// sample syncQPS once per second (the QPS curve)
