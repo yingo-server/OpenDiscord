@@ -193,7 +193,10 @@ jobs:
           # 全部不可用时显式 BLOCKED，不假跑。
           constrain() {
             BIN="$1"
-            if [ "$HW_PROFILE" != "2c2g" ]; then printf '%s' "$BIN"; return 0; fi
+            shift
+            # 非 2c2g 档：直接 exec 目标二进制（必须在后台函数体内真正运行，
+            # 否则 boot_chatd 的 healthz 永远连不上）。
+            if [ "$HW_PROFILE" != "2c2g" ]; then exec "$BIN" "$@"; fi
             CG="/sys/fs/cgroup/od-2c2g-$$"
             WRAPPED=""
             if mkdir "$CG" 2>/dev/null; then
@@ -222,9 +225,9 @@ jobs:
             CPUSET="0,1"
             nproc 2>/dev/null | grep -q '^1$' && CPUSET="0"
             if command -v taskset >/dev/null 2>&1; then
-              GOMAXPROCS=2 taskset -c "$CPUSET" sh -c "exec \"\$0\" \"\$@\"" "$BIN"
+              GOMAXPROCS=2 exec taskset -c "$CPUSET" "$BIN" "$@"
             else
-              GOMAXPROCS=2 sh -c "exec \"\$0\" \"\$@\"" "$BIN"
+              GOMAXPROCS=2 exec "$BIN" "$@"
             fi
           }
           export HW_PROFILE
