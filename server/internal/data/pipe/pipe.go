@@ -303,6 +303,18 @@ func NewAdaptiveStore() *adaptiveStore { return newAdaptiveStore() }
 // 句柄用；机制层内部类型 adaptiveStore 不直接暴露，读写都经 Pipe 方法）。
 type AdaptiveStoreHandle = adaptiveStore
 
+// AdaptiveGet 诊断用：返回某会话当前生效的 effective 参数。
+func (p *Pipe) AdaptiveGet(st *adaptiveStore, cid int64) (batch, intervalMS int, ok bool) {
+	if st == nil {
+		return 0, 0, false
+	}
+	s, ok := st.get(cid)
+	if !ok {
+		return 0, 0, false
+	}
+	return s.batch, s.intervalMS, true
+}
+
 // AdaptiveWrite 写入一条 effective[cid]（装配层控制循环专用，CORE-1 接线）。
 // 越界值由 adaptiveStore.set 拒绝（返回 false，保留旧值——spec §2.2 拒载），
 // 调用方据此写 adaptive.reject 审计事件。cid<=0 视为非法直接拒绝。

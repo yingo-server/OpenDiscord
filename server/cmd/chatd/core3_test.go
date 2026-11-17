@@ -152,6 +152,8 @@ func TestCORE3AdaptiveHotEffectAndStaticFallback(t *testing.T) {
 	sendMsg(t, ca, cid, alice, "adapt-eff-2", "m5")
 	sendMsg(t, ca, cid, alice, "adapt-eff-3", "m6")
 	got = collectKinds(cb, 2*time.Second)
+	b, iv, ok := a2.pipe.AdaptiveGet(a2.adaptiveStore, cid)
+	t.Logf("ADAPT-DIAG cid=%d effective=(batch=%d interval=%d ok=%v) got=%v", cid, b, iv, ok, got)
 	if n := countKinds(got, uint32(kinds.KindWatermark)); n != 3 {
 		t.Fatalf("effective[cid] (batch=1): watermark frames = %d, want 3 (kinds=%v)", n, got)
 	}
@@ -259,7 +261,7 @@ func TestCORE3GreySwitchNoDoubleDelivery(t *testing.T) {
 //   - 未上报能力的连接（老客户端）仍收到 inline 102 —— 不漏消息；
 //   - 上报能力后改收 kind 14 水位线，且不再收 inline 102（互斥，无双投递）。
 func TestCORE3OldClientKeepsInlineUnderUniversalPull(t *testing.T) {
-	a2, ca, cb, alice, _, cid := pair(t, "alice-cap", "bob-cap")
+	a2, ca, cb, alice, bob, cid := pair(t, "alice-cap", "bob-cap")
 	quietFlags(a2)
 	a2.flags.Apply(map[string]any{
 		featureflags.KeyUniversalPullEnabled: true,
@@ -284,6 +286,7 @@ func TestCORE3OldClientKeepsInlineUnderUniversalPull(t *testing.T) {
 
 	// bob 上报能力 ⇒ 改走水位线（互斥：不再收 inline 102）。
 	sendPullCapable(t, cb)
+	t.Logf("T3-DIAG bob uid=%d pullCapable=%v", bob.UserID, a2.user.Session().PullCapableUID(bob.UserID))
 	sendMsg(t, ca, cid, alice, "core3-new-1", "new client")
 	got = collectKinds(cb, 3*time.Second)
 	if n := countKinds(got, uint32(kinds.KindMsgNew)); n != 0 {
