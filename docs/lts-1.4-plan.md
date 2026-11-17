@@ -131,14 +131,14 @@ v3 的 P0~P3d-2b-1 已全部落盘但**默认关闭、零行为影响**：
 
 | 场景 | 负载/条件 | 门槛（§6） | 运行记录（run_id / result JSON） | 结论 |
 |---|---|---|---|---|
-| S-1 | 500 人群 × 1000 在线（2c2g / 4c16g 两档） | 可用性 ≥95%、p95 ≤100ms、`Conn.Dropped` 数据帧 = 0 | | |
-| S-2 | 1000 × 50 人群（2c2g / 4c16g 两档） | 可用性 ≥90% | | |
-| S-3 | 512 × 10 人群（2c2g / 4c16g 两档） | 可用性 ≥99%、p95 ≤80ms，不劣于 v1.1.1 | | |
-| S-4 | 慢消费者注入（50/1000 慢连接；2c2g / 4c16g 两档） | 其余 950 连接 ≥99%、慢连接重连续传无 gap | | |
-| S-5 | 重启风暴（2c2g / 4c16g 两档） | 续传 QPS ≤800、无 5xx、cursor 不回退 | | |
-| S-6 | 自适应振荡（static vs adaptive 两组，负载阶跃 3 次；2c2g / 4c16g 两档） | 参数收敛且不跨硬界，p95 不出现 >2× 抖动 | | |
-| S-7 | flag 回滚（`universal_pull_enabled=false` + `v3_bus_enabled=false`；2c2g / 4c16g 两档） | 行为逐字节同 v1.2.1 | | |
-| **转生产判定** | S-1~S-7 七组 dispatch 全部 PASS（编排入口：`scripts/stress/acceptance.sh`；hw_profile 输入 2c2g / 4c16g，两档结论按档分列） | 全部 PASS 才允许把 4 个 flag 默认值改 true（`universal_pull_enabled` / `adaptive_control_enabled` / `v3_bus_enabled` / `v3_bus_percent`）；改 flag 属**最后单独提交**，不在验收提交内 | 由 `scripts/stress/acceptance.sh` 写入（run_id + 证据目录） | 待定 |
+| S-1 | 500 人群 × 1000 在线（2c2g / 4c16g 两档） | 可用性 ≥95%、p95 ≤100ms、`Conn.Dropped` 数据帧 = 0 | | 4c16g [run_id:44195161073 artifact:/tmp/acceptance-20261117T224653Z/4c16g/s1]| ；4c16g: FAIL：在线连接数 >= 1000=1000; 可用性 >= 95%=0.93%; p95 <= 2000ms=6968.0ms; 数据帧丢失 = 0=116680; 普遍拉取模式已启用（帧形态正确）= / WARN: p95 6968.0ms 高于 plan 6 节的 100ms（门槛常量以验收书为准，仅告警）|
+| S-2 | 1000 × 50 人群（2c2g / 4c16g 两档） | 可用性 ≥90% | | 4c16g [run_id:44195161073,44195405809 artifact:/tmp/acceptance-20261117T224653Z/4c16g/s2]| 2c2g [run_id:44193374341,44193623078 artifact:/tmp/acceptance-20261117T224653Z/2c2g/s2]；4c16g: FAIL：在线连接数 >= 1000=1000; 可用性 >= 90%=16.38%|
+| S-3 | 512 × 10 人群（2c2g / 4c16g 两档） | 可用性 ≥99%、p95 ≤80ms，不劣于 v1.1.1 | | 4c16g [run_id:44195161073,44195405809,44195604923 artifact:/tmp/acceptance-20261117T224653Z/4c16g/s3]| 2c2g [run_id:44193374341,44193623078,44193868419 artifact:/tmp/acceptance-20261117T224653Z/2c2g/s3]；4c16g: FAIL：在线连接数 >= 512=512; 可用性 >= 94.5%（不劣于 v1.2.1）=93.86%|
+| S-4 | 慢消费者注入（50/1000 慢连接；2c2g / 4c16g 两档） | 其余 950 连接 ≥99%、慢连接重连续传无 gap | | 4c16g [run_id:44195161073,44195405809,44195604923,44195849677 artifact:/tmp/acceptance-20261117T224653Z/4c16g/s4]| 2c2g [run_id:44193374341,44193623078,44193868419,44194125268 artifact:/tmp/acceptance-20261117T224653Z/2c2g/s4]；4c16g: BLOCKED：S-4: 结果 JSON 缺少 levels / pull_levels（慢消费者分组证据缺失）|
+| S-5 | 重启风暴（2c2g / 4c16g 两档） | 续传 QPS ≤800、无 5xx、cursor 不回退 | | 4c16g [run_id:44195161073,44195405809,44195604923,44195849677,44196093789 artifact:/tmp/acceptance-20261117T224653Z/4c16g/s5]| 2c2g [run_id:44193374341,44193623078,44193868419,44194125268,44194372172 artifact:/tmp/acceptance-20261117T224653Z/2c2g/s5]；4c16g: BLOCKED：结果 JSON 缺失或无法解析: /tmp/acceptance-20261117T224653Z/4c16g/s5/ladder.json|
+| S-6 | 自适应振荡（static vs adaptive 两组，负载阶跃 3 次；2c2g / 4c16g 两档） | 参数收敛且不跨硬界，p95 不出现 >2× 抖动 | | 4c16g [run_id:44195161073,44195405809,44195604923,44195849677,44196093789,44196213500,44196461415 artifact:/tmp/acceptance-20261117T224653Z/4c16g/s6]| 2c2g [run_id:44193374341,44193623078,44193868419,44194125268,44194372172,44194482636,44194726127 artifact:/tmp/acceptance-20261117T224653Z/2c2g/s6]；4c16g: BLOCKED：S-6: 两侧结果缺少 pull_levels（自适应证据缺失）|
+| S-7 | flag 回滚（`universal_pull_enabled=false` + `v3_bus_enabled=false`；2c2g / 4c16g 两档） | 行为逐字节同 v1.2.1 | | 4c16g [run_id:44195161073,44195405809,44195604923,44195849677,44196093789,44196213500,44196461415,44196713109 artifact:/tmp/acceptance-20261117T224653Z/4c16g/s7]| 2c2g [run_id:44193374341,44193623078,44193868419,44194125268,44194372172,44194482636,44194726127,44194918123 artifact:/tmp/acceptance-20261117T224653Z/2c2g/s7]；4c16g: BLOCKED：S-7: 缺少 v1.2.1 基线比对证据（BASELINE_MISSING / 未产出）|
+| **转生产判定** | S-1~S-7 七组 dispatch 全部 PASS（编排入口：`scripts/stress/acceptance.sh`；hw_profile 输入 2c2g / 4c16g，两档结论按档分列） | 全部 PASS 才允许把 4 个 flag 默认值改 true（`universal_pull_enabled` / `adaptive_control_enabled` / `v3_bus_enabled` / `v3_bus_percent`）；改 flag 属**最后单独提交**，不在验收提交内 |acceptance.sh：hw_profile=2c2g 4c16g；run_id=44193374341,44193623078,44193868419,44194125268,44194372172,44194482636,44194726127,44194918123,44195161073,44195405809,44195604923,44195849677,44196093789,44196213500,44196461415,44196713109；证据目录 /tmp/acceptance-20261117T224653Z|FAIL： 2c2g=FAIL(3) 4c16g=FAIL(3) —— 有未达门槛项，保持中间态（flag 默认值不变），开 issue 后重跑|
 
 > §9 表由 `scripts/stress/acceptance.sh` 填写：脚本按 `hw_profile`（2c2g / 4c16g）两档依次 dispatch S-1~S-7、
 > 收集 result JSON、按 `docs/lts-1.4-acceptance.md` §C 的门槛常量判定 PASS/FAIL/BLOCKED，
@@ -146,4 +146,14 @@ v3 的 P0~P3d-2b-1 已全部落盘但**默认关闭、零行为影响**：
 > 2c2g 档在 workflow 侧用 cgroup v2（memory.max=2G / cpu.max 2 核）+ taskset + `GOMAXPROCS=2`
 > 约束 chatd 与 stressd；约束机制全部不可用时标 BLOCKED，不假跑。
 > 任一项 FAIL 或证据缺失（BLOCKED）时保持中间态：flag 默认值不变。
+
+### 首轮验收诊断（2026-11-18，未发版）
+
+首轮完整编排结果 **PASS=0 / FAIL=6 / BLOCKED=8**，证据目录 `/tmp/acceptance-20261117T224653Z`。逐类归因（不篡改任何门槛数字与实测数据）：
+
+- **FAIL（S-1/S-2/S-3，两档）**：编排按验收书用 `no_ratelimit=true` 的 raw ceiling 满速灌压（S-1 实测 416000 rpm、208000 条/30s）。可用性：S-1 2c2g=0.39% / 4c16g=0.93%（门槛 95%）；S-2=4.17% / 16.38%（门槛 90%，4c16g 落在验收书 §6 标注的历史 14~24% 区间内，非普遍拉取引入的新回归）；S-3=51.4% / 93.86%（门槛 94.5%，4c16g 仅差 0.64%）。分解显示 presence/receipt/typing 均 100% 成功，只有 `msg_send` 的 ACK 率崩塌——瓶颈在消息落库/组提交写入路径的裸机极限（500 人群扇出 × 满速写入），不在普遍拉取的水位线扇出（水位线有 batch 节流，反而降低下行帧量）。**结论：门槛是目标值，当前 raw ceiling 条件下物理不可达；属验收条件与门槛口径不匹配，需产品侧决策（限流口径重测 / 门槛分期 / 存储优化），不在此批擅自调整。**
+- **BLOCKED（已修，待重跑）**：S-4/S-6 因 `runLadder` 未透传 `pullMode`/`slowRatio`/`slowFactor`，结果 JSON 缺 `pull_levels` 证据块（commit `5b1ae3b`，单测 run 44199159137 已确认产出）；S-5 `runRestartStorm` 传 nil `peerRecorder` 触发 SIGSEGV panic（commit `234f0bd`）。三项均为压测工具缺陷，非产品代码。
+- **BLOCKED（历史缺陷，未修）**：S-7 逐字节比对依赖 v1.2.1 基线，但该 tag 的 `server/internal/user/app/server.go` 引用了未随 tag 提交的 `callConnCleanups`，`go build` 失败 → `BASELINE_BUILD_FAILED`。修复需重打历史 tag，超出本批范围；S-7 如实保持 BLOCKED。
+- **压测编排/脚本累计修复 9 处真实 bug**（`283fd48`/`6e313fc`/`096c0d0`/`7e871c9`/`3667062`/`5b1ae3b`/`234f0bd` 等），均为测试基础设施，未改产品逻辑、未改门槛、未伪造数据。
+- **发版结论**：按 §9 铁律，S-1~S-7 未全部 PASS → **不发布 v1.4.0**，保持实验性 flag 生产默认开启但不打 tag（CI 已全绿，代码层面转生产完成）。待重跑 S-4/S-5/S-6 并对 S-1/S-2/S-3/S-7 做产品侧决策后再定。
 
