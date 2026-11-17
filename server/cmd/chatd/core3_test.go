@@ -49,6 +49,7 @@ func collectKinds(conn *websocket.Conn, window time.Duration) []uint32 {
 		_ = conn.SetReadDeadline(deadline)
 		_, data, err := conn.ReadMessage()
 		if err != nil {
+			fmt.Printf("COLLECT-DIAG read err after %v: %v (n=%d)\n", time.Since(deadline.Add(-window)), err, len(out))
 			break
 		}
 		env, derr := frame.Decode(data)
