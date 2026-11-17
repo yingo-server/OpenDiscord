@@ -46,8 +46,10 @@ func collectKinds(conn *websocket.Conn, window time.Duration) []uint32 {
 	end := time.Now().Add(window)
 	// drain 模式：每次读用固定短 deadline（静默期），读到帧就继续，读超时
 	// 即视为读完。每轮都用「当前时刻 + 静默期」重设，绝不留过期 deadline
-	// 给下一轮 collectKinds（同一 conn 会连续 collect，这是之前空读的根因）。
-	quiet := 150 * time.Millisecond
+	// 给下一轮 collectKinds（同一 conn 会连续 collect）。
+	// quiet 必须 > flusher 组提交(50ms) + fanout 聚合窗口(100ms)，否则会在
+	// 帧到达前就误判静默读完（之前 150ms 卡在边界导致第二轮空读）。
+	quiet := 600 * time.Millisecond
 	for time.Now().Before(end) {
 		_ = conn.SetReadDeadline(time.Now().Add(quiet))
 		_, data, err := conn.ReadMessage()
