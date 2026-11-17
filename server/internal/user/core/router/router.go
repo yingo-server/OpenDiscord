@@ -420,10 +420,13 @@ func (r *Router) deliver(env *chatpb.Envelope, connID uint64, preEncoded []byte)
 	}
 	if uid := int64(env.GetUserId()); uid > 0 {
 		if env.Kind == uint32(kinds.KindWatermark) {
+			v3nil := r.V3DirectEnabled == nil
+			v3ok := true
+			if !v3nil {
+				v3ok = r.V3DirectEnabled(uid)
+			}
 			fmt.Printf("DOWN-DIAG kind14 uid=%d v3DirectNil=%v v3Direct=%v suppressible=%v\n",
-				uid, r.V3DirectEnabled == nil, func() bool {
-					if r.V3DirectEnabled == nil { return true }; return r.V3DirectEnabled(uid)
-				}(), v3Suppressible(env.Kind))
+				uid, v3nil, v3ok, v3Suppressible(env.Kind))
 		}
 		if n := r.sess.Broadcast(uid, b); n > 0 {
 			if env.Kind == uint32(kinds.KindWatermark) {
