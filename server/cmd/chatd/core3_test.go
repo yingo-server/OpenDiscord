@@ -25,7 +25,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"testing"
 	"time"
 
@@ -44,22 +43,28 @@ import (
 // 以及某类帧在窗口内没有出现。
 func collectKinds(conn *websocket.Conn, window time.Duration) []uint32 {
 	var out []uint32
-	deadline := time.Now().Add(window)
-	for time.Now().Before(deadline) {
-		_ = conn.SetReadDeadline(deadline)
+	end := time.Now().Add(window)
+	// 连接可能被上一次 collectKinds 留了一个已过期的 read deadline；
+	// 先清掉，避免第一次 ReadMessage 立即 i/o timeout（gorilla 直接把
+	// deadline 透传给底层 TCP，过期值会让读瞬间失败）。
+	_ = conn.SetReadDeadline(time.Time{})
+	for {
+		remaining := time.Until(end)
+		if remaining <= 0 {
+			break
+		}
+		_ = conn.SetReadDeadline(time.Now().Add(remaining))
 		_, data, err := conn.ReadMessage()
 		if err != nil {
-			fmt.Printf("COLLECT-DIAG read err after %v: %v (n=%d)\n", time.Since(deadline.Add(-window)), err, len(out))
 			break
 		}
 		env, derr := frame.Decode(data)
 		if derr != nil {
-			fmt.Printf("COLLECT-DIAG decode err: %v rawlen=%d\n", derr, len(data))
 			continue
 		}
 		out = append(out, env.Kind)
 	}
-	fmt.Printf("COLLECT-DIAG result=%v window=%s\n", out, window)
+	_ = conn.SetReadDeadline(time.Time{})
 	return out
 }
 
@@ -156,8 +161,6 @@ func TestCORE3AdaptiveHotEffectAndStaticFallback(t *testing.T) {
 	sendMsg(t, ca, cid, alice, "adapt-eff-2", "m5")
 	sendMsg(t, ca, cid, alice, "adapt-eff-3", "m6")
 	got = collectKinds(cb, 2*time.Second)
-	b, iv, ok := a2.pipe.AdaptiveGet(a2.adaptiveStore, cid)
-	t.Logf("ADAPT-DIAG cid=%d effective=(batch=%d interval=%d ok=%v) got=%v", cid, b, iv, ok, got)
 	if n := countKinds(got, uint32(kinds.KindWatermark)); n != 3 {
 		t.Fatalf("effective[cid] (batch=1): watermark frames = %d, want 3 (kinds=%v)", n, got)
 	}
@@ -265,7 +268,7 @@ func TestCORE3GreySwitchNoDoubleDelivery(t *testing.T) {
 //   - 未上报能力的连接（老客户端）仍收到 inline 102 —— 不漏消息；
 //   - 上报能力后改收 kind 14 水位线，且不再收 inline 102（互斥，无双投递）。
 func TestCORE3OldClientKeepsInlineUnderUniversalPull(t *testing.T) {
-	a2, ca, cb, alice, bob, cid := pair(t, "alice-cap", "bob-cap")
+	a2, ca, cb, alice, _, cid := pair(t, "alice-cap", "bob-cap")
 	quietFlags(a2)
 	a2.flags.Apply(map[string]any{
 		featureflags.KeyUniversalPullEnabled: true,
@@ -290,7 +293,6 @@ func TestCORE3OldClientKeepsInlineUnderUniversalPull(t *testing.T) {
 
 	// bob 上报能力 ⇒ 改走水位线（互斥：不再收 inline 102）。
 	sendPullCapable(t, cb)
-	t.Logf("T3-DIAG bob uid=%d pullCapable=%v", bob.UserID, a2.user.Session().PullCapableUID(bob.UserID))
 	sendMsg(t, ca, cid, alice, "core3-new-1", "new client")
 	got = collectKinds(cb, 3*time.Second)
 	if n := countKinds(got, uint32(kinds.KindMsgNew)); n != 0 {

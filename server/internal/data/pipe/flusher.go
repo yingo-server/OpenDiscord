@@ -4,7 +4,6 @@ package pipe
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"sync"
 	"time"
 
@@ -296,8 +295,6 @@ func (f *flusher) fanoutNew(m store.PendingMsg, mediaIdx map[string]*store.Media
 			// 收件人（老客户端）仍然收 inline 102 —— 绝不漏消息。
 			// 两组收件人互斥 ⇒ 同一 uid 不会同时收到水位线与 102（无双投递）。
 			pullUids, inlineUids := f.fanout.splitPullUids(uids)
-			fmt.Printf("FLUSH-DIAG cid=%d seq=%d uids=%v pull=%v inline=%v putBulkNil=%v\n",
-				m.Cid, m.Seq, uids, pullUids, inlineUids, f.putBulk == nil)
 			if len(pullUids) > 0 {
 				f.fanout.emitWatermarkTo(uint64(m.Cid), uint64(m.Seq), len(members), pullUids, f.putBulk)
 			}
