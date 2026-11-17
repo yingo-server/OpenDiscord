@@ -38,32 +38,60 @@ import (
 
 // ---------------------------------------------------------------- 工具
 
-// collectKinds 在时间窗内读取某连接上的所有帧，返回它们的 kind 列表。
-// 读超时 / 连接关闭都视为「读完了」，不 Fatal —— 用于统计某类帧出现几次、
-// 以及某类帧在窗口内没有出现。
-func collectKinds(conn *websocket.Conn, window time.Duration) []uint32 {
+// frameReader 在 conn 上跑一个长期读 goroutine，把所有帧的 kind 推进 ch。
+// 关键：gorilla 连接在一次 read deadline 超时后，下一次 ReadMessage 会立即
+// 返回 stale timeout（即使重设 deadline）——所以绝不能反复设短 deadline 读。
+// 这里只设一次很长的 deadline（测试 cleanup 时 close conn 让 goroutine 退出），
+// 由单一读者持续收帧，测试从 ch 按阶段收集，彻底消除 deadline 状态污染。
+type frameReader struct {
+	ch   chan uint32
+	done chan struct{}
+}
+
+func startFrameReader(conn *websocket.Conn) *frameReader {
+	fr := &frameReader{ch: make(chan uint32, 512), done: make(chan struct{})}
+	_ = conn.SetReadDeadline(time.Time{}) // 不设超时；靠 conn.Close 唤醒
+	go func() {
+		defer close(fr.done)
+		for {
+			_, data, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
+			if env, derr := frame.Decode(data); derr == nil {
+				select {
+				case fr.ch <- env.Kind:
+				case <-fr.done:
+					return
+				}
+			}
+		}
+	}()
+	return fr
+}
+
+// collect 从 reader 收取一个静默期内的所有帧，返回 kind 列表。多轮调用共享
+// 同一个 goroutine，无 deadline 复用问题。
+func (fr *frameReader) collect(window time.Duration) []uint32 {
 	var out []uint32
 	end := time.Now().Add(window)
-	// drain 模式：每次读用固定短 deadline（静默期），读到帧就继续，读超时
-	// 即视为读完。每轮都用「当前时刻 + 静默期」重设，绝不留过期 deadline
-	// 给下一轮 collectKinds（同一 conn 会连续 collect）。
-	// quiet 必须 > flusher 组提交(50ms) + fanout 聚合窗口(100ms)，否则会在
-	// 帧到达前就误判静默读完（之前 150ms 卡在边界导致第二轮空读）。
-	quiet := 600 * time.Millisecond
-	for time.Now().Before(end) {
-		_ = conn.SetReadDeadline(time.Now().Add(quiet))
-		_, data, err := conn.ReadMessage()
-		if err != nil {
-			return out // 静默期无新帧 → 读完
+	for {
+		// 剩余窗口内取一帧；取不到（静默/超时）即返回。
+		remain := time.Until(end)
+		if remain <= 0 {
+			return out
 		}
-		env, derr := frame.Decode(data)
-		if derr != nil {
-			continue
+		timer := time.NewTimer(remain)
+		select {
+		case k := <-fr.ch:
+			if !timer.Stop() {
+				<-timer.C
+			}
+			out = append(out, k)
+		case <-timer.C:
+			return out
 		}
-		out = append(out, env.Kind)
 	}
-	_ = conn.SetReadDeadline(time.Time{})
-	return out
 }
 
 // countKinds 统计 kind 列表中某个 kind 的出现次数。
@@ -116,6 +144,7 @@ func TestCORE3AdaptiveHotEffectAndStaticFallback(t *testing.T) {
 	// 1.4 转产后 adaptive 默认 true、run() 已启动控制循环；quietFlags 关掉
 	// 它，避免周期写 effective[1] 干扰水位线计数（§G 纪律）。
 	a2, ca, cb, alice, _, cid := pair(t, "alice-adapt", "bob-adapt")
+	fr := startFrameReader(cb)
 	quietFlags(a2)
 	a2.flags.Apply(map[string]any{
 		featureflags.KeyUniversalPullEnabled:   true,
@@ -146,7 +175,7 @@ func TestCORE3AdaptiveHotEffectAndStaticFallback(t *testing.T) {
 	sendMsg(t, ca, cid, alice, "adapt-static-1", "m1")
 	sendMsg(t, ca, cid, alice, "adapt-static-2", "m2")
 	sendMsg(t, ca, cid, alice, "adapt-static-3", "m3")
-	got := collectKinds(cb, 2*time.Second)
+	got := fr.collect(1500 * time.Millisecond)
 	if n := countKinds(got, uint32(kinds.KindWatermark)); n != 1 {
 		t.Fatalf("static defaults (batch=50): watermark frames = %d, want 1 (first, reason=1) (kinds=%v)", n, got)
 	}
@@ -158,7 +187,7 @@ func TestCORE3AdaptiveHotEffectAndStaticFallback(t *testing.T) {
 	sendMsg(t, ca, cid, alice, "adapt-eff-1", "m4")
 	sendMsg(t, ca, cid, alice, "adapt-eff-2", "m5")
 	sendMsg(t, ca, cid, alice, "adapt-eff-3", "m6")
-	got = collectKinds(cb, 2*time.Second)
+	got = fr.collect(1500 * time.Millisecond)
 	if n := countKinds(got, uint32(kinds.KindWatermark)); n != 3 {
 		t.Fatalf("effective[cid] (batch=1): watermark frames = %d, want 3 (kinds=%v)", n, got)
 	}
@@ -169,7 +198,7 @@ func TestCORE3AdaptiveHotEffectAndStaticFallback(t *testing.T) {
 	sendMsg(t, ca, cid, alice, "adapt-clear-1", "m7")
 	sendMsg(t, ca, cid, alice, "adapt-clear-2", "m8")
 	sendMsg(t, ca, cid, alice, "adapt-clear-3", "m9")
-	got = collectKinds(cb, 2*time.Second)
+	got = fr.collect(1500 * time.Millisecond)
 	if n := countKinds(got, uint32(kinds.KindWatermark)); n != 0 {
 		t.Fatalf("after AdaptiveClear: watermark frames = %d, want 0 (static 50/2000 fallback) (kinds=%v)", n, got)
 	}
@@ -267,6 +296,7 @@ func TestCORE3GreySwitchNoDoubleDelivery(t *testing.T) {
 //   - 上报能力后改收 kind 14 水位线，且不再收 inline 102（互斥，无双投递）。
 func TestCORE3OldClientKeepsInlineUnderUniversalPull(t *testing.T) {
 	a2, ca, cb, alice, _, cid := pair(t, "alice-cap", "bob-cap")
+	fr := startFrameReader(cb)
 	quietFlags(a2)
 	a2.flags.Apply(map[string]any{
 		featureflags.KeyUniversalPullEnabled: true,
@@ -281,7 +311,7 @@ func TestCORE3OldClientKeepsInlineUnderUniversalPull(t *testing.T) {
 
 	// 消息 1：老客户端必须收到 inline 102（不漏消息），且绝不收 kind 14。
 	sendMsg(t, ca, cid, alice, "core3-old-1", "old client")
-	got := collectKinds(cb, 3*time.Second)
+	got := fr.collect(1500 * time.Millisecond)
 	if n := countKinds(got, uint32(kinds.KindMsgNew)); n != 1 {
 		t.Fatalf("old client (no pull_capable): MSG_NEW frames = %d, want 1 (no message loss) (kinds=%v)", n, got)
 	}
@@ -292,7 +322,7 @@ func TestCORE3OldClientKeepsInlineUnderUniversalPull(t *testing.T) {
 	// bob 上报能力 ⇒ 改走水位线（互斥：不再收 inline 102）。
 	sendPullCapable(t, cb)
 	sendMsg(t, ca, cid, alice, "core3-new-1", "new client")
-	got = collectKinds(cb, 3*time.Second)
+	got = fr.collect(1500 * time.Millisecond)
 	if n := countKinds(got, uint32(kinds.KindMsgNew)); n != 0 {
 		t.Fatalf("pull-capable client: MSG_NEW frames = %d, want 0 (must switch to watermark) (kinds=%v)", n, got)
 	}
