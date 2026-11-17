@@ -112,8 +112,11 @@ func startAdaptiveControl(ctx context.Context, a *assembly) {
 				// 超出本批文件域（activeConvs 注释）。哨兵键必须取一个
 				// 永远不与真实会话冲突的值——真实 conv cid 从 1 自增，
 				// 取 1 会污染首个会话（CORE-3 e2e 实证：控制循环每秒把
-				// effective[1] 写回静态 batch，热生效窗口被冲掉）。取 -1。
-				const cid = int64(-1)
+				// effective[1] 写回静态 batch，热生效窗口被冲掉）。哨兵取
+				// 1<<62：巨大的正数，永不与自增的真实会话 id 冲突，且
+				// SafeTick 的 uint64(cid) 转换对正常量合法（负常量会触发 vet
+				// 「constant overflows uint64」）。
+				const cid = int64(1 << 62)
 				sig := adaptive.Signals{
 					QueueDepth:   int(fs.Enqueued % 4096),
 					DroppedDelta: int(fs.DroppedQueue),
