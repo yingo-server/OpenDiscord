@@ -11,6 +11,7 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
@@ -418,7 +419,16 @@ func (r *Router) deliver(env *chatpb.Envelope, connID uint64, preEncoded []byte)
 		return
 	}
 	if uid := int64(env.GetUserId()); uid > 0 {
+		if env.Kind == uint32(kinds.KindWatermark) {
+			fmt.Printf("DOWN-DIAG kind14 uid=%d v3DirectNil=%v v3Direct=%v suppressible=%v\n",
+				uid, r.V3DirectEnabled == nil, func() bool {
+					if r.V3DirectEnabled == nil { return true }; return r.V3DirectEnabled(uid)
+				}(), v3Suppressible(env.Kind))
+		}
 		if n := r.sess.Broadcast(uid, b); n > 0 {
+			if env.Kind == uint32(kinds.KindWatermark) {
+				fmt.Printf("DOWN-DIAG kind14 uid=%d broadcast n=%d\n", uid, n)
+			}
 			if r.OnDeliver != nil {
 				r.OnDeliver(env.Kind, 0)
 			}
