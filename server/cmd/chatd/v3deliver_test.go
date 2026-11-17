@@ -74,6 +74,7 @@ func TestV3DeliverFlagOffLegacyByteIdentical(t *testing.T) {
 // 立即归位放行（kill-switch），同 uid 判定稳定（uid 哈希，T-SV-7）。
 func TestV3DeliverGreySuppressionAndKillSwitch(t *testing.T) {
 	a, _ := startAssembly(t)
+	forceLegacyFlags(a)
 	h := a.v3Hooks
 	if h == nil {
 		t.Fatal("hooks must be constructed with v3 wire present")

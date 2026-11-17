@@ -108,10 +108,12 @@ func startAdaptiveControl(ctx context.Context, a *assembly) {
 					ps := w.Plane.Stats()
 					stG = adaptive.Global{PausedConns: ps.PausedConns, Backpressured: ps.Backpressured}
 				}
-				// 单会话视角（cid=1 哨兵键）：per-cid 信号聚合属机制层扩展，
-				// 超出本批文件域（activeConvs 注释）。effective[1] 的写入
-				// 本身验证接线与热生效（任务书要求 5 / 要求 7 控制器热生效）。
-				const cid = int64(1)
+				// 单会话视角（哨兵键）：per-cid 信号聚合属机制层扩展，
+				// 超出本批文件域（activeConvs 注释）。哨兵键必须取一个
+				// 永远不与真实会话冲突的值——真实 conv cid 从 1 自增，
+				// 取 1 会污染首个会话（CORE-3 e2e 实证：控制循环每秒把
+				// effective[1] 写回静态 batch，热生效窗口被冲掉）。取 -1。
+				const cid = int64(-1)
 				sig := adaptive.Signals{
 					QueueDepth:   int(fs.Enqueued % 4096),
 					DroppedDelta: int(fs.DroppedQueue),
