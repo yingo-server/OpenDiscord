@@ -33,6 +33,7 @@ package pipe
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -773,6 +774,12 @@ func (f *fanoutPlane) shouldEmitWatermark(cid int64, seq uint64) (emit bool, rea
 		f.pullState = map[int64]*pullConvState{}
 	}
 	st := f.pullState[cid]
+	lastSeqDiag := uint64(0)
+	if st != nil {
+		lastSeqDiag = st.lastSeq
+	}
+	fmt.Printf("WM-DIAG cid=%d seq=%d batch=%d interval=%s hasState=%v lastSeq=%d\n",
+		cid, seq, batch, interval, st != nil, lastSeqDiag)
 	if st == nil {
 		// 首次：reason=1。v1.2.1 基线语义：第一条水位线立即发（时间触发兜底
 		// 也覆盖后续），lastSeq 记为 seq（推进计数从这条起算）。T-UP-3 用
@@ -885,6 +892,7 @@ func (f *fanoutPlane) emitWatermarkTo(cid, seq uint64, memberCount int, uids []u
 		return
 	}
 	emit, reason := f.shouldEmitWatermark(int64(cid), seq)
+	fmt.Printf("WM-EMIT cid=%d seq=%d uids=%v emit=%v reason=%d\n", cid, seq, uids, emit, reason)
 	if !emit {
 		return
 	}
