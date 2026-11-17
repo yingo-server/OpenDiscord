@@ -636,7 +636,14 @@ func runLadder(base string, start, maxConns, secs int, interval time.Duration, c
 	numConvsMax := (poolSize + convMembers - 1) / convMembers
 	fmt.Printf("pre-registered users: %d (in %s)\n", len(pool), time.Since(t0).Round(time.Millisecond))
 
-	convIDs, err := seedConvs(filepath.Join(dir, "hot.db"), uids, convMembers, numConvsMax)
+	// -no-boot：chatd 由 workflow 预先启动，其 hot.db 经 CHATD_DB 传入；
+	// 必须 seed 到那一份库（临时 dir 下的 hot.db 是空库）。内部 boot 模式
+	// 才用 runChatd 返回的临时库。
+	seedDB := dbPathFromEnv()
+	if seedDB == "" {
+		seedDB = filepath.Join(dir, "hot.db")
+	}
+	convIDs, err := seedConvs(seedDB, uids, convMembers, numConvsMax)
 	if err != nil {
 		fmt.Println("seed convs:", err)
 		os.Exit(2)
