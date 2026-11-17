@@ -473,7 +473,7 @@ func main() {
 		start, maxConns := parseLadder(*ladder)
 		numConvs := (maxConns + convMembers - 1) / convMembers
 		poolSize := numConvs * convMembers
-		runLadder(*base, start, maxConns, *secs, *interval, convMembers, poolSize, rateLimit, *skipBoot, mkMixer(), *out, *metrics)
+		runLadder(*base, start, maxConns, *secs, *interval, convMembers, poolSize, rateLimit, *skipBoot, *pullMode, *slowRatio, *slowFactor, mkMixer(), *out, *metrics)
 		return
 	}
 
@@ -601,7 +601,7 @@ func parseLadder(s string) (start, maxConns int) {
 // runLadder boots one chatd, pre-registers the whole pool once, seeds the max
 // conv set once, then doubles concurrency until availability < 70% or ramp
 // fails. Identity/conversation tables stay fixed across levels (defect #8).
-func runLadder(base string, start, maxConns, secs int, interval time.Duration, convMembers, poolSize int, rateLimit, skipBoot bool, mix *mixer, out, metricsURL string) {
+func runLadder(base string, start, maxConns, secs int, interval time.Duration, convMembers, poolSize int, rateLimit, skipBoot, pullMode bool, slowRatio, slowFactor float64, mix *mixer, out, metricsURL string) {
 	dir, _ := os.MkdirTemp("", "ocladder-")
 	defer os.RemoveAll(dir)
 	var chatd *exec.Cmd
@@ -663,6 +663,7 @@ func runLadder(base string, start, maxConns, secs int, interval time.Duration, c
 			conns: n, convMembers: convMembers, convIDs: useConvs,
 			pool: pool[:n], base: base, duration: time.Duration(secs) * time.Second,
 			interval: interval, mix: mix, rampBudget: rampBudgetFor(n),
+			pullMode: pullMode, slowRatio: slowRatio, slowFactor: slowFactor,
 		})
 		rows = append(rows, res)
 		ms := res.Ops["msg_send"]
