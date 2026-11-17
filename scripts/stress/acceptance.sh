@@ -179,7 +179,7 @@ dispatch_run() {
   flags="$2"
   hw="${3:-4c16g}"
   since="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  gh workflow run "$WORKFLOW" --repo "$REPO" \
+  gh workflow run "$WORKFLOW" --repo "$REPO" --ref main \
     -f "scenario=$wfsc" -f "feature_flags=$flags" -f "duration=30" \
     -f "no_ratelimit=true" -f "hw_profile=$hw" >/dev/null
   # 找到刚刚创建的那次 run（按创建时间取最新一条）。
@@ -495,7 +495,7 @@ for HW in $HW_PROFILES; do
       dispatch_plan "$sc" > "$RESULTS_DIR/plan-$HW-$sc.txt"
       while IFS="$(printf '\t')" read -r wfsc flags; do
         [ -n "$wfsc" ] || continue
-        echo "   gh workflow run $WORKFLOW --repo $REPO -f scenario=$wfsc -f feature_flags=$flags -f duration=30 -f no_ratelimit=true -f hw_profile=$HW"
+        echo "   gh workflow run $WORKFLOW --repo $REPO --ref main -f scenario=$wfsc -f feature_flags=$flags -f duration=30 -f no_ratelimit=true -f hw_profile=$HW"
       done < "$RESULTS_DIR/plan-$HW-$sc.txt"
       echo "   门槛：$(scenario_gate "$sc")"
       continue
