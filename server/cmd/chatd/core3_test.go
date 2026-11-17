@@ -44,19 +44,15 @@ import (
 func collectKinds(conn *websocket.Conn, window time.Duration) []uint32 {
 	var out []uint32
 	end := time.Now().Add(window)
-	// 连接可能被上一次 collectKinds 留了一个已过期的 read deadline；
-	// 先清掉，避免第一次 ReadMessage 立即 i/o timeout（gorilla 直接把
-	// deadline 透传给底层 TCP，过期值会让读瞬间失败）。
-	_ = conn.SetReadDeadline(time.Time{})
-	for {
-		remaining := time.Until(end)
-		if remaining <= 0 {
-			break
-		}
-		_ = conn.SetReadDeadline(time.Now().Add(remaining))
+	// drain 模式：每次读用固定短 deadline（静默期），读到帧就继续，读超时
+	// 即视为读完。每轮都用「当前时刻 + 静默期」重设，绝不留过期 deadline
+	// 给下一轮 collectKinds（同一 conn 会连续 collect，这是之前空读的根因）。
+	quiet := 150 * time.Millisecond
+	for time.Now().Before(end) {
+		_ = conn.SetReadDeadline(time.Now().Add(quiet))
 		_, data, err := conn.ReadMessage()
 		if err != nil {
-			break
+			return out // 静默期无新帧 → 读完
 		}
 		env, derr := frame.Decode(data)
 		if derr != nil {
