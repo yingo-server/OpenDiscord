@@ -174,6 +174,7 @@ sudo opendiscordctl doctor
 面向部署者：
 - [部署手册](docs/deploy.md)：安装、配置、Caddy、备份恢复、故障排查、安全基线
 - [升级说明 v1.1](docs/release-notes-v1.1.0.md)：升级步骤、配置变更、回滚
+- [发布说明 v1.4.0](docs/release-notes-v1.4.0.md)：生产化转默认 + 已知容量限制（知情发布）
 
 面向开发者：
 - [开发文档索引](docs/README.md)：架构、协议、各层设计
