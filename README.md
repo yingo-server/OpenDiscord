@@ -181,6 +181,7 @@ sudo opendiscordctl doctor
 - [API 参考](docs/api-reference.md) / [CLI 参考](docs/cli-reference.md) / [WS 协议](docs/ws-protocol.md)
 - [路线图](docs/roadmap.md) / [变更日志](CHANGELOG.md) / [已知问题](docs/known-issues.md)
 - [1.4 LTS 规划](docs/lts-1.4-plan.md)：普遍拉取 + 自适应 + v3 总线的决策与验收门槛
+- [v2.0 架构重设规划（草案）](docs/architecture-reset-v2-plan.md)：容量瓶颈归因与分片/异步写/会话 Actor 路线
 
 ## 许可
 
