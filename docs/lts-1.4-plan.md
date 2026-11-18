@@ -155,5 +155,5 @@ v3 的 P0~P3d-2b-1 已全部落盘但**默认关闭、零行为影响**：
 - **BLOCKED（已修，待重跑）**：S-4/S-6 因 `runLadder` 未透传 `pullMode`/`slowRatio`/`slowFactor`，结果 JSON 缺 `pull_levels` 证据块（commit `5b1ae3b`，单测 run 44199159137 已确认产出）；S-5 `runRestartStorm` 传 nil `peerRecorder` 触发 SIGSEGV panic（commit `234f0bd`）。三项均为压测工具缺陷，非产品代码。
 - **BLOCKED（历史缺陷，未修）**：S-7 逐字节比对依赖 v1.2.1 基线，但该 tag 的 `server/internal/user/app/server.go` 引用了未随 tag 提交的 `callConnCleanups`，`go build` 失败 → `BASELINE_BUILD_FAILED`。修复需重打历史 tag，超出本批范围；S-7 如实保持 BLOCKED。
 - **压测编排/脚本累计修复 9 处真实 bug**（`283fd48`/`6e313fc`/`096c0d0`/`7e871c9`/`3667062`/`5b1ae3b`/`234f0bd` 等），均为测试基础设施，未改产品逻辑、未改门槛、未伪造数据。
-- **发版结论**：按 §9 铁律，S-1~S-7 未全部 PASS → **不发布 v1.4.0**，保持实验性 flag 生产默认开启但不打 tag（CI 已全绿，代码层面转生产完成）。待重跑 S-4/S-5/S-6 并对 S-1/S-2/S-3/S-7 做产品侧决策后再定。
+- **发版结论（2026-11-18 用户知情决策）**：CI 已全绿（代码层面转生产完成）；压测 PASS=0 / FAIL=6 / BLOCKED=8，S-1/S-2 在 raw ceiling 下为物理不可达、S-3 差 0.64%、S-4~S-6 工具 bug 已修待重跑、S-7 受 v1.2.1 历史 tag 缺陷阻断。**用户明确决定按"知情发布"发 v1.4.0**：即接受已知容量限制、把性能门槛缺口转为 v1.5 架构重设专项，不以"全 PASS"作为本次发版前提。此决定不改变上述实测数据与门槛数字——它们原样保留作为 v1.5 的输入。tag 触发 ci.yml tag-only jobs（9 产物 + Release）。
 
