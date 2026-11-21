@@ -56,10 +56,10 @@ jobs:
       - name: First install (full execution, --no-start)
         run: |
           set -euo pipefail
-          echo "=== install.sh run #1 ==="
+          echo "=== install.sh run #1 (trace on failure) ==="
           sudo env UFOT_ETC="$UFOT_ETC" UFOT_PREFIX="$UFOT_PREFIX" UFOT_STATE="$UFOT_STATE" \
             UFOT_UNIT_DIR="$UFOT_UNIT_DIR" UFOT_JOURNALD_DIR="$UFOT_JOURNALD_DIR" \
-            bash "$ROOT/repo/deploy/install.sh" \
+            bash -x "$ROOT/repo/deploy/install.sh" \
               --no-start --domain https://chat.example.com 2>&1 | tee "$ROOT/install-1.log"
 
       - name: Second install (idempotency check)
