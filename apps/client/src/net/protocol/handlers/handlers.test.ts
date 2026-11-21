@@ -11,6 +11,10 @@ import type { HandlerContext } from '../registry';
 import { handleReceipt } from './receipt';
 import { handleMemberUpdate } from './member-update';
 import { handleCallOffer } from './call-offer';
+import { handleMsgAck } from './msg-ack';
+import { handleRateLimited } from './rate-limited';
+import { handleError } from './error';
+import { Outbox, createMemoryPersistence } from '../../sync/outbox';
 
 const enc = (value: unknown): Uint8Array => new TextEncoder().encode(JSON.stringify(value));
 
@@ -115,5 +119,144 @@ describe('handleCallOffer call_enabled 判定（P0-4）', () => {
     const ctx = makeCtx(); // flags: () => ({})
     handleCallOffer(createEnvelope({ kind: KINDS.CALL_OFFER, payload: offer }), ctx);
     expect(ctx.client.send).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ACK 语义修复（V2-0 容量契约 · 客户端部分）
+// ---------------------------------------------------------------------------
+
+describe('handleMsgAck status 语义', () => {
+  const ackEnv = (status: number) =>
+    createEnvelope({
+      kind: KINDS.MSG_ACK,
+      convId: 5,
+      payload: enc({ msgId: 100, seq: 7, clientMsgId: 'cm1', status }),
+    });
+
+  it('status=0：outbox.ack 成功路径', () => {
+    const ctx = makeCtx({ outbox: { ack: vi.fn(() => true), fail: vi.fn() } as never });
+    handleMsgAck(ackEnv(0), ctx);
+    expect((ctx.outbox.ack as ReturnType<typeof vi.fn>)).toHaveBeenCalledTimes(1);
+    expect((ctx.outbox.ack as ReturnType<typeof vi.fn>).mock.calls[0][0]).toMatchObject({
+      msgId: 100,
+      seq: 7,
+      clientMsgId: 'cm1',
+      status: 0,
+    });
+    expect((ctx.outbox.fail as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
+  });
+
+  it('status!=0：转 fail(clientMsgId, reason)，不当成功', () => {
+    const ctx = makeCtx({ outbox: { ack: vi.fn(), fail: vi.fn() } as never });
+    handleMsgAck(ackEnv(1), ctx);
+    expect((ctx.outbox.ack as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
+    expect((ctx.outbox.fail as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith('cm1', expect.stringContaining('1'));
+  });
+});
+
+describe('handleRateLimited / handleError 拒绝配对', () => {
+  it('rate-limited：failInFlight 被调用（不挂 10s ack 超时）', () => {
+    const ctx = makeCtx({ outbox: { failInFlight: vi.fn() } as never });
+    handleRateLimited(
+      createEnvelope({ kind: KINDS.RATE_LIMITED, payload: enc({ scope: 'msg', retry_after_ms: 2000 }) }),
+      ctx,
+    );
+    expect(ctx.session.rateLimited).toHaveBeenCalled();
+    expect((ctx.outbox.failInFlight as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith('rate limited');
+  });
+
+  it('error(503 busy)：failInFlight 携带 reason', () => {
+    const ctx = makeCtx({ outbox: { failInFlight: vi.fn() } as never });
+    handleError(
+      createEnvelope({ kind: KINDS.ERROR, payload: enc({ code: 503, reason: 'busy' }) }),
+      ctx,
+    );
+    expect(ctx.session.toast).toHaveBeenCalled();
+    expect((ctx.outbox.failInFlight as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith('busy');
+  });
+});
+
+describe('Outbox.failInFlight（真实 outbox）', () => {
+  it('有 in-flight 时标记 failed 并推进 flush 下一条', async () => {
+    const sent: string[] = [];
+    const events: string[] = [];
+    const client = {
+      state: 'online' as const,
+      send: (env: unknown) => {
+        sent.push(JSON.stringify(env));
+        return true;
+      },
+    };
+    const outbox = new Outbox(
+      {
+        onOptimistic: () => undefined,
+        onSending: () => undefined,
+        onSent: () => undefined,
+        onFailed: (item) => events.push(`failed:${item.clientMsgId}:${item.lastError}`),
+        onRemoved: () => undefined,
+        onQueueChange: () => undefined,
+      },
+      createMemoryPersistence(),
+      { ackTimeoutMs: 10_000, now: () => 1, newId: (() => `c${sent.length}`) as () => string },
+    );
+    outbox.attach(client as unknown as Parameters<typeof outbox.attach>[0]);
+    await outbox.enqueue({ convId: 1, text: 'a' });
+    await outbox.enqueue({ convId: 1, text: 'b' });
+    // 第一条已发出（in-flight），第二条 queued
+    expect(sent.length).toBe(1);
+    outbox.failInFlight('rate limited');
+    const items = outbox.pending();
+    expect(items.find((i) => i.status === 'failed')?.lastError).toBe('rate limited');
+    // 队列推进：第二条变 in-flight 发出
+    expect(sent.length).toBe(2);
+    expect(outbox.pending().filter((i) => i.status === 'sending').length).toBe(1);
+  });
+
+  it('无 in-flight 时 no-op', () => {
+    const outbox = new Outbox(
+      {
+        onOptimistic: () => undefined,
+        onSending: () => undefined,
+        onSent: () => undefined,
+        onFailed: () => undefined,
+        onRemoved: () => undefined,
+        onQueueChange: () => undefined,
+      },
+      createMemoryPersistence(),
+    );
+    outbox.failInFlight('x');
+    expect(outbox.pending().length).toBe(0);
+  });
+
+  it('status=0 ack 路径不回归：ack 后队列清空并推进', async () => {
+    let sentCount = 0;
+    const client = {
+      state: 'online' as const,
+      send: () => {
+        sentCount += 1;
+        return true;
+      },
+    };
+    let confirmed = 0;
+    const outbox = new Outbox(
+      {
+        onOptimistic: () => undefined,
+        onSending: () => undefined,
+        onSent: () => {
+          confirmed += 1;
+        },
+        onFailed: () => undefined,
+        onRemoved: () => undefined,
+        onQueueChange: () => undefined,
+      },
+      createMemoryPersistence(),
+      { ackTimeoutMs: 10_000, now: () => 1 },
+    );
+    outbox.attach(client as unknown as Parameters<typeof outbox.attach>[0]);
+    const item = await outbox.enqueue({ convId: 1, text: 'hi' });
+    expect(outbox.ack({ msgId: 9, seq: 1, clientMsgId: item.clientMsgId, status: 0 })).toBe(true);
+    expect(confirmed).toBe(1);
+    expect(outbox.size).toBe(0);
   });
 });

@@ -13,4 +13,6 @@ export const handleError: Handler = (env, ctx) => {
     return;
   }
   ctx.session.toast('toast.serverError', { reason: payload.reason || String(payload.code) });
+  // 同 rate-limited：ERROR 无关联 id，把 in-flight 出站消息立即标记失败，不挂 10s 超时。
+  ctx.outbox.failInFlight(payload.reason || `error ${payload.code}`);
 };

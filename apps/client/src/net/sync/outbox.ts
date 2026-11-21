@@ -207,6 +207,20 @@ export class Outbox {
     this.notify();
   }
 
+  /**
+   * 服务端拒绝（kind13 RATE_LIMITED / kind10 ERROR）到达时调用。
+   * 这些帧不带 client_msg_id/request_id，无法精确配对——务实方案：把当前
+   * in-flight 的条目标记 failed 并推进队列，避免 10s ack 超时挂起。
+   * 未来服务端补上关联 id 后，可在调用方先做精确匹配，再回落到此方法。
+   */
+  failInFlight(reason = 'rejected'): void {
+    if (!this.inFlight) return;
+    const item = this.items.find((candidate) => candidate.localId === this.inFlight);
+    if (!item) return;
+    this.fail(item.clientMsgId, reason);
+    void this.flush();
+  }
+
   /** 用户点红点重试。 */
   retry(localId: string): void {
     const item = this.items.find((candidate) => candidate.localId === localId);
