@@ -208,8 +208,8 @@ describe('Outbox.failInFlight（真实 outbox）', () => {
     outbox.failInFlight('rate limited');
     const items = outbox.pending();
     expect(items.find((i) => i.status === 'failed')?.lastError).toBe('rate limited');
-    // 队列推进：第二条变 in-flight 发出
-    expect(sent.length).toBe(2);
+    // 队列推进：第二条变 in-flight 发出（flush 是 async，需等微任务）
+    await vi.waitFor(() => expect(sent.length).toBe(2));
     expect(outbox.pending().filter((i) => i.status === 'sending').length).toBe(1);
   });
 
