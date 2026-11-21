@@ -483,7 +483,7 @@ export const zhCN = {
   'dashboard.breakerMissing': '数据源未接入：缺少熔断指标',
   'dashboard.connMissing': '数据源未接入：缺少连接数指标',
   'dashboard.usersMissing': '数据源未接入：缺少用户数指标',
-  'dashboard.dbMissing': '数据源未接入：缺少数据库完整性指标',
+  'dashboard.dbMissing': '数据源未接入：缺少数据库完整性指标 opendiscord_db_integrity_ok',
   'dashboard.reportsHint': '待处理举报数（状态为待处理）',
   'dashboard.connectionsTrend': '在线连接趋势',
   'dashboard.injectionTrend': '注入请求趋势',
