@@ -57,15 +57,18 @@
 
 ## 用户决策点（已决，2026-11-21）
 用户选择"全部逐项实现"→ 已执行至 appendlog 引擎接线 + 两次 CI A/B 压测。
-**结果：自研 appendlog 主线停止**（1197/s SQLite vs 283/s / 174/s appendlog，见
-docs/appendlog-deployment.md）。不切默认、不发 v3.0，稳定版仍 v2.0.0。
-剩余 L2/L3 项（Actor/普遍拉取完成态/CRDT/eBPF/列存）按前文风险评估，
+**结果：自研 appendlog 主线放弃并彻底删除**（1197/s SQLite vs 283/s / 174/s appendlog，
+数据见 architecture-optimization-menu.md）。不切默认、不发 v3.0，稳定版仍 v2.0.0。
+剩余 L2/L3 项：L2-5 普遍拉取已实测（服务端 drop -86% 但可用性反降、不加新协议不继续，
+见 architecture-optimization-menu.md §L2-5）；Actor/CRDT/eBPF/列存按前文风险评估，
 单机约束下收益存疑，暂不启动；如用户坚持再单独立项。
 
 ## 本轮最终产物
-- 代码：appendlog 引擎 + hybrid 接线 + e2e 测试 + stress A/B 支持（CI 全绿，未发布默认）。
-- 文档：appendlog-deployment.md（停止主线、实测数据、恢复条件）、
-  architecture-optimization-menu.md（全清单+决策）、
-  implementation-progress-honest-assessment.md（本文件）。
-- 发布：最新正式版 v2.0.0（9 产物），当前 HEAD 为未发布的实验性 appendlog 代码
+- 代码：**appendlog 引擎/接线/e2e/stress A/B 已全部删除**（-2070 行，commit 2e5d26b），
+  生产回到纯 SQLite（等价 v2.0.0）。保留的改动：stressd CLIENT_CAPS 上报 +
+  WS writeMu 并发写修复（压测基础设施，commit b0608a6/cc200b5）。
+- 文档：architecture-optimization-menu.md（全清单+自研/L2-5 放弃结论）、
+  implementation-progress-honest-assessment.md（本文件）、
+  release-readiness-v2.0.md（发布准备）。
+- 发布：最新正式版 v2.0.0（9 产物），当前 HEAD 领先 tag 的是压测基础设施修复 + 文档（默认行为等价 v2.0.0）。
   （默认关闭，不影响生产行为）。
