@@ -44,7 +44,7 @@ type flusher struct {
 	// 收件人调一次，由 assembly 注入 pushsvc.Notify。nil = 未装配 = no-op；
 	// 任何失败由 pushsvc 自行 fail-closed，绝不阻塞投递热路径。
 	pushNotify func(uid int64, payload []byte)
-	lg     *log.Logger
+	lg         *log.Logger
 	// batchSize / interval are the group-commit tunables. They are read on
 	// every loop iteration by run(), so they are guarded by cfgMu to allow
 	// live reconfiguration (SIGHUP) without a data race. Tests that set them
