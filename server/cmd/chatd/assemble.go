@@ -40,7 +40,6 @@ import (
 	"github.com/yingo-server/OpenDiscord/server/internal/data/pipe"
 	"github.com/yingo-server/OpenDiscord/server/internal/data/policy"
 	"github.com/yingo-server/OpenDiscord/server/internal/data/store"
-	"github.com/yingo-server/OpenDiscord/server/internal/data/store/hybrid"
 	"github.com/yingo-server/OpenDiscord/server/internal/data/store/pg"
 	"github.com/yingo-server/OpenDiscord/server/internal/data/store/sqlite"
 	"github.com/yingo-server/OpenDiscord/server/internal/mediasvc"
@@ -254,18 +253,6 @@ func newAssembly(cfg *config, lg *log.Logger) (*assembly, error) {
 	}
 
 	p := pipe.New(a.dataPeer, hot, pipe.ColdDeps{Cold: coldDB, Audit: coldDB}, a.policy, log.For("data"))
-	// V3 (appendlog) wiring: when appendlog_dir is configured, messages go to
-	// the sharded append-only log while all other domains stay in SQLite via
-	// the hybrid store (which reuses the already-open sqlite.DB).
-	if cfg.AppendlogDir != "" {
-		hybridStore, herr := hybrid.New(hot, cfg.AppendlogDir, cfg.AppendlogShards,
-			time.Duration(cfg.AppendlogSyncWindowMS)*time.Millisecond)
-		if herr != nil {
-			return nil, fmt.Errorf("chatd: hybrid store: %w", herr)
-		}
-		p = pipe.NewWithStores(a.dataPeer, hybridStore, pipe.ColdDeps{Cold: coldDB, Audit: coldDB}, a.policy, log.For("data"))
-		lg.Info("appendlog message store enabled", "dir", cfg.AppendlogDir, "shards", cfg.AppendlogShards)
-	}
 	// 拉取模式（v1.2 §3.3）：pipe 读 pull_mode_threshold / watermark_* 三个
 	// flag。共享同一个 *featureflags.Flags，SIGHUP 热重载原地生效；默认
 	// threshold=0 时行为与主干逐字节一致。
