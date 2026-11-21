@@ -17,11 +17,11 @@
 | 3 | Windows ARM/ARM64 无产物 | 保持（明确不做，理由见下） |
 | 4 | split 多进程部署未实现 | 已修（删除死 systemd 单元，标注 embedded-only） |
 | 5 | 群通话/屏幕共享 | 保持（明确不做，理由见下） |
-| 6 | 移动端无推送 | **未实现（规划中，v1.5 步骤 3 补齐）**：前端 PWA/Push 在位；服务端 `/api/push/subscribe` 与 push 事件下发未实现，推送 fail-closed |
+| 6 | 移动端无推送 | v1.5 已修（Web Push/VAPID：订阅端点 + 每条消息下发；未配 VAPID 则 fail-closed） |
 | 7 | 通话需自备 TURN | 已修（自动化部分：管理面 TURN 自检，CI 全绿） |
 | 8 | 群人数上限默认 100 | 保持（默认值不动；理由：S-1/S-2 容量缺口未解决前不放大默认值） |
 | 9 | 编辑/转发/@提及 服务端 | 已实现（`msg_domain_v2_enabled` 默认开启；处理分支在 `data/pipe`，经压测守门前不宣称达标） |
-| 10 | 用户举报 kind 453 | **上行链路未实现（规划中，v1.5 步骤 3 补齐）**：数据层 `onReport`→`sys_reports` 处理代码在位（flag 门控），但用户层上行白名单未放行 453，前端举报按钮保持占位 |
+| 10 | 用户举报 kind 453 | v1.5 已修（端到端：服务端 onReport v1.4 在位，本版前端发帧接线） |
 | 10b | 会话列表未虚拟滚动 | 已修（ConvList 接 react-virtual，CI 全绿） |
 | 11 | auto_vacuum 需手工转换 | 已修（`opendiscordctl upgrade` 自动化，CI 全绿） |
 | 12 | 旧 thumb_data 需手工迁移 | 已修（并入 `opendiscordctl upgrade`，dry-run 默认，CI 全绿） |
@@ -91,13 +91,14 @@ systemd 单元已删除，不留会启动失败的运维指引。文档明确 ch
 1v1 通话完整（含忙线、超时、ICE 失败处理）。自建 SFU 超出 2C2G 带宽预算，
 LTS 不引入；云 SFU 集成留待 v1.5+ 按需求评估。
 
-### 6. 移动端无推送 —— 未实现（规划中，v1.5 步骤 3 补齐）
+### 6. 移动端无推送 —— v1.5 已修（Web Push / VAPID）
 
-前端已完成：`public/manifest.webmanifest` + `public/sw.js`（只缓存静态壳，
-不缓存 `/api/` 与 `/ws`，离线回退 index.html）+ `src/net/push/` VAPID 订阅封装
-（production-only 注册，dev/mock 不注册）。**服务端订阅接收端点与 push 事件下发未实现**
-（v1.5 步骤 3 实现），前端 fail-closed 只记日志不弹错。手机收不到系统通知的
-问题在本版本内未解决，待服务端补齐后转已修。
+前端 `public/manifest.webmanifest` + `public/sw.js` + `src/net/push/` 订阅封装
+（production-only 注册，dev/mock 不注册）。**v1.5 补齐服务端**：`POST /api/push/subscribe`
+订阅登记（Cookie 鉴权、fail-closed）+ `pushsvc` 的 VAPID ES256 JWT / aes128gcm 下发，
+并接到数据层 flusher 的每条已提交消息（对收件人 `Notify`）。配置 `VAPID_PRIVATE_KEY` /
+`VAPID_SUBJECT` / 前端 `VITE_VAPID_PUBLIC_KEY`，任缺一则 no-op（订阅仍可登记，不发通知）。
+配置步骤见 `docs/push-setup.md`。
 
 ### 7. 通话需要自备 TURN 服务器 —— 已修（自动化部分）
 
@@ -119,12 +120,13 @@ LTS 不引入；云 SFU 集成留待 v1.5+ 按需求评估。
 已在 `data/pipe` 落地，由 `msg_domain_v2_enabled` 门控，**v1.4 起默认 true**。
 客户端 106/107/108 渲染路径已接线。S-1~S-7 压测守门前不宣称性能达标。
 
-### 10. 用户举报（REPORT kind 453）服务端上行链路 —— 未实现（规划中，v1.5 步骤 3 补齐）
+### 10. 用户举报（REPORT kind 453）—— v1.5 已修（端到端）
 
-453 → `sys_reports` 入库 + 审计的处理代码已落地（`data/pipe/msgdomain.go` `onReport`，
-与第 9 条同一 flag `msg_domain_v2_enabled` 门控），**但用户层上行白名单尚未放行 453**——
-客户端上行举报帧到不了数据层。前端「举报」菜单保持占位（`MessageList.tsx` 注释如实标注）。
-v1.5 步骤 3 打通上行链路后转已实现。
+453 → `sys_reports` 入库 + 审计 + ACK 的处理代码在 v1.4 已落地
+（`data/pipe/msgdomain.go` `onReport`，与第 9 条同一 flag `msg_domain_v2_enabled` 门控），
+用户层上行白名单（`bridge/defaults.go`）与 wire 转换亦已放行 453。**v1.5 补齐前端**：
+`MessageList` 举报菜单发 453 帧（不再弹"即将推出"），成功/失败有明确提示，
+PII 只传 msg_id + 枚举原因（detail 不采集自由文本）。
 
 ### 10b. 会话列表未虚拟滚动 —— 已修
 
