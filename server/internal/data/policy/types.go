@@ -142,8 +142,9 @@ type GroupConfig struct {
 // WritePath defaults and validation bounds.
 const (
 	// DefaultWriteBatchSize is the group-commit batch size when policy omits
-	// write_path.batch_size.
-	DefaultWriteBatchSize = 1000
+	// write_path.batch_size. 500 is the measured p95 optimum (docs/perf-sqlite-write-path.md:
+	// batch=500 p95≈70ms vs 1000≈187ms; higher batches only worsen latency).
+	DefaultWriteBatchSize = 500
 	// DefaultWriteFlushIntervalMS is the group-commit flush interval when
 	// policy omits write_path.flush_interval_ms.
 	DefaultWriteFlushIntervalMS = 50

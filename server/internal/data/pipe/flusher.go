@@ -20,7 +20,7 @@ const (
 	// does not supply write_path.batch_size / flush_interval_ms; they match
 	// policy.DefaultWriteBatchSize / DefaultWriteFlushIntervalMS. The live
 	// values come from policy via applyWritePolicy (not hardcoded here).
-	defaultFlushBatch = 1000
+	defaultFlushBatch = 500 // perf-sqlite-write-path.md: batch=500 p95≈70ms vs 1000≈187ms
 	defaultFlushEvery = 50 * time.Millisecond
 )
 
