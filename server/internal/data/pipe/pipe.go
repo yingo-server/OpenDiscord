@@ -170,6 +170,7 @@ func NewStores(peer transport.Peer, hot HotStores, cold ColdDeps, lg *log.Logger
 	}
 	p.seq = &seqAlloc{w: hot}
 	p.fl = newFlusher(hot, hot, p.outCh, p.writeCh, p.dedup, lg)
+	p.fl.setSeqAlloc(p.seq) // V2-1: batch seq allocation (was per-message in onMsgSend)
 	p.fl.putBulk = p.sendFanout
 	p.fl.putAck = p.reply
 	p.fl.setMediaStore(hot)
@@ -534,17 +535,14 @@ func (p *Pipe) onMsgSend(ctx context.Context, req Req) {
 		return
 	}
 
-	// seqalloc: allocate the seq (per-conv grouping happens when multiple
-	// messages share one dispatch pass; here one message per frame).
-	msgs := []store.PendingMsg{{
+	// V2-1: seq allocation moves to the flusher, where the whole batch shares
+	// ONE AllocateSeq range reservation per cid (instead of one write txn per
+	// message here). Msg.Seq / Msg.MsgID are filled in flusher.flush before the
+	// batch INSERT; this handler only gates and enqueues.
+	ready := ReadyMsg{Msg: store.PendingMsg{
 		Cid: cid, SenderID: sender, ClientMsgID: pld.ClientMsgID,
 		Content: req.Payload, SentAt: nowSec(),
-	}}
-	if err := p.seq.assign(ctx, msgs); err != nil {
-		p.reply(buildErrEnv(req, 500, "seq alloc failed"))
-		return
-	}
-	ready := ReadyMsg{Msg: msgs[0], Trace: req.TraceID}
+	}, Trace: req.TraceID}
 
 	// D-1 red line: writech full → immediate BUSY NACK; never block.
 	// The RLock makes the send safe against Drain closing writeCh

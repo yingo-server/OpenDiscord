@@ -34,6 +34,10 @@ type flusher struct {
 	convs store.ConvStore
 	media store.MediaStore // optional: enriches media[] with thumb/waveform/status
 	out   chan<- *env
+	// seqAlloc 是 V2-1 从 onMsgSend 移来的 seq 分配器：flush 时对整个 batch
+	// 按 cid 聚组、每 cid 一次 AllocateSeq（批事务前），消除每消息一次写事务。
+	// nil = 旧路径（调用方已在入队前分配 seq）；兼容 writepath 单测。
+	seq *seqAlloc
 	// putBulk places a fan-out frame on the lane, honouring the reserve the
 	// pipe keeps for replies. Fan-out must never consume the ACK headroom.
 	putBulk func(*env) bool
@@ -89,6 +93,10 @@ func newFlusher(w store.MsgWriter, convs store.ConvStore, out chan<- *env, ready
 // the scan status. A nil store degrades gracefully: the media[] entries keep
 // whatever the uplink carried, minus the store-only fields.
 func (f *flusher) setMediaStore(ms store.MediaStore) { f.media = ms }
+
+// setSeqAlloc injects the V2-1 batch seq allocator. nil keeps the legacy
+// contract (caller assigned seq before enqueue) — used by writepath unit tests.
+func (f *flusher) setSeqAlloc(s *seqAlloc) { f.seq = s }
 
 // setPushNotify injects the optional Web Push notification hook (v1.5).
 // nil keeps the pre-v1.5 behaviour (no push). The hook must be fail-closed —
@@ -188,6 +196,21 @@ func (f *flusher) flush(ctx context.Context, buf []ReadyMsg) {
 	batch := make([]store.PendingMsg, len(buf))
 	for i, m := range buf {
 		batch[i] = m.Msg
+	}
+	// V2-1: seq 分配从 onMsgSend（每消息一次写事务）移到此处——整批按 cid
+	// 聚组，每 cid 一次 AllocateSeq 预留连续段，回填 Seq/MsgID 后再批 INSERT。
+	// 把 N 次写锁获取降为「每 cid 一次 + 批事务一次」。
+	if f.seq != nil {
+		if err := f.seq.assign(ctx, batch); err != nil {
+			f.lg.Error("flusher: seq alloc failed", "batch_len", len(buf), "err", err.Error())
+			for _, m := range buf {
+				f.emit(m.Msg, 500, "seq alloc failed")
+			}
+			return
+		}
+		for i := range buf {
+			buf[i].Msg = batch[i]
+		}
 	}
 	if err := f.w.AppendMessages(ctx, batch); err != nil {
 		f.lg.Error("flusher: batch failed", "batch_len", len(buf), "err", err.Error())

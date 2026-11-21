@@ -104,6 +104,76 @@ func TestFlusherBatchSizeDrivesCommitCadence(t *testing.T) {
 	}
 }
 
+// TestFlusherBatchSeqAllocation (V2-1): seq is allocated ONCE per cid for the
+// whole batch (not once per message on the dispatch goroutine). Verifies the
+// flusher's seqAlloc wiring: N messages across 2 cids => 2 AllocateSeq calls,
+// and each committed row carries a monotonic seq within its cid.
+func TestFlusherBatchSeqAllocation(t *testing.T) {
+	w := &seqRecordingWriter{next: map[int64]int64{1: 10, 2: 100}, calls: map[int64]int{}}
+	out := make(chan *env, 64)
+	ready := make(chan ReadyMsg, 64)
+	f := newFlusher(w, nil, out, ready, NewDedup(16), nil)
+	f.setSeqAlloc(&seqAlloc{w: w})
+	f.putAck = func(e *env) { out <- e }
+	f.applyWritePolicy(policy.Policy{WritePath: policy.WritePathConfig{BatchSize: 4, FlushIntervalMS: 1000}})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go f.run(ctx)
+
+	// 4 messages: cid1 x2, cid2 x2, all Seq=0 (allocated by flusher).
+	for i, cid := range []int64{1, 1, 2, 2} {
+		ready <- ReadyMsg{Msg: store.PendingMsg{MsgID: int64(i + 1), Cid: cid,
+			SenderID: 7, ClientMsgID: string(rune('a' + i)), SentAt: 1}}
+	}
+	for i := 0; i < 4; i++ {
+		<-out // drain acks
+	}
+	if w.calls[1] != 1 || w.calls[2] != 1 {
+		t.Fatalf("AllocateSeq calls = cid1:%d cid2:%d, want 1 each", w.calls[1], w.calls[2])
+	}
+	// committed rows carry per-cid monotonic seq from the reserved ranges.
+	want := map[int64][]int64{1: {10, 11}, 2: {100, 101}}
+	got := map[int64][]int64{}
+	for _, m := range w.lastBatch {
+		got[m.Cid] = append(got[m.Cid], m.Seq)
+	}
+	for cid, seqs := range want {
+		if len(got[cid]) != len(seqs) {
+			t.Fatalf("cid %d: got %v, want %v", cid, got[cid], seqs)
+		}
+		for i := range seqs {
+			if got[cid][i] != seqs[i] {
+				t.Fatalf("cid %d seq[%d] = %d, want %d", cid, i, got[cid][i], seqs[i])
+			}
+		}
+	}
+}
+
+// seqRecordingWriter records AllocateSeq calls and the last committed batch.
+type seqRecordingWriter struct {
+	next      map[int64]int64
+	calls     map[int64]int
+	lastBatch []store.PendingMsg
+}
+
+func (w *seqRecordingWriter) AppendMessages(ctx context.Context, batch []store.PendingMsg) error {
+	w.lastBatch = append([]store.PendingMsg(nil), batch...)
+	return nil
+}
+func (w *seqRecordingWriter) AllocateSeq(ctx context.Context, cid int64, n int) (int64, error) {
+	w.calls[cid]++
+	start := w.next[cid]
+	w.next[cid] += int64(n)
+	return start, nil
+}
+func (w *seqRecordingWriter) MarkEdited(ctx context.Context, cid, msgID, senderID int64, content []byte, at int64) (*store.HotMsg, error) {
+	return nil, store.ErrNotFound
+}
+func (w *seqRecordingWriter) MarkRecalled(ctx context.Context, cid, msgID, senderID int64, at int64) (*store.HotMsg, error) {
+	return nil, nil
+}
+
 // countingWriter is a MsgWriter that records commits (batch count + row total).
 type countingWriter struct {
 	batches int
