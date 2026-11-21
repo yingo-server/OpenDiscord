@@ -30,16 +30,17 @@ ADMIN_PASS_FILE=""
 TURN_SERVER=""
 LANG_FLAG=""
 
-# Color helpers: green ✓ / yellow ⚠ / red ✗ — auto-stripped when stdout is
-# not a TTY (CI/logs).
-if [ -t 1 ]; then
-  ok()   { printf '\033[32m✓\033[0m %s\n' "$*"; }
+# Shared output helpers (TTY-aware, NO_COLOR-aware). Fallback keeps this
+# script runnable even when copied alone without deploy/lib/output.sh.
+if [ -f "$SCRIPT_DIR/lib/output.sh" ]; then
+  # shellcheck source=lib/output.sh
+  . "$SCRIPT_DIR/lib/output.sh"
 else
+  log()  { printf '==> %s\n' "$*"; }
   ok()   { printf 'ok: %s\n' "$*"; }
+  warn() { printf '[warn] %s\n' "$*" >&2; }
+  die()  { printf '[error] %s\n' "$*" >&2; exit 1; }
 fi
-log()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
-warn() { printf '\033[1;33m[warn]\033[0m %s\n' "$*" >&2; }
-die()  { printf '\033[1;31m[error]\033[0m %s\n' "$*" >&2; exit 1; }
 
 usage() {
   cat <<'EOF'

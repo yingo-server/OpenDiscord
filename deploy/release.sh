@@ -29,9 +29,15 @@ SSH_PORT="${UFOT_SSH_PORT:-22}"
 SKIP_BUILD=0
 VERSION=""
 
-log()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
-warn() { printf '\033[1;33m[warn]\033[0m %s\n' "$*" >&2; }
-die()  { printf '\033[1;31m[error]\033[0m %s\n' "$*" >&2; exit 1; }
+# Shared output helpers; fallback for standalone copies without deploy/lib/.
+if [ -f "$SCRIPT_DIR/lib/output.sh" ]; then
+  # shellcheck source=lib/output.sh
+  . "$SCRIPT_DIR/lib/output.sh"
+else
+  log()  { printf '==> %s\n' "$*"; }
+  warn() { printf '[warn] %s\n' "$*" >&2; }
+  die()  { printf '[error] %s\n' "$*" >&2; exit 1; }
+fi
 
 usage() {
   cat <<'EOF'

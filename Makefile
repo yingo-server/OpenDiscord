@@ -108,7 +108,7 @@ release-all: release
 	rm -rf "$$stage"; \
 	mkdir -p "$$stage/dist" "$$stage/deploy" "$$stage/docs"; \
 	install -m 0755 "$(DIST_DIR)/$(BIN)" "$$stage/dist/$(BIN)"; \
-	cp -R deploy/systemd deploy/journald deploy/keygen "$$stage/deploy/"; \
+	cp -R deploy/systemd deploy/journald deploy/keygen deploy/lib "$$stage/deploy/"; \
 	for f in install.sh release.sh backup.sh ufot.toml policy.json Caddyfile logrotate.conf; do \
 		cp "deploy/$$f" "$$stage/deploy/$$f"; \
 	done; \

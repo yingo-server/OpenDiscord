@@ -31,6 +31,7 @@ UFOT 采用分层 socket 架构：总线层为骨架，桥接层为枢纽，用�
 | [CLI 参考](cli-reference.md) | `adminctl` / `ufotctl` 完整子命令、flag、退出码与已知限制 | 部署者 |
 | [WS 协议](ws-protocol.md) | WebSocket 帧格式、kind 号段总表、payload 结构、限流与错误语义 | 开发者 |
 | [已知问题](known-issues.md) | 逐条列明已修/保持/延后的已知缺陷、容量缺口与规划中功能 | 全部 |
+| [品牌规范](brand-guidelines.md) | 全称/简称/口号、字标与视觉基调、资产使用规则 | 全部 |
 | [容量契约](capacity-contract.md) | `policy.capacity` 配置、准入限流语义、热改与超限行为 | 部署者 |
 | [发布说明 v2.0.0](release-notes-v2.0.0.md) | v2.0.0 容量契约 + 写路径优化的发布内容、升级步骤与诚实数据 | 部署者 |
 | [发布说明 v1.5.0](release-notes-v1.5.0.md) | v1.5.0 发布内容与升级步骤 | 部署者 |

@@ -1,4 +1,9 @@
+<p align="center"><img src="brand/ufot-wordmark.svg" alt="UFOT — Unfettered Freedom Of Thought" width="320"></p>
+
 # UFOT
+
+> *They demanded unfettered freedom of thought.*
+> 他们要求不受束缚的思想自由。
 
 **自托管即时通讯：消息与文件留在你自己的服务器上，由你掌控数据。**
 
@@ -220,6 +225,7 @@ sudo ufotctl doctor
 
 面向开发者：
 - [开发文档索引](docs/README.md)：架构、协议、各层设计
+- [品牌规范](docs/brand-guidelines.md)：名称、口号、字标与视觉基调
 - [API 参考](docs/api-reference.md) / [CLI 参考](docs/cli-reference.md) / [WS 协议](docs/ws-protocol.md)
 - [路线图](docs/roadmap.md) / [变更日志](CHANGELOG.md) / [已知问题](docs/known-issues.md)
 - [1.4 LTS 规划](docs/lts-1.4-plan.md)：普遍拉取 + 自适应 + v3 总线的决策与验收门槛

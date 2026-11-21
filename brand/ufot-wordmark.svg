@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 132" role="img" aria-label="UFOT — Unfettered Freedom Of Thought">
+  <title>UFOT — Unfettered Freedom Of Thought</title>
+  <defs>
+    <style>
+      .word { font: 600 72px 'Times New Roman', Georgia, serif; letter-spacing: .14em; fill: #fff; }
+      .full { font: 300 13px 'Times New Roman', Georgia, serif; letter-spacing: .28em; fill: #cfcfcf; }
+      .rule { stroke: #8f8f8f; stroke-width: 1; }
+    </style>
+  </defs>
+  <rect width="420" height="132" fill="#0a0a0a"/>
+  <text class="word" x="24" y="72">UFOT</text>
+  <line class="rule" x1="26" y1="90" x2="394" y2="90"/>
+  <text class="full" x="26" y="112">UNFETTERED FREEDOM OF THOUGHT</text>
+</svg>

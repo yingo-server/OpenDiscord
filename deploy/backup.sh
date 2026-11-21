@@ -23,20 +23,48 @@
 set -euo pipefail
 umask 077
 
+SCRIPT_DIR=$(cd -- "$(dirname -- "$0")" && pwd)
 ETC="${UFOT_ETC:-/etc/ufot}"
 POLICY="$ETC/policy.json"
 DB="${UFOT_DB:-/var/lib/ufot/chatd.db}"
 KEY="${UFOT_BACKUP_KEY:-$ETC/backup.key}"
 DRY_RUN=0
 
-log()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
-warn() { printf '\033[1;33m[warn]\033[0m %s\n' "$*" >&2; }
-die()  { printf '\033[1;31m[error]\033[0m %s\n' "$*" >&2; exit 1; }
+# Shared output helpers; fallback for standalone copies without deploy/lib/.
+if [ -f "$SCRIPT_DIR/lib/output.sh" ]; then
+  # shellcheck source=lib/output.sh
+  . "$SCRIPT_DIR/lib/output.sh"
+else
+  log()  { printf '==> %s\n' "$*"; }
+  warn() { printf '[warn] %s\n' "$*" >&2; }
+  die()  { printf '[error] %s\n' "$*" >&2; exit 1; }
+fi
+
+usage() {
+  cat <<'EOF'
+用法: backup.sh [--dry-run]
+
+  --dry-run     只校验环境与估算空间，不写任何文件
+  -h, --help    显示本帮助
+
+策略来源：/etc/ufot/policy.json 的 backup 段（cron/dir/keep_days）。
+环境变量覆盖：
+  UFOT_ETC          配置目录（默认 /etc/ufot）
+  UFOT_DB           热库路径（默认 /var/lib/ufot/chatd.db）
+  UFOT_BACKUP_DIR   本地备份目录（默认取 policy.backup.dir）
+  UFOT_BACKUP_KEY   加密口令文件（默认 /etc/ufot/backup.key）
+  UFOT_BACKUP_RSYNC 异地 rsync 目标（user@host:/path）
+  UFOT_BACKUP_S3    S3 URI（s3://bucket/prefix）
+  UFOT_AGE_RECIPIENT age 公钥（设置则优先 age 加密）
+
+退出码：0 成功 / 1 任一步失败（systemd timer 记录 failed）
+EOF
+}
 
 for arg in "$@"; do
   case "$arg" in
     --dry-run) DRY_RUN=1 ;;
-    -h|--help) sed -n '2,30p' "$0"; exit 0 ;;
+    -h|--help) usage; exit 0 ;;
     *) die "未知参数: $arg（只支持 --dry-run）" ;;
   esac
 done
