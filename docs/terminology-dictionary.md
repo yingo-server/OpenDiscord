@@ -41,3 +41,10 @@
 | Cold database | 冷库 | 冷库 | `cold_dsn` | 外部 PostgreSQL，保存归档数据。 |
 | Push subscription | 推送订阅 | 推送订阅 | `POST /api/push/subscribe` / `subscription` | 浏览器 Web Push 的订阅登记。 |
 | Web Push notification | 系统通知 | 系统通知 | `Notify` / `WATERMARK` 触发 | 发往设备的操作系统级提醒。 |
+| Capacity contract | 容量契约 | 容量契约 | `policy.capacity` / `docs/capacity-contract.md` | 服务端承诺的可用容量上限与超限行为约定。 |
+| Admission control | 准入限流 | 准入 | `policy.capacity.admission_qps` / `admission_qps` | 对写操作（MSG_SEND）做全局令牌准入，超限即拒绝。 |
+| Rate limit | 限流 | 限流 | `RATE_LIMITED`(13) / `retry_after_ms` | 请求频率超过上限，服务端显式拒绝而非静默丢弃。 |
+| Explicit rejection | 显式拒绝 | 显式拒绝 | `RATE_LIMITED`(13) / `ERROR`(10) | 超限时立即告知用户“未受理/未发送”，不挂起等待。 |
+| Delivery failure | 送达失败 | 送达失败 | `MSG_ACK` `status != 0` | 服务端未接受该消息，客户端把该条消息标记为发送失败。 |
+| Send failure | 发送失败 | 发送失败 | outbox `status=failed` | 消息未离开本机发送队列；红点可重试。 |
+| Server rejection | 服务端拒绝 | 服务端拒绝 | `ERROR`(10) `reason` | 服务端对本次请求给出错误原因，原因码仅用于工单追溯。 |
