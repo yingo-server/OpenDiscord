@@ -210,7 +210,10 @@ func (s *WebPushSender) vapidJWT(endpoint string) (string, error) {
 		return "", err
 	}
 	header := base64.RawURLEncoding.EncodeToString([]byte(`{"typ":"JWT","alg":"ES256"}`))
-	claims := fmt.Sprintf(`{"aud":%q,"exp":%d,"sub":%q}`, origin, s.now().Unix()+s.expiresIn, s.subject)
+	// JWT 的 payload 段必须 base64url 编码（不能直接放裸 JSON）——裸 JSON 里
+	// 的域名/邮箱含 "."，会让三段 JWT 被误拆，且不符合 RFC 7519。
+	claimsJSON := fmt.Sprintf(`{"aud":%q,"exp":%d,"sub":%q}`, origin, s.now().Unix()+s.expiresIn, s.subject)
+	claims := base64.RawURLEncoding.EncodeToString([]byte(claimsJSON))
 	signing := header + "." + claims
 	digest := sha256.Sum256([]byte(signing))
 	r, sig, err := ecdsa.Sign(rand.Reader, s.priv, digest[:])
