@@ -111,7 +111,7 @@ jobs:
           echo "=== backup.sh --dry-run (installed config) ==="
           # install.sh does not create a DB; create an empty valid SQLite file
           # via python3 stdlib so the dry-run's size check has a real target.
-          python3 -c "import sqlite3,sys; sqlite3.connect(sys.argv[1]).execute('create table if not exists t(x)').connection.close()" \
+          sudo python3 -c "import sqlite3,sys; sqlite3.connect(sys.argv[1]).execute('create table if not exists t(x)').connection.close()" \
             "$UFOT_STATE/chatd.db"
           sudo env UFOT_ETC="$UFOT_ETC" UFOT_DB="$UFOT_STATE/chatd.db" \
             bash "$ROOT/repo/deploy/backup.sh" --dry-run 2>&1 | tee "$ROOT/backup-dry.log"
