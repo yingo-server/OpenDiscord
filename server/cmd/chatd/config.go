@@ -21,9 +21,13 @@ type config struct {
 	AdminRESTListen string // admin REST listen address (/api/v1/*) — loopback only
 	PublicOrigin    string // e.g. https://chat.example.com
 
-	HotDB   string // SQLite hot database
-	AdminDB string // SQLite admin database (separate file, least privilege)
-	ColdDSN string // PostgreSQL DSN (parsed, not connected in this build)
+	HotDB string // SQLite hot database
+	// AppendlogDir enables the v3 append-only message store (hybrid: messages
+	// here, other domains in SQLite). Empty = plain SQLite (v2 behavior).
+	AppendlogDir    string
+	AppendlogShards int
+	AdminDB         string // SQLite admin database (separate file, least privilege)
+	ColdDSN         string // PostgreSQL DSN (parsed, not connected in this build)
 	// RequireAuditStore makes a missing cold store a startup failure. When
 	// false (default) a coldDB==nil deployment starts but logs an ERROR: audit
 	// events will not persist. When true, startup aborts unless a cold DB with
@@ -116,6 +120,13 @@ func loadConfig(path string) (*config, error) {
 			cfg.PublicOrigin = v
 		case "hot_db":
 			cfg.HotDB = v
+		case "appendlog_dir":
+			cfg.AppendlogDir = v
+		case "appendlog_shards":
+			n, err := strconv.Atoi(v)
+			if err == nil && n > 0 {
+				cfg.AppendlogShards = n
+			}
 		case "admin_db":
 			cfg.AdminDB = v
 		case "cold_dsn":

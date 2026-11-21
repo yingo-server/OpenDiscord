@@ -142,6 +142,15 @@ type Pipe struct {
 // pol carries the write_path tunables (batch_size / flush_interval_ms) into
 // the group-commit flusher; it accepts a policy.Policy, policy.Snapshot or
 // *policy.Store, or nil for the built-in defaults.
+// NewWithStores is New with the hot store behind the structural interface —
+// used when the message store is a hybrid (appendlog + SQLite) rather than a
+// plain *sqlite.DB. Identical semantics otherwise, including write policy.
+func NewWithStores(peer transport.Peer, hot HotStores, cold ColdDeps, pol any, lg *log.Logger) *Pipe {
+	p := NewStores(peer, hot, cold, lg)
+	p.fl.applyWritePolicy(pol)
+	return p
+}
+
 func New(peer transport.Peer, hot *sqlite.DB, cold ColdDeps, pol any, lg *log.Logger) *Pipe {
 	p := NewStores(peer, hot, cold, lg)
 	p.fl.applyWritePolicy(pol)
