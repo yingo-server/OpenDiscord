@@ -96,7 +96,7 @@ jobs:
           } | tee "$ROOT/footprint.txt"
           echo
           echo "=== permission red-line (other rwx must be empty) ==="
-          BAD=$(sudo find "$UFOT_ETC" "$UFOT_STATE" -perm /o+rwx -printf '%M %p\n')
+          BAD=$(sudo find "$UFOT_ETC" "$UFOT_STATE" ! -type l -perm /o+rwx -printf '%M %p\n')
           [ -z "$BAD" ] || { echo "FAIL: $BAD"; exit 1; }
           echo "PASS: no world-accessible paths under ETC/STATE"
           echo
