@@ -43,16 +43,15 @@ jobs:
           echo "UFOT_UNIT_DIR=$ROOT/units" >> "$GITHUB_ENV"
           echo "UFOT_JOURNALD_DIR=$ROOT/journald" >> "$GITHUB_ENV"
           echo "=== isolated environment ==="
-          env | grep '^UFOT_' | sort
+          env | grep '^UFOT_' | sort || true
 
-      - name: Interactive wizard (piped stdin, no side effects)
+      - name: Interactive wizard (REAL PTY, step-by-step prompts)
         run: |
           set -euo pipefail
-          echo "=== install-interactive --interactive-test (piped answers) ==="
-          printf 'zh\nchat.example.com\n' | \
-            sudo env UFOT_ETC="$UFOT_ETC" UFOT_PREFIX="$UFOT_PREFIX" UFOT_STATE="$UFOT_STATE" \
-              bash "$ROOT/repo/deploy/install-interactive" --interactive-test \
-                --prefix "$UFOT_PREFIX" --etc "$UFOT_ETC" --state "$UFOT_STATE" --no-start 2>&1
+          echo "=== driving install-interactive through a pseudo-terminal ==="
+          sudo env UFOT_ETC="$UFOT_ETC" UFOT_PREFIX="$UFOT_PREFIX" UFOT_STATE="$UFOT_STATE" \
+            python3 scripts/deploy-interactive-sim.py deploy/install-interactive 2>&1 \
+            | tee "$ROOT/interactive.log"
 
       - name: First install (full execution, --no-start)
         run: |
