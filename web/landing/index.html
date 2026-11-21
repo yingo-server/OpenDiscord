@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenDiscord</title>
+<style>
+  @font-face {
+    font-family: 'Song Subset';
+    src: url('notoserif-subset.woff2') format('woff2');
+    font-display: swap;
+  }
+
+  :root {
+    --glow: 0 0 30px rgba(255,255,255,.35), 0 0 60px rgba(255,255,255,.15);
+    --ease: cubic-bezier(.25,.1,.25,1);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    height: 100%;
+    overflow: hidden;
+    background: #000;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* 背景层：黑夜图（已预压暗55%），不再用 CSS filter 叠加压暗 */
+  .bg {
+    position: fixed; inset: 0;
+    background: url('night-bg.jpg') center/cover no-repeat;
+  }
+  .vignette {
+    position: fixed; inset: 0;
+    background: radial-gradient(ellipse at center, transparent 0%, rgba(0,0,0,.5) 100%);
+  }
+
+  /* 内容层：垂直居中 */
+  main {
+    position: relative;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: clamp(1.5rem, 4vw, 3rem);
+    padding: 0 1.5rem;
+    text-align: center;
+    color: #fff;
+  }
+
+  /* 英文：新纽曼风格衬线，加辉光 */
+  .en {
+    font-family: 'New York', 'Times New Roman', 'Palatino', Georgia, serif;
+    font-size: clamp(2rem, 5vw, 4rem);
+    font-weight: 400;
+    line-height: 1.2;
+    letter-spacing: 0.01em;
+    text-shadow: var(--glow);
+    opacity: 0;
+    animation: fadein 2s var(--ease) .3s forwards;
+  }
+
+  /* 中文：简宋矢量，偏小 */
+  .zh {
+    font-family: 'Song Subset', 'Noto Serif SC', 'Songti SC', serif;
+    font-size: clamp(1rem, 2.2vw, 1.75rem);
+    font-weight: 400;
+    letter-spacing: .12em;
+    color: rgba(255,255,255,.88);
+    text-shadow: 0 0 20px rgba(255,255,255,.2);
+    opacity: 0;
+    animation: fadein 2s var(--ease) .6s forwards;
+  }
+
+  /* 底部：呼吸指示（唯一交互动效） */
+  .hint {
+    position: fixed;
+    bottom: 2.5rem;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: 'Song Subset', serif;
+    font-size: .8rem;
+    letter-spacing: .3em;
+    color: rgba(255,255,255,.35);
+    opacity: 0;
+    animation: fadein 2s var(--ease) 1.5s forwards;
+  }
+
+  @keyframes fadein {
+    to { opacity: 1; }
+  }
+
+  /* 三档断点预设换行 */
+  @media (max-width: 600px) {
+    .en { font-size: 1.5rem; max-width: 90vw; }
+    .zh { font-size: .95rem; }
+  }
+  @media (min-width: 601px) and (max-width: 1024px) {
+    .en { font-size: 2.5rem; max-width: 70vw; }
+    .zh { font-size: 1.25rem; }
+  }
+  @media (min-width: 1025px) {
+    .en { font-size: 3.5rem; max-width: 60vw; }
+    .zh { font-size: 1.5rem; }
+  }
+
+  /* 音效触发后的静音类（如果用户禁音） */
+  .muted .hint { opacity: .2 !important; }
+</style>
+</head>
+<body>
+  <div class="bg"></div>
+  <div class="vignette"></div>
+
+  <main id="main">
+    <div class="en">They demanded unfettered freedom of thought.</div>
+    <div class="zh">他们要求不受束缚的思想自由</div>
+  </main>
+
+  <div class="hint">进入</div>
+
+  <script>
+    // 音效：极轻的环境氛围音（可选，需用户手势）
+    // 生成一个简单的呼吸/风声白噪声（Web Audio API）
+    let audioCtx = null;
+    function initAudio() {
+      if (audioCtx) return;
+      try {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const bufferSize = audioCtx.sampleRate * 4;
+        const buffer = audioCtx.createBuffer(2, bufferSize, audioCtx.sampleRate);
+        for (let ch = 0; ch < 2; ch++) {
+          const data = buffer.getChannelData(ch);
+          let last = 0;
+          for (let i = 0; i < bufferSize; i++) {
+            // 极低频滤波的噪声，模拟环境风声
+            const white = Math.random() * 2 - 1;
+            last = last * 0.95 + white * 0.05;
+            data[i] = last * 0.15;
+          }
+        }
+        const src = audioCtx.createBufferSource();
+        src.buffer = buffer;
+        src.loop = true;
+        const gain = audioCtx.createGain();
+        gain.gain.value = 0.08;
+        src.connect(gain);
+        gain.connect(audioCtx.destination);
+        src.start();
+      } catch(e) { /* 静默失败 */ }
+    }
+
+    // 点击跳转仓库
+    document.body.addEventListener('click', () => {
+      initAudio();
+      window.location.href = 'https://github.com/yingo-server/OpenDiscord';
+    });
+
+    // 触摸也支持
+    document.body.addEventListener('touchstart', () => {
+      initAudio();
+      window.location.href = 'https://github.com/yingo-server/OpenDiscord';
+    });
+  </script>
+</body>
+</html>
