@@ -10,6 +10,7 @@ package hybrid
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/yingo-server/OpenDiscord/server/internal/data/store"
 	"github.com/yingo-server/OpenDiscord/server/internal/data/store/appendlog"
@@ -37,11 +38,11 @@ var (
 // New builds a hybrid store over an already-open SQLite DB (which the
 // assembly keeps using for admin/jobs/identity). Only message ops are
 // redirected to the appendlog; the SQLite handle is shared, not closed here.
-func New(sqliteDB *sqlite.DB, logDir string, shards int) (*Store, error) {
+func New(sqliteDB *sqlite.DB, logDir string, shards int, syncWindow time.Duration) (*Store, error) {
 	if sqliteDB == nil {
 		return nil, errors.New("hybrid: nil sqlite DB")
 	}
-	logDB, err := appendlog.Open(appendlog.Config{Dir: logDir, Shards: shards})
+	logDB, err := appendlog.Open(appendlog.Config{Dir: logDir, Shards: shards, SyncWindow: syncWindow})
 	if err != nil {
 		return nil, err
 	}

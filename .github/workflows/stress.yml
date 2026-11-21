@@ -54,6 +54,9 @@ on:
       appendlog_shards:
         description: "appendlog shard count (0 = CPU cores); only used when storage=appendlog"
         default: "0"
+      appendlog_sync_window_ms:
+        description: "appendlog batched fsync window ms (0 = fsync per write, slow but durable; 50 ~= SQLite WAL NORMAL)"
+        default: "0"
   push:
     tags: ['v*']
 
@@ -194,6 +197,7 @@ jobs:
           HW_PROFILE: ${{ github.event.inputs.hw_profile || '4c16g' }}
           STORAGE: ${{ github.event.inputs.storage || 'sqlite' }}
           APPENDLOG_SHARDS: ${{ github.event.inputs.appendlog_shards || '0' }}
+          APPENDLOG_SYNC_MS: ${{ github.event.inputs.appendlog_sync_window_ms || '0' }}
         run: |
           set -e
           # ---- §E 双规格资源约束（2c2g 档）：chatd + stressd 都按档约束 ----
@@ -256,6 +260,7 @@ jobs:
               mkdir -p "$PWD/$SC/appendlog"
               printf 'appendlog_dir = "%s/%s/appendlog"\n' "$PWD" "$SC"
               printf 'appendlog_shards = %s\n' "${APPENDLOG_SHARDS:-0}"
+              printf 'appendlog_sync_window_ms = %s\n' "${APPENDLOG_SYNC_MS:-0}"
             fi
             printf 'admin_db = "%s/%s/admin.db"\n' "$PWD" "$SC"
             printf 'policy_path = "%s/%s/policy.json"\n' "$PWD" "$SC"

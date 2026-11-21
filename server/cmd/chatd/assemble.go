@@ -258,7 +258,8 @@ func newAssembly(cfg *config, lg *log.Logger) (*assembly, error) {
 	// the sharded append-only log while all other domains stay in SQLite via
 	// the hybrid store (which reuses the already-open sqlite.DB).
 	if cfg.AppendlogDir != "" {
-		hybridStore, herr := hybrid.New(hot, cfg.AppendlogDir, cfg.AppendlogShards)
+		hybridStore, herr := hybrid.New(hot, cfg.AppendlogDir, cfg.AppendlogShards,
+			time.Duration(cfg.AppendlogSyncWindowMS)*time.Millisecond)
 		if herr != nil {
 			return nil, fmt.Errorf("chatd: hybrid store: %w", herr)
 		}
