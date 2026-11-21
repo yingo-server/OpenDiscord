@@ -16,6 +16,7 @@ import { Modal } from '../components/Modal';
 import { PageHeader } from '../components/PageHeader';
 import { StatusTag } from '../components/StatusTag';
 import { IconRefresh, IconSearch, IconX } from '../components/icons';
+import { t } from '../i18n';
 
 export function Messages() {
   const [q, setQ] = useState('');
@@ -89,12 +90,12 @@ export function Messages() {
   const columns: Column<MessageHit>[] = [
     {
       key: 'content',
-      header: '消息内容',
+      header: t('messages.content'),
       width: 420,
       render: (m) => (
         <div className="min-w-0 py-1">
           <p className={cn('line-clamp-2 whitespace-pre-wrap text-table', m.state === 'recalled' ? 'text-text-tertiary line-through' : 'text-text-primary')}>
-            {m.content || '（无文本）'}
+            {m.content || t('common.noText')}
           </p>
           {m.attachments.length > 0 && (
             <div className="mt-1 flex flex-wrap gap-1">
@@ -111,7 +112,7 @@ export function Messages() {
     },
     {
       key: 'conv',
-      header: '会话',
+      header: t('messages.conversation'),
       width: 220,
       render: (m) => (
         <div className="min-w-0">
@@ -122,7 +123,7 @@ export function Messages() {
     },
     {
       key: 'sender',
-      header: '发送者',
+      header: t('messages.sender'),
       width: 160,
       render: (m) => (
         <div className="min-w-0">
@@ -133,7 +134,7 @@ export function Messages() {
     },
     {
       key: 'sent_at',
-      header: '发送时间',
+      header: t('messages.sentAt'),
       width: 170,
       render: (m) => (
         <div>
@@ -144,17 +145,17 @@ export function Messages() {
     },
     {
       key: 'state',
-      header: '状态',
+      header: t('common.status'),
       width: 110,
       render: (m) => (
         <StatusTag tone={m.state === 'normal' ? 'success' : m.state === 'recalled' ? 'muted' : 'danger'}>
-          {m.state === 'normal' ? '正常' : m.state === 'recalled' ? '已撤回' : '已删除'}
+          {m.state === 'normal' ? t('messages.state.normal') : m.state === 'recalled' ? t('messages.state.recalled') : t('messages.state.deleted')}
         </StatusTag>
       ),
     },
     {
       key: 'actions',
-      header: '操作',
+      header: t('common.actions'),
       width: 140,
       align: 'right',
       render: (m) => (
@@ -181,16 +182,16 @@ export function Messages() {
   return (
     <>
       <PageHeader
-        title="消息检索"
-        description="按关键词与会话定位消息。检索走 FTS 索引（单 uid 2 QPS 限流），撤回会全端下发 RECALL 帧。"
+        title={t('messages.title')}
+        description={t('messages.description')}
         meta={
           <>
             {searched && (
               <span>
-                命中 <span className="nums font-semibold text-text-secondary">{data?.total ?? 0}</span> 条
+                {t('messages.hits')} <span className="nums font-semibold text-text-secondary">{data?.total ?? 0}</span> 条
               </span>
             )}
-            {flash && <span className="text-success-600">已撤回</span>}
+            {flash && <span className="text-success-600">{t('messages.state.recalled')}</span>}
             {actionError && <span className="text-danger-600">{actionError}</span>}
           </>
         }
@@ -232,7 +233,7 @@ export function Messages() {
             className="input nums w-[140px]"
             value={sender}
             onChange={(event) => setSender(event.target.value)}
-            placeholder="可选"
+            placeholder={t('messages.optional')}
           />
         </div>
         <div>
@@ -252,8 +253,8 @@ export function Messages() {
       {!canSearch && !searched ? (
         <div className="flex flex-col items-center gap-3 rounded-md border border-dashed border-border-default px-6 py-16 text-center">
           <IconSearch size={28} className="text-text-tertiary" />
-          <p className="text-table text-text-secondary">输入至少 2 个字的关键词，或选择一个会话开始检索</p>
-          <p className="text-body-sm text-text-tertiary">没有条件的检索会被服务端拒绝，避免全表扫描拖垮热库</p>
+          <p className="text-table text-text-secondary">{t('messages.conditionHint')}</p>
+          <p className="text-body-sm text-text-tertiary">{t('messages.conditionRisk')}</p>
         </div>
       ) : (
         <DataTable<MessageHit>
@@ -270,13 +271,13 @@ export function Messages() {
             onPageChange: setPage,
             onPerPageChange: setPerPage,
           }}
-          footerLeft="检索行为本身记审计（深度翻页触发专项审计）"
+          footerLeft={t('messages.auditHint')}
         />
       )}
 
       <Modal
         open={active !== null}
-        title="消息详情"
+        title={t('messages.detail')}
         width={640}
         onClose={() => setActive(null)}
         description={active ? `msg #${active.msg_id} · 会话 #${active.conv_id}` : undefined}
@@ -289,23 +290,23 @@ export function Messages() {
         {active && (
           <div className="space-y-3">
             <div className="rounded-md bg-bg-surface-2 px-3 py-2">
-              <p className="whitespace-pre-wrap text-body text-text-primary">{active.content || '（无文本）'}</p>
+              <p className="whitespace-pre-wrap text-body text-text-primary">{active.content || t('common.noText')}</p>
             </div>
             <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-body-sm">
               <div className="flex justify-between">
-                <dt className="text-text-tertiary">发送者</dt>
+                <dt className="text-text-tertiary">{t('messages.sender')}</dt>
                 <dd className="nums text-text-primary">{active.sender_name} #{active.sender_id}</dd>
               </div>
               <div className="flex justify-between">
-                <dt className="text-text-tertiary">发送时间</dt>
+                <dt className="text-text-tertiary">{t('messages.sentAt')}</dt>
                 <dd className="nums text-text-primary">{formatDateTime(active.sent_at)}</dd>
               </div>
               <div className="flex justify-between">
-                <dt className="text-text-tertiary">会话</dt>
+                <dt className="text-text-tertiary">{t('messages.conversation')}</dt>
                 <dd className="text-text-primary">{active.conv_name}</dd>
               </div>
               <div className="flex justify-between">
-                <dt className="text-text-tertiary">状态</dt>
+                <dt className="text-text-tertiary">{t('common.status')}</dt>
                 <dd><StatusTag tone={active.state === 'normal' ? 'success' : 'muted'}>{active.state}</StatusTag></dd>
               </div>
             </dl>
@@ -362,11 +363,11 @@ function ConvPicker({ value, onChange }: { value: ConvOption | null; onChange: (
   if (value) {
     return (
       <div>
-        <span className="label">会话</span>
+        <span className="label">{t('messages.conversation')}</span>
         <div className="flex h-control-md items-center gap-2 rounded-sm border border-primary-300 bg-primary-50 px-2">
           <span className="max-w-[200px] truncate text-body-sm text-text-primary">{value.name}</span>
           <span className="nums text-caption text-text-tertiary">#{value.id}</span>
-          <button type="button" className="text-text-tertiary hover:text-text-primary" onClick={() => onChange(null)} aria-label="清除会话筛选">
+          <button type="button" className="text-text-tertiary hover:text-text-primary" onClick={() => onChange(null)} aria-label={t('messages.clearConvFilter')}>
             <IconX size={14} />
           </button>
         </div>
@@ -383,7 +384,7 @@ function ConvPicker({ value, onChange }: { value: ConvOption | null; onChange: (
         id="msg-conv"
         className="input w-[220px]"
         value={text}
-        placeholder="按会话名搜索"
+        placeholder={t('messages.convPlaceholder')}
         onChange={(event) => {
           setText(event.target.value);
           setOpen(true);
@@ -463,9 +464,9 @@ function RecallDialog({
   return (
     <ConfirmDialog
       open={target !== null}
-      title="撤回消息"
+      title={t('messages.recall')}
       description={target ? `msg #${target.msg_id} · ${target.conv_name}` : undefined}
-      confirmLabel="确认撤回"
+      confirmLabel={t('messages.recallConfirm')}
       busy={busy}
       error={error}
       onCancel={onClose}
@@ -474,8 +475,8 @@ function RecallDialog({
       <div className="space-y-3">
         <ImpactList
           items={[
-            { label: '发送者', value: target ? `${target.sender_name} #${target.sender_id}` : '—' },
-            { label: '发送时间', value: formatDateTime(target?.sent_at) },
+            { label: t('messages.sender'), value: target ? `${target.sender_name} #${target.sender_id}` : '—' },
+            { label: t('messages.sentAt'), value: formatDateTime(target?.sent_at) },
           ]}
         />
         <div>
@@ -488,7 +489,7 @@ function RecallDialog({
             rows={3}
             value={reason}
             onChange={(event) => setReason(event.target.value)}
-            placeholder="如：含个人隐私信息，应本人要求下架"
+            placeholder={t('messages.recallReasonPlaceholder')}
           />
         </div>
         <label className="flex items-center gap-2 text-body-sm text-text-secondary">
@@ -501,7 +502,7 @@ function RecallDialog({
         </label>
         <div className="flex justify-end">
           <button type="button" className="btn btn-ghost btn-sm" onClick={() => void loadPreview()} disabled={previewLoading}>
-            {previewLoading ? '预估中…' : '预估影响'}
+            {previewLoading ? t('common.estimating') : t('common.estimateImpact')}
           </button>
         </div>
         <DryRunPreview result={preview} loading={previewLoading} error={previewError} compact />

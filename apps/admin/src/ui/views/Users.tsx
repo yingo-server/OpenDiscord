@@ -20,14 +20,15 @@ import { DryRunPreview, ImpactList } from '../components/DryRunPreview';
 import { PageHeader } from '../components/PageHeader';
 import { StatusTag } from '../components/StatusTag';
 import { IconDownload, IconRefresh } from '../components/icons';
+import { t } from '../i18n';
 
 const STATUS_LABEL: Record<UserStatus, { label: string; tone: 'success' | 'danger' | 'muted' }> = {
-  active: { label: '正常', tone: 'success' },
-  banned: { label: '已封禁', tone: 'danger' },
-  pending_deletion: { label: '注销中', tone: 'muted' },
+  active: { label: t('users.status.active'), tone: 'success' },
+  banned: { label: t('users.status.banned'), tone: 'danger' },
+  pending_deletion: { label: t('users.status.pending_deletion'), tone: 'muted' },
 };
 
-const LEVEL_LABEL: Record<number, string> = { 1: 'L1 观察', 2: 'L2 限时封禁', 3: 'L3 永久封禁' };
+const LEVEL_LABEL: Record<number, string> = { 1: t('users.levelLabel1'), 2: t('users.levelLabel2'), 3: t('users.levelLabel3') };
 
 const EMPTY_BAN: BanRequest = {
   reason: '',
@@ -159,7 +160,7 @@ export function Users() {
   const columns: Column<AdminUser>[] = [
     {
       key: 'user',
-      header: '用户',
+      header: t('users.user'),
       width: 280,
       render: (u) => (
         <div className="min-w-0">
@@ -172,20 +173,20 @@ export function Users() {
     },
     {
       key: 'status',
-      header: '状态',
+      header: t('common.status'),
       width: 120,
       render: (u) => <StatusTag tone={STATUS_LABEL[u.status].tone}>{STATUS_LABEL[u.status].label}</StatusTag>,
     },
     {
       key: 'ban',
-      header: '封禁',
+      header: t('users.ban'),
       width: 200,
       render: (u) =>
         u.ban ? (
           <div className="text-body-sm">
             <div className="text-danger-600">{LEVEL_LABEL[u.ban.level] ?? `L${u.ban.level}`}</div>
             <div className="truncate text-caption text-text-tertiary" title={u.ban.reason}>
-              {u.ban.expires_at ? `至 ${formatDateTime(u.ban.expires_at)}` : '永久'} · {u.ban.reason}
+              {u.ban.expires_at ? `至 ${formatDateTime(u.ban.expires_at)}` : t('users.permanent')} · {u.ban.reason}
             </div>
           </div>
         ) : (
@@ -194,7 +195,7 @@ export function Users() {
     },
     {
       key: 'report_count',
-      header: '举报',
+      header: t('reports.list.report'),
       width: 88,
       align: 'right',
       sortKey: 'report_count',
@@ -206,21 +207,21 @@ export function Users() {
     },
     {
       key: 'created_at',
-      header: '注册时间',
+      header: t('users.registeredAt'),
       width: 168,
       sortKey: 'created_at',
       render: (u) => <span className="nums text-body-sm text-text-secondary">{formatDateTime(u.created_at)}</span>,
     },
     {
       key: 'last_seen_at',
-      header: '最近活跃',
+      header: t('users.lastActive'),
       width: 168,
       sortKey: 'last_seen_at',
       render: (u) => <span className="nums text-body-sm text-text-secondary">{formatDateTime(u.last_seen_at)}</span>,
     },
     {
       key: 'actions',
-      header: '操作',
+      header: t('common.actions'),
       width: 150,
       align: 'right',
       render: (u) => (
@@ -238,7 +239,7 @@ export function Users() {
               封禁
             </button>
           )}
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setKickTarget(u)} title="断开全部连接">
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setKickTarget(u)} title={t('users.kickTitle')}>
             踢出
           </button>
         </div>
@@ -251,14 +252,14 @@ export function Users() {
   return (
     <>
       <PageHeader
-        title="用户管理"
-        description="检索账号、处理封禁与强制下线。封禁立即撤销全部 token 家族并断连（security-spec §6.4.3）。"
+        title={t('users.title')}
+        description={t('users.description')}
         meta={
           <>
             <span>
               共 <span className="nums font-semibold text-text-secondary">{formatNumber(data?.total ?? 0)}</span> 个账号
             </span>
-            {flash && <span className="text-success-600">已刷新</span>}
+            {flash && <span className="text-success-600">{t('common.updated')}</span>}
             {actionError && <span className="text-danger-600">{actionError}</span>}
           </>
         }
@@ -312,10 +313,10 @@ export function Users() {
             value={status}
             onChange={(event) => setStatus(event.target.value as UserStatus | 'all')}
           >
-            <option value="all">全部状态</option>
-            <option value="active">正常</option>
-            <option value="banned">已封禁</option>
-            <option value="pending_deletion">注销中</option>
+            <option value="all">{t('users.status.all')}</option>
+            <option value="active">{t('users.status.active')}</option>
+            <option value="banned">{t('users.status.banned')}</option>
+            <option value="pending_deletion">{t('users.status.pending_deletion')}</option>
           </select>
         </div>
         <div>
@@ -338,7 +339,7 @@ export function Users() {
         rowKey={(u) => u.id}
         loading={loading}
         error={error}
-        emptyText="没有匹配的账号，试着放宽筛选条件"
+        emptyText={t('users.empty.title')}
         selectable
         selected={selected}
         onSelectedChange={(next) => {
@@ -399,7 +400,7 @@ export function Users() {
               ids.length === 1
                 ? banUser(ids[0]!, body)
                 : batchUsers({ action: 'ban', ids, ban: body }),
-            '已提交封禁',
+            t('users.submitted'),
           );
         }}
       />
@@ -407,25 +408,25 @@ export function Users() {
       <ConfirmDialog
         open={unbanTarget !== null}
         title={`解封 ${unbanTarget?.nickname ?? ''}？`}
-        description="解封后该账号可立即重新登录；历史封禁记录保留在审计日志中。"
+        description={t('users.unban.desc')}
         tone="primary"
-        confirmLabel="确认解封"
+        confirmLabel={t('users.unban.confirm')}
         busy={actionBusy}
         error={actionError}
         onCancel={closeDialogs}
         onConfirm={() => {
           const target = unbanTarget;
           if (!target) return;
-          void runAction(() => unbanUser(target.id, '后台解封'), '已解封');
+          void runAction(() => unbanUser(target.id, '后台解封'), t('users.unbanned'));
         }}
       >
         {unbanTarget?.ban && (
           <ImpactList
             items={[
-              { label: '封禁档位', value: LEVEL_LABEL[unbanTarget.ban.level] ?? `L${unbanTarget.ban.level}` },
-              { label: '原封禁原因', value: unbanTarget.ban.reason },
-              { label: '操作者', value: unbanTarget.ban.banned_by },
-              { label: '封禁时间', value: formatDateTime(unbanTarget.ban.banned_at) },
+              { label: t('users.banLevel'), value: LEVEL_LABEL[unbanTarget.ban.level] ?? `L${unbanTarget.ban.level}` },
+              { label: t('users.originalReason'), value: unbanTarget.ban.reason },
+              { label: t('common.operator'), value: unbanTarget.ban.banned_by },
+              { label: t('users.bannedAt'), value: formatDateTime(unbanTarget.ban.banned_at) },
             ]}
           />
         )}
@@ -434,21 +435,21 @@ export function Users() {
       <ConfirmDialog
         open={kickTarget !== null}
         title={`将 ${kickTarget?.nickname ?? ''} 踢下线？`}
-        description="断开该账号全部设备的连接，不影响登录凭证；客户端会自动重连。"
+        description={t('users.kick.desc')}
         tone="primary"
-        confirmLabel="断开连接"
+        confirmLabel={t('users.kick.confirm')}
         busy={actionBusy}
         error={actionError}
         onCancel={closeDialogs}
         onConfirm={() => {
           if (!kickTarget) return;
-          void runAction(() => kickUser(kickTarget.id, '后台强制下线'), '已断开');
+          void runAction(() => kickUser(kickTarget.id, '后台强制下线'), t('users.kicked'));
         }}
       >
         <ImpactList
           items={[
-            { label: '设备数', value: String(kickTarget?.device_count ?? 0) },
-            { label: '最近活跃', value: formatDateTime(kickTarget?.last_seen_at) },
+            { label: t('users.devices'), value: String(kickTarget?.device_count ?? 0) },
+            { label: t('users.lastActive'), value: formatDateTime(kickTarget?.last_seen_at) },
           ]}
         />
       </ConfirmDialog>
@@ -456,38 +457,38 @@ export function Users() {
       <ConfirmDialog
         open={batchUnban}
         title={`批量解封 ${formatNumber(selected.size)} 个账号？`}
-        description="仅对当前处于封禁状态的账号生效，其余账号会被跳过。"
+        description={t('users.batchUnban.desc')}
         tone="primary"
-        confirmLabel="确认解封"
+        confirmLabel={t('users.unban.confirm')}
         busy={actionBusy}
         error={actionError}
         onCancel={closeDialogs}
         onConfirm={() => {
           void runAction(
             () => batchUsers({ action: 'unban', ids: [...selected], select_all: allAcross, note: '后台批量解封' }),
-            '已提交',
+            t('users.submitted'),
           );
         }}
       >
-        <ImpactList items={[{ label: '目标账号', value: `${formatNumber(selected.size)} 个` }]} />
+        <ImpactList items={[{ label: t('users.targetAccounts'), value: `${formatNumber(selected.size)} 个` }]} />
       </ConfirmDialog>
 
       <ConfirmDialog
         open={batchKick}
         title={`批量踢出 ${formatNumber(selected.size)} 个账号？`}
-        description="断开所选账号的全部连接，用户可立即重连。"
-        confirmLabel="确认踢出"
+        description={t('users.batchKick.desc')}
+        confirmLabel={t('users.batchKick.confirm')}
         busy={actionBusy}
         error={actionError}
         onCancel={closeDialogs}
         onConfirm={() => {
           void runAction(
             () => batchUsers({ action: 'kick', ids: [...selected], select_all: allAcross, note: '后台批量踢出' }),
-            '已提交',
+            t('users.submitted'),
           );
         }}
       >
-        <ImpactList items={[{ label: '目标账号', value: `${formatNumber(selected.size)} 个` }]} />
+        <ImpactList items={[{ label: t('users.targetAccounts'), value: `${formatNumber(selected.size)} 个` }]} />
       </ConfirmDialog>
     </>
   );
@@ -560,10 +561,10 @@ function BanDialog({
       title={ids.length > 1 ? `批量封禁 ${ids.length} 个账号` : `封禁 ${target?.nickname ?? '账号'}？`}
       description={
         ids.length > 1
-          ? '逐条写入封禁记录并断连；失败项会在审计日志中标记。'
+          ? t('users.ban.descBatch')
           : `@${target?.username ?? ''} · 用户 #${target?.id ?? ''}`
       }
-      confirmLabel="确认封禁"
+      confirmLabel={t('users.ban.confirm')}
       confirmWord={body.level === 3 ? 'PERMANENT' : undefined}
       requireTotp={body.level === 3}
       busy={busy}
@@ -633,7 +634,7 @@ function BanDialog({
             rows={3}
             value={body.reason}
             onChange={(event) => setBody((prev) => ({ ...prev, reason: event.target.value }))}
-            placeholder="如：群发垃圾广告，违反社区规范 3.2"
+            placeholder={t('users.banReasonPlaceholder')}
           />
         </div>
 

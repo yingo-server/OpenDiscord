@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Modal } from './Modal';
 import { IconAlert } from './icons';
+import { t } from '../i18n';
 
 export interface ConfirmInput {
   totp?: string;
@@ -17,8 +18,8 @@ export function ConfirmDialog({
   title,
   description,
   tone = 'danger',
-  confirmLabel = '确认',
-  cancelLabel = '取消',
+  confirmLabel = t('confirm.defaultConfirm'),
+  cancelLabel = t('confirm.defaultCancel'),
   confirmWord,
   requireTotp = false,
   busy = false,
@@ -74,7 +75,7 @@ export function ConfirmDialog({
             disabled={!canConfirm}
             onClick={() => onConfirm({ totp: requireTotp ? totp : undefined })}
           >
-            {busy ? '执行中…' : confirmLabel}
+            {busy ? t('common.executing') : confirmLabel}
           </button>
         </>
       }
@@ -83,7 +84,7 @@ export function ConfirmDialog({
         {tone === 'danger' && (
           <div className="flex items-start gap-2 rounded-md bg-danger-50 px-3 py-2 text-body-sm text-danger-700">
             <IconAlert size={16} className="mt-0.5 shrink-0" />
-            <span>此操作会立即生效并写入审计日志（append-only 哈希链），不可撤销。</span>
+            <span>{t('confirm.dangerHint')}</span>
           </div>
         )}
 

@@ -19,20 +19,21 @@ import { Modal } from '../components/Modal';
 import { PageHeader } from '../components/PageHeader';
 import { StatusTag } from '../components/StatusTag';
 import { IconAlert, IconMegaphone, IconRefresh } from '../components/icons';
+import { t } from '../i18n';
 
 const STATUS: Record<BroadcastStatus, { label: string; tone: 'muted' | 'info' | 'warning' | 'success' | 'danger' }> = {
-  draft: { label: '草稿', tone: 'muted' },
-  previewed: { label: '已预览', tone: 'info' },
-  scheduled: { label: '待发送', tone: 'warning' },
-  sending: { label: '发送中', tone: 'warning' },
-  sent: { label: '已发送', tone: 'success' },
-  failed: { label: '失败', tone: 'danger' },
+  draft: { label: t('broadcast.drafts'), tone: 'muted' },
+  previewed: { label: t('broadcast.status.previewed'), tone: 'info' },
+  scheduled: { label: t('broadcast.status.scheduled'), tone: 'warning' },
+  sending: { label: t('broadcast.status.sending'), tone: 'warning' },
+  sent: { label: t('broadcast.status.sent'), tone: 'success' },
+  failed: { label: t('broadcast.status.failed'), tone: 'danger' },
 };
 
 const AUDIENCE_LABEL: Record<AudienceType, string> = {
-  all: '全体用户',
-  segment: '人群包',
-  uids: '指定用户',
+  all: t('broadcast.audience.all'),
+  segment: t('broadcast.audience.segment'),
+  uids: t('broadcast.audience.uids'),
 };
 
 /** 发布确认词（§9.3 广播发布需输入确认词） */
@@ -75,7 +76,7 @@ export function Broadcast() {
   const columns: Column<BroadcastDraft>[] = [
     {
       key: 'title',
-      header: '标题 / 内容',
+      header: t('broadcast.titleBody'),
       width: 420,
       render: (d) => (
         <div className="min-w-0 py-1">
@@ -86,7 +87,7 @@ export function Broadcast() {
     },
     {
       key: 'audience',
-      header: '受众',
+      header: t('broadcast.audience'),
       width: 180,
       render: (d) => (
         <div>
@@ -100,13 +101,13 @@ export function Broadcast() {
     },
     {
       key: 'status',
-      header: '状态',
+      header: t('common.status'),
       width: 110,
       render: (d) => <StatusTag tone={STATUS[d.status].tone}>{STATUS[d.status].label}</StatusTag>,
     },
     {
       key: 'updated',
-      header: '更新时间',
+      header: t('broadcast.updatedAt'),
       width: 170,
       render: (d) => (
         <div>
@@ -117,7 +118,7 @@ export function Broadcast() {
     },
     {
       key: 'actions',
-      header: '操作',
+      header: t('common.actions'),
       width: 200,
       align: 'right',
       render: (d) => (
@@ -144,13 +145,13 @@ export function Broadcast() {
     <>
       <PageHeader
         title="广播"
-        description="草稿 → dry-run 预览触达人数 → 输入确认词发送。发送失败可按人群包重试，已触达用户由服务端去重。"
+        description={t('broadcast.description')}
         meta={
           <>
             <span>
-              草稿 <span className="nums font-semibold text-text-secondary">{formatNumber(data?.total ?? 0)}</span> 条
+              {t('broadcast.drafts')} <span className="nums font-semibold text-text-secondary">{formatNumber(data?.total ?? 0)}</span> 条
             </span>
-            {flash && <span className="text-success-600">已刷新</span>}
+            {flash && <span className="text-success-600">{t('common.updated')}</span>}
           </>
         }
         actions={
@@ -172,7 +173,7 @@ export function Broadcast() {
         loading={loading}
         error={error}
         emptyText="还没有广播草稿"
-        footerLeft="发布需输入确认词并二次 TOTP；全量广播建议先在测试人群包验证"
+        footerLeft={t('broadcast.footer')}
       />
 
       <ComposeDialog
@@ -188,9 +189,9 @@ export function Broadcast() {
 
       <ConfirmDialog
         open={cancelTarget !== null}
-        title="取消这条广播？"
-        description="取消后不可恢复；已发送的部分不受影响。"
-        confirmLabel="确认取消"
+        title={t('broadcast.cancel.title')}
+        description={t('broadcast.cancel.desc')}
+        confirmLabel={t('broadcast.cancel.confirm')}
         onCancel={() => setCancelTarget(null)}
         onConfirm={() => {
           const target = cancelTarget;
@@ -239,8 +240,8 @@ function ComposeDialog({
   return (
     <Modal
       open={open}
-      title="新建广播草稿"
-      description="草稿保存后不会发送；需在列表中预览并确认发送。"
+      title={t('broadcast.new.title')}
+      description={t('broadcast.new.desc')}
       width={680}
       onClose={onClose}
       busy={busy}
@@ -272,7 +273,7 @@ function ComposeDialog({
               }
             }}
           >
-            {busy ? '保存中…' : '保存草稿'}
+            {busy ? t('common.saving') : t('broadcast.save')}
           </button>
         </>
       }
@@ -288,7 +289,7 @@ function ComposeDialog({
             maxLength={60}
             value={title}
             onChange={(event) => setTitle(event.target.value)}
-            placeholder="如：服务升级通知"
+            placeholder={t('broadcast.titlePlaceholder')}
           />
         </div>
         <div>
@@ -302,7 +303,7 @@ function ComposeDialog({
             maxLength={500}
             value={body}
             onChange={(event) => setBody(event.target.value)}
-            placeholder="不超过 500 字；将作为系统消息下发"
+            placeholder={t('broadcast.bodyPlaceholder')}
           />
           <div className="mt-1 text-right text-caption text-text-tertiary nums">{body.length}/500</div>
         </div>
@@ -317,9 +318,9 @@ function ComposeDialog({
               value={audience}
               onChange={(event) => setAudience(event.target.value as AudienceType)}
             >
-              <option value="all">全体用户</option>
-              <option value="segment">人群包</option>
-              <option value="uids">指定用户（CSV 导入）</option>
+              <option value="all">{t('broadcast.audience.all')}</option>
+              <option value="segment">{t('broadcast.audience.segment')}</option>
+              <option value="uids">{t('broadcast.audience.uids')}</option>
             </select>
           </div>
           <div>
@@ -332,8 +333,8 @@ function ComposeDialog({
               value={channel}
               onChange={(event) => setChannel(event.target.value as 'inapp' | 'inapp_push')}
             >
-              <option value="inapp">仅站内信</option>
-              <option value="inapp_push">站内信 + 推送</option>
+              <option value="inapp">{t('broadcast.channel.inapp')}</option>
+              <option value="inapp_push">{t('broadcast.channel.inapp_push')}</option>
             </select>
           </div>
         </div>
@@ -416,9 +417,9 @@ function SendDialog({
   return (
     <ConfirmDialog
       open={target !== null}
-      title="发送广播"
+      title={t('broadcast.send')}
       description={target ? `「${target.title}」· ${AUDIENCE_LABEL[target.audience.type]}` : undefined}
-      confirmLabel={busy ? '发送中…' : '确认发送'}
+      confirmLabel={busy ? t('broadcast.status.sending') : t('broadcast.sendConfirm')}
       confirmWord={CONFIRM_WORD}
       requireTotp
       busy={busy || loading}
@@ -449,22 +450,22 @@ function SendDialog({
           <div className="flex items-center justify-between">
             <span className="text-body-sm text-text-secondary">dry-run 预估触达</span>
             <button type="button" className="btn btn-ghost btn-sm" onClick={() => void load()} disabled={loading}>
-              {loading ? '预估中…' : '重新预估'}
+              {loading ? t('common.estimating') : t('dryRun.retry')}
             </button>
           </div>
           {preview ? (
             <>
               <div className="mt-1 flex items-baseline gap-2">
                 <span className="nums text-display font-bold text-primary-700">{formatNumber(preview.estimated_recipients)}</span>
-                <span className="text-body-sm text-text-secondary">人</span>
+                <span className="text-body-sm text-text-secondary">{t('common.peopleUnit')}</span>
               </div>
               <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-body-sm">
                 <div className="flex justify-between">
-                  <dt className="text-text-tertiary">跳过</dt>
+                  <dt className="text-text-tertiary">{t('broadcast.skipped')}</dt>
                   <dd className="nums text-text-primary">{formatNumber(preview.estimated_skipped)}</dd>
                 </div>
                 <div className="flex justify-between">
-                  <dt className="text-text-tertiary">预计耗时</dt>
+                  <dt className="text-text-tertiary">{t('broadcast.eta')}</dt>
                   <dd className="nums text-text-primary">{formatDuration(preview.estimated_duration_sec)}</dd>
                 </div>
               </dl>
@@ -481,7 +482,7 @@ function SendDialog({
             </>
           ) : (
             <p className={cn('mt-1 text-body-sm', loading ? 'text-text-tertiary' : 'text-danger-600')}>
-              {loading ? '正在预估触达人数…' : '必须成功预估后才能发送'}
+              {loading ? t('broadcast.estimating') : t('broadcast.mustEstimate')}
             </p>
           )}
         </div>

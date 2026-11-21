@@ -3,6 +3,7 @@ import { ApiError, auth, type LoginChallenge } from '../../api/client';
 import { useAuth } from '../../auth';
 import { errorMessage } from '../../lib/hooks';
 import { IconAlert } from '../components/icons';
+import { t } from '../i18n';
 
 /**
  * 管理后台登录：账密 + TOTP 两步（security-spec A-4 强制 TOTP）。
@@ -20,8 +21,8 @@ export function Login() {
 
   const describe = (err: unknown) => {
     if (err instanceof ApiError) {
-      if (err.status === 401) return '账号或凭证不正确。连续失败将触发锁定（5 次 / 15 分钟）。';
-      if (err.status === 429) return '尝试过于频繁，请稍后再试。';
+      if (err.status === 401) return t('login.error.unauthorized');
+      if (err.status === 429) return t('login.error.rateLimited');
       return `${err.code}: ${err.reason}`;
     }
     return errorMessage(err);
@@ -30,7 +31,7 @@ export function Login() {
   const submitPassword = async (event: FormEvent) => {
     event.preventDefault();
     if (!username.trim() || !password) {
-      setError('请填写账号与密码');
+      setError(t('login.error.missingCredentials'));
       return;
     }
     setBusy(true);
@@ -42,7 +43,7 @@ export function Login() {
         return;
       }
       if (!result.mfa_required || !result.mfa_ticket) {
-        setError('服务端未返回 TOTP 挑战，请联系超级管理员检查管理员账号配置。');
+        setError(t('login.error.noTotpChallenge'));
         return;
       }
       setChallenge(result);
@@ -58,7 +59,7 @@ export function Login() {
   const submitTotp = async (event: FormEvent) => {
     event.preventDefault();
     if (!challenge?.mfa_ticket || code.length !== 6) {
-      setError('请输入 6 位动态验证码');
+      setError(t('login.error.badTotp'));
       return;
     }
     setBusy(true);
@@ -83,13 +84,13 @@ export function Login() {
           </span>
           <div>
             <h1 className="text-title text-text-primary">OpenDiscord 管理后台</h1>
-            <p className="text-body-sm text-text-tertiary">仅限授权管理员访问，所有操作均记入审计日志</p>
+            <p className="text-body-sm text-text-tertiary">{t('login.subtitle')}</p>
           </div>
         </div>
 
         <div className="card card-pad shadow-md">
           {step === 'password' ? (
-            <form onSubmit={submitPassword} className="space-y-4" aria-label="账号密码登录">
+            <form onSubmit={submitPassword} className="space-y-4" aria-label={t('login.formPassword')}>
               <div>
                 <label className="label" htmlFor="username">
                   管理员账号
@@ -120,11 +121,11 @@ export function Login() {
               </div>
               {error && <ErrorLine message={error} />}
               <button type="submit" className="btn btn-primary w-full" disabled={busy}>
-                {busy ? '校验中…' : '下一步：动态验证码'}
+                {busy ? t('login.verifying') : t('login.nextTotp')}
               </button>
             </form>
           ) : (
-            <form onSubmit={submitTotp} className="space-y-4" aria-label="两步验证">
+            <form onSubmit={submitTotp} className="space-y-4" aria-label={t('login.formTotp')}>
               <div className="rounded-md bg-bg-surface-2 px-3 py-2 text-body-sm text-text-secondary">
                 账号 <span className="font-semibold text-text-primary">{username}</span> 的密码已校验，请输入认证器中的 6 位动态验证码。
               </div>
@@ -147,7 +148,7 @@ export function Login() {
               </div>
               {error && <ErrorLine message={error} />}
               <button type="submit" className="btn btn-primary w-full" disabled={busy || code.length !== 6}>
-                {busy ? '验证中…' : '登录'}
+                {busy ? t('common.verifying') : t('login.doLogin')}
               </button>
               <button
                 type="button"

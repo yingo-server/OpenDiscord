@@ -1,17 +1,18 @@
 import type { DryRunResult } from '../../api/types';
 import { formatNumber } from '../../lib/format';
 import { IconAlert } from './icons';
+import { t } from '../i18n';
 
 const LABELS: Record<string, string> = {
-  users: '受影响用户',
-  rows: '涉及行数',
-  messages: '涉及消息',
-  conversations: '涉及会话',
-  recipients: '触达用户',
-  skipped: '跳过用户',
-  duration_sec: '预计耗时（秒）',
-  bytes: '数据量（字节）',
-  audit_rows: '审计记录',
+  users: t('dryRun.users'),
+  rows: t('dryRun.rows'),
+  messages: t('dryRun.messages'),
+  conversations: t('dryRun.conversations'),
+  recipients: t('dryRun.recipients'),
+  skipped: t('dryRun.skipped'),
+  duration_sec: t('dryRun.duration'),
+  bytes: t('dryRun.bytes'),
+  audit_rows: t('dryRun.auditRows'),
 };
 
 function humanize(key: string): string {
@@ -85,7 +86,7 @@ export function DryRunPreview({
     <div className="rounded-md border border-primary-300 bg-primary-50 px-3 py-3">
       <div className="flex items-center gap-2">
         <span className="rounded-sm bg-primary-500 px-1.5 py-0.5 text-caption font-semibold text-text-inverse">dry-run</span>
-        <span className="text-body-sm text-text-secondary">仅预估，不写入、不产生审计动作行</span>
+        <span className="text-body-sm text-text-secondary">{t('dryRun.hint')}</span>
       </div>
       <p className="mt-2 text-table text-text-primary">{result.summary}</p>
       {entries.length > 0 && (

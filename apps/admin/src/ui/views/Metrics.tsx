@@ -12,6 +12,7 @@ import { PageHeader } from '../components/PageHeader';
 import { StatusTag } from '../components/StatusTag';
 import { IconAlert, IconGauge, IconRefresh } from '../components/icons';
 import { FilterBar, SearchInput } from '../components/DataTable';
+import { t } from '../i18n';
 
 const REFRESH_MS = 5000;
 
@@ -81,15 +82,15 @@ export function Metrics() {
   return (
     <>
       <PageHeader
-        title="数据面板"
-        description="直读 /metrics（Prometheus 文本）。阈值取自 security-spec §1.6 与 §6.4.2：队列深度 > 64 持续 1 分钟告警。"
+        title={t('metrics.title')}
+        description={t('metrics.description')}
         meta={
           <>
             <span>
               更新于 <span className="nums">{updatedAt ? formatClock(updatedAt) : '—'}</span>
             </span>
             {loading && <span className="text-text-tertiary">拉取中…</span>}
-            {flash && <span className="text-success-600">已刷新</span>}
+            {flash && <span className="text-success-600">{t('common.updated')}</span>}
             <span className="text-text-tertiary">共 {families.length} 个指标族</span>
           </>
         }
@@ -117,7 +118,7 @@ export function Metrics() {
         <div className="mb-4 flex items-start gap-2 rounded-md border border-danger-300 bg-danger-50 px-3 py-2 text-body-sm text-danger-700">
           <IconAlert size={16} className="mt-0.5 shrink-0" />
           <div>
-            <strong className="font-semibold">审计链断裂（P0）</strong>
+            <strong className="font-semibold">{t('metrics.auditBroken.title')}</strong>
             <p>audit_chain_broken=1。立即冻结写入、保全现场并通知安全负责人（security-spec §6.4.2）。</p>
           </div>
         </div>
@@ -137,38 +138,38 @@ export function Metrics() {
 
       <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
         <MetricCard
-          label="在线连接"
+          label={t('metrics.connections')}
           value={connections ? formatNumber(connections.value) : '—'}
           unit={connections ? '条' : undefined}
-          hint={connections ? connections.name : '未找到 ws_connections_active'}
+          hint={connections ? connections.name : t('metrics.missingConnections')}
           icon
         />
         <MetricCard
-          label="写队列水位"
+          label={t('metrics.queueDepth')}
           value={queue ? formatNumber(queueValue) : '—'}
           unit={queue ? `/ 128` : undefined}
-          hint={queue ? '超过 64 持续 1 分钟需告警' : '未找到 writech_queue_depth'}
+          hint={queue ? t('metrics.queueHint') : t('metrics.missingQueue')}
           tone={queue ? queueTone : 'default'}
           progress={queue ? Math.min(1, queueValue / 128) : undefined}
         />
         <MetricCard
-          label="HTTP 5xx 错误率"
+          label={t('metrics.http5xx')}
           value={formatPercent(errorRate)}
-          hint="5xx / 全部请求（近生命周期累计）"
+          hint={t('metrics.http5xxHint')}
           tone={errorRate === null ? 'default' : errorRate > 0.01 ? 'danger' : errorRate > 0.001 ? 'warning' : 'success'}
         />
         <MetricCard
-          label="限流丢弃累计"
+          label={t('metrics.rateDrops')}
           value={rateLimited ? formatNumber(rateLimited.value) : '—'}
           hint="gateway_ratelimit_dropped_total"
         />
         <MetricCard
-          label="写管道 BUSY 累计"
+          label={t('metrics.busy')}
           value={busy ? formatNumber(busy.value) : '—'}
-          hint="writech_busy_total（背压发生次数）"
+          hint={t('metrics.busyHint')}
         />
         <MetricCard
-          label="进程内存 / Goroutine"
+          label={t('metrics.memory')}
           value={rss ? formatBytes(rss.value) : '—'}
           hint={goroutines ? `${formatNumber(goroutines.value)} goroutines` : 'process_resident_memory_bytes'}
         />
@@ -187,15 +188,15 @@ export function Metrics() {
         <table className="tbl">
           <thead>
             <tr>
-              <th>指标族</th>
-              <th style={{ width: 110 }}>类型</th>
+              <th>{t('metrics.family')}</th>
+              <th style={{ width: 110 }}>{t('metrics.type')}</th>
               <th style={{ width: 110 }} className="text-right">
                 样本数
               </th>
               <th style={{ width: 160 }} className="text-right">
                 合计 / 值
               </th>
-              <th>标签</th>
+              <th>{t('metrics.labels')}</th>
             </tr>
           </thead>
           <tbody>
@@ -208,7 +209,7 @@ export function Metrics() {
                   <div className="flex flex-col items-center gap-2 py-10 text-center">
                     <IconGauge size={24} className="text-text-tertiary" />
                     <p className="text-body-sm text-text-tertiary">
-                      {families.length === 0 ? '还没有指标数据' : '没有匹配的指标'}
+                      {families.length === 0 ? t('metrics.emptyAll') : t('metrics.emptyFiltered')}
                     </p>
                   </div>
                 </td>
@@ -254,7 +255,7 @@ function MetricCard({
         {icon && <IconGauge size={16} className="text-text-tertiary" />}
         {tone !== 'default' && (
           <StatusTag tone={tone === 'success' ? 'success' : tone === 'warning' ? 'warning' : 'danger'}>
-            {tone === 'success' ? '正常' : tone === 'warning' ? '关注' : '告警'}
+            {tone === 'success' ? t('common.normal') : tone === 'warning' ? t('common.attention') : t('common.alert')}
           </StatusTag>
         )}
       </div>

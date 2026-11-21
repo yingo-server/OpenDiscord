@@ -22,18 +22,19 @@ import { Modal } from '../components/Modal';
 import { PageHeader } from '../components/PageHeader';
 import { StatusTag } from '../components/StatusTag';
 import { IconRefresh } from '../components/icons';
+import { t } from '../i18n';
 
 const STATUS: Record<ReportStatus, { label: string; tone: 'warning' | 'info' | 'muted' | 'danger' }> = {
-  pending: { label: '待处理', tone: 'warning' },
-  handling: { label: '处理中', tone: 'info' },
-  handled: { label: '已处理', tone: 'muted' },
-  escalated: { label: '已升级', tone: 'danger' },
+  pending: { label: t('reports.status.pending'), tone: 'warning' },
+  handling: { label: t('reports.status.handling'), tone: 'info' },
+  handled: { label: t('reports.status.handled'), tone: 'muted' },
+  escalated: { label: t('reports.status.escalated'), tone: 'danger' },
 };
 
 const PRIORITY: Record<ReportPriority, { label: string; tone: 'danger' | 'warning' | 'muted' }> = {
-  p0: { label: 'P0 紧急', tone: 'danger' },
-  p1: { label: 'P1 高', tone: 'warning' },
-  p2: { label: 'P2 常规', tone: 'muted' },
+  p0: { label: t('reports.priority.p0'), tone: 'danger' },
+  p1: { label: t('reports.priority.p1'), tone: 'warning' },
+  p2: { label: t('reports.priority.p2'), tone: 'muted' },
 };
 
 const TARGET_LABEL: Record<string, string> = { message: '消息', user: '用户', conversation: '会话' };
@@ -107,7 +108,7 @@ export function Reports() {
   const columns: Column<Report>[] = [
     {
       key: 'id',
-      header: '举报',
+      header: t('reports.list.report'),
       width: 220,
       render: (r) => (
         <div>
@@ -120,13 +121,13 @@ export function Reports() {
     },
     {
       key: 'priority',
-      header: '优先级',
+      header: t('common.priority'),
       width: 110,
       render: (r) => <StatusTag tone={PRIORITY[r.priority].tone}>{PRIORITY[r.priority].label}</StatusTag>,
     },
     {
       key: 'target',
-      header: '目标',
+      header: t('common.target'),
       width: 320,
       render: (r) => (
         <div className="min-w-0">
@@ -139,33 +140,33 @@ export function Reports() {
     },
     {
       key: 'reporter',
-      header: '举报人',
+      header: t('reports.list.reporter'),
       width: 120,
       render: (r) => <span className="nums text-body-sm text-text-secondary">#{r.reporter_id}</span>,
     },
     {
       key: 'status',
-      header: '状态',
+      header: t('common.status'),
       width: 110,
       render: (r) => <StatusTag tone={STATUS[r.status].tone}>{STATUS[r.status].label}</StatusTag>,
     },
     {
       key: 'sla',
-      header: '处理时限',
+      header: t('reports.list.deadline'),
       width: 180,
       render: (r) => {
         const late = new Date(r.sla_due_at).getTime() < Date.now() && r.status !== 'handled';
         return (
           <div className={cn('text-body-sm', late ? 'text-danger-600' : 'text-text-secondary')}>
             <span className="nums">{formatDateTime(r.sla_due_at)}</span>
-            {late && <div className="text-caption">已超时</div>}
+            {late && <div className="text-caption">{t('reports.list.late')}</div>}
           </div>
         );
       },
     },
     {
       key: 'created',
-      header: '举报时间',
+      header: t('reports.list.reportedAt'),
       width: 150,
       render: (r) => <span className="text-body-sm text-text-secondary">{formatRelative(r.created_at)}</span>,
     },
@@ -177,7 +178,7 @@ export function Reports() {
       render: (r) => (
         <div className="flex items-center justify-end gap-1">
           <button type="button" className="btn btn-secondary btn-sm" onClick={() => void openDetail(r)}>
-            {r.status === 'handled' ? '查看' : '处置'}
+            {r.status === 'handled' ? '查看' : t('reports.list.handle')}
           </button>
           {!r.assignee && r.status !== 'handled' && (
             <button
@@ -200,12 +201,12 @@ export function Reports() {
   return (
     <>
       <PageHeader
-        title="举报处理"
-        description="按时间倒序的举报队列。普通举报 24h 内处理，涉未成年人/人身威胁 2h 内升级（admin-guide）。"
+        title={t('reports.title')}
+        description={t('reports.description')}
         meta={
           <>
             <span>
-              待处理 <span className="nums font-semibold text-text-secondary">{formatNumber(data?.total ?? 0)}</span>
+              {t('reports.status.pending')} <span className="nums font-semibold text-text-secondary">{formatNumber(data?.total ?? 0)}</span>
             </span>
             {overdue > 0 && <span className="text-danger-600">本页超时 {overdue} 条</span>}
             {flash && <span className="text-success-600">已刷新</span>}
@@ -236,12 +237,12 @@ export function Reports() {
             value={status}
             onChange={(event) => setStatus(event.target.value as ReportStatus | 'open' | 'all')}
           >
-            <option value="open">待处理（含处理中）</option>
-            <option value="pending">待处理</option>
-            <option value="handling">处理中</option>
-            <option value="escalated">已升级</option>
-            <option value="handled">已处理</option>
-            <option value="all">全部</option>
+            <option value="open">{t('reports.status.open')}</option>
+            <option value="pending">{t('reports.status.pending')}</option>
+            <option value="handling">{t('reports.status.handling')}</option>
+            <option value="escalated">{t('reports.status.escalated')}</option>
+            <option value="handled">{t('reports.status.handled')}</option>
+            <option value="all">{t('common.all')}</option>
           </select>
         </div>
         <div>
@@ -254,7 +255,7 @@ export function Reports() {
             value={priority}
             onChange={(event) => setPriority(event.target.value as ReportPriority | 'all')}
           >
-            <option value="all">全部</option>
+            <option value="all">{t('common.all')}</option>
             <option value="p0">P0 紧急</option>
             <option value="p1">P1 高</option>
             <option value="p2">P2 常规</option>
@@ -274,7 +275,7 @@ export function Reports() {
         rowKey={(r) => r.id}
         loading={loading}
         error={error}
-        emptyText="队列已清空，辛苦"
+        emptyText={t('reports.empty.title')}
         pagination={{
           page,
           perPage,
@@ -282,7 +283,7 @@ export function Reports() {
           onPageChange: setPage,
           onPerPageChange: setPerPage,
         }}
-        footerLeft="处置动作全部写入审计日志；证据加密保全，不随内容删除清除"
+        footerLeft={t('reports.auditHint')}
       />
 
       <ReportDetail
@@ -368,7 +369,7 @@ function ReportDetail({
   const submit = async (totp?: string) => {
     if (!report) return;
     if (note.trim().length < 4) {
-      setFormError('请填写处置说明（至少 4 个字），会写入审计日志');
+      setFormError(t('reports.error.noNote'));
       return;
     }
     setBusy(true);
@@ -407,7 +408,7 @@ function ReportDetail({
               onClick={() => void submit()}
               disabled={busy || loading}
             >
-              {busy ? '提交中…' : HANDLE_ACTION_LABELS[action]}
+              {busy ? t('common.submitting') : HANDLE_ACTION_LABELS[action]}
             </button>
           )}
         </>
@@ -425,24 +426,24 @@ function ReportDetail({
               </header>
               <dl className="space-y-1.5 px-3 py-2 text-body-sm">
                 <div className="flex justify-between gap-3">
-                  <dt className="text-text-tertiary">举报人</dt>
+                  <dt className="text-text-tertiary">{t('reports.list.reporter')}</dt>
                   <dd className="nums text-text-primary">#{report.reporter_id}</dd>
                 </div>
                 <div className="flex justify-between gap-3">
-                  <dt className="text-text-tertiary">举报时间</dt>
+                  <dt className="text-text-tertiary">{t('reports.list.reportedAt')}</dt>
                   <dd className="nums text-text-primary">{formatDateTime(report.created_at)}</dd>
                 </div>
                 <div className="flex justify-between gap-3">
-                  <dt className="text-text-tertiary">处理时限</dt>
+                  <dt className="text-text-tertiary">{t('reports.list.deadline')}</dt>
                   <dd className="nums text-text-primary">{formatDateTime(report.sla_due_at)}</dd>
                 </div>
                 <div className="flex justify-between gap-3">
-                  <dt className="text-text-tertiary">当前状态</dt>
+                  <dt className="text-text-tertiary">{t('reports.detail.currentStatus')}</dt>
                   <dd><StatusTag tone={STATUS[report.status].tone}>{STATUS[report.status].label}</StatusTag></dd>
                 </div>
                 <div className="pt-1">
-                  <dt className="text-text-tertiary">举报描述</dt>
-                  <dd className="mt-1 whitespace-pre-wrap text-text-primary">{report.reason_text || '（无补充）'}</dd>
+                  <dt className="text-text-tertiary">{t('reports.detail.reason')}</dt>
+                  <dd className="mt-1 whitespace-pre-wrap text-text-primary">{report.reason_text || t('common.noSupplement')}</dd>
                 </div>
               </dl>
             </section>
@@ -450,7 +451,7 @@ function ReportDetail({
             <section className="rounded-md border border-border-default">
               <header className="flex items-center justify-between border-b border-border-default bg-bg-surface-2 px-3 py-2">
                 <span className="text-body-sm font-semibold">证据（{report.evidence.length}）</span>
-                <span className="text-caption text-text-tertiary">加密保全 · 不可普通删除</span>
+                <span className="text-caption text-text-tertiary">{t('reports.detail.evidenceKeep')}</span>
               </header>
               <ul className="divide-y divide-border-default">
                 {report.evidence.map((item) => (
@@ -465,7 +466,7 @@ function ReportDetail({
                     </div>
                   </li>
                 ))}
-                {report.evidence.length === 0 && <li className="px-3 py-4 text-body-sm text-text-tertiary">无证据附件</li>}
+                {report.evidence.length === 0 && <li className="px-3 py-4 text-body-sm text-text-tertiary">{t('reports.detail.noEvidence')}</li>}
               </ul>
             </section>
           </div>
@@ -516,7 +517,7 @@ function ReportDetail({
                 rows={4}
                 value={note}
                 onChange={(event) => setNote(event.target.value)}
-                placeholder="如：核实为广告引流，按社区规范 3.2 下架并警告"
+                placeholder={t('reports.form.notePlaceholder')}
               />
             </div>
 
@@ -579,8 +580,8 @@ function BanConfirm({
       <ConfirmDialog
         open={open}
         title="封禁被举报账号"
-        description="封禁将撤销该账号全部 token 家族并断开所有连接（security-spec §6.4.3）。"
-        confirmLabel="确认封禁"
+        description={t('reports.ban.desc')}
+        confirmLabel={t('reports.ban.confirm')}
         requireTotp
         busy={busy}
         error={error}
@@ -603,9 +604,9 @@ function BanConfirm({
       >
         <ImpactList
           items={[
-            { label: '动作', value: '封禁账号（永久，需复核）' },
-            { label: '副作用', value: '撤销全部登录凭证 + 立即断连' },
-            { label: '审计', value: '写入哈希链，不可删除' },
+            { label: t('reports.ban.impact.actionLabel'), value: t('reports.ban.impact.action') },
+            { label: t('reports.ban.impact.sideEffectLabel'), value: t('reports.ban.impact.sideEffect') },
+            { label: t('reports.ban.impact.auditLabel'), value: t('reports.ban.impact.audit') },
           ]}
         />
       </ConfirmDialog>

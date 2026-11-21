@@ -11,6 +11,7 @@ import { playSound } from '../../lib/sound';
 import { PageHeader } from '../components/PageHeader';
 import { Sparkline } from '../components/Sparkline';
 import { IconAlert, IconRefresh } from '../components/icons';
+import { t } from '../i18n';
 
 /* ------------------------------------------------------------------ */
 /* 指标卡                                                              */
@@ -75,7 +76,7 @@ function StatCard({
               tone === 'danger' && 'bg-danger-50 text-danger-700',
             )}
           >
-            {tone === 'success' ? '正常' : tone === 'warning' ? '关注' : '告警'}
+            {tone === 'success' ? t('common.normal') : tone === 'warning' ? t('common.attention') : t('common.alert')}
           </span>
         )}
       </div>
@@ -130,11 +131,11 @@ function EventFeed({ events }: { events: AuditEvent[] }) {
   return (
     <div className="card card-pad flex h-full min-h-[320px] flex-col">
       <div className="mb-2 flex items-center justify-between">
-        <span className="text-table font-semibold text-text-primary">实时事件流</span>
+        <span className="text-table font-semibold text-text-primary">{t('dashboard.liveEvents')}</span>
         <span className="text-caption text-text-tertiary">audit · 每 {POLL_MS / 1000}s</span>
       </div>
       <ul ref={listRef} className="min-h-0 flex-1 space-y-1 overflow-y-auto">
-        {events.length === 0 && <li className="py-6 text-center text-caption text-text-tertiary">暂无事件</li>}
+        {events.length === 0 && <li className="py-6 text-center text-caption text-text-tertiary">{t('dashboard.noEvents')}</li>}
         {events.map((e) => (
           <li key={e.id} data-id={e.id} className="rounded-sm px-2 py-1.5 text-caption">
             <div className="flex items-center gap-2">
@@ -174,7 +175,7 @@ const HEALTH_TEXT: Record<Health, string> = {
 function HealthMatrix({ items }: { items: Array<{ name: string; status: Health; note: string }> }) {
   return (
     <div className="card card-pad">
-      <div className="mb-2 text-table font-semibold text-text-primary">健康矩阵</div>
+      <div className="mb-2 text-table font-semibold text-text-primary">{t('dashboard.health')}</div>
       <ul className="space-y-1.5">
         {items.map((it) => (
           <li key={it.name} className="flex items-center gap-2 text-body-sm" data-testid="health-item">
@@ -315,41 +316,41 @@ export function Dashboard() {
 
   const health: Array<{ name: string; status: Health; note: string }> = [
     {
-      name: '归档作业',
+      name: t('dashboard.archiveJob'),
       status: !snap.archive ? 'na' : snap.archive.running ? 'green' : snap.archive.last_run?.status === 'failed' || snap.archive.last_run?.status === 'partial' ? 'red' : snap.archive.lag_days > 1 ? 'yellow' : 'green',
       note: !snap.archive
         ? snap.archiveError
           ? `拉取失败：${snap.archiveError}`
-          : 'GET /archive/status 无数据'
+          : t('dashboard.noData')
         : snap.archive.running
-          ? '运行中'
+          ? t('dashboard.running')
           : snap.archive.last_run
             ? `上次 ${formatRelative(snap.archive.last_run.started_at)} · 滞后 ${snap.archive.lag_days} 天`
-            : '从未运行',
+            : t('dashboard.neverRun'),
     },
     {
-      name: '冷库可达性',
+      name: t('dashboard.coldDb'),
       status: !snap.archive ? 'na' : snap.archive.cold_db.reachable ? (snap.archive.cold_db.latency_ms > 500 ? 'yellow' : 'green') : 'red',
       note: !snap.archive
-        ? '数据源未接入'
+        ? t('dashboard.dataMissing')
         : snap.archive.cold_db.reachable
           ? `${snap.archive.cold_db.latency_ms} ms`
-          : (snap.archive.cold_db.error ?? '不可达'),
+          : (snap.archive.cold_db.error ?? t('dashboard.unreachable')),
     },
     {
-      name: '审计追加链',
+      name: t('dashboard.auditChain'),
       status: auditFail === null ? 'na' : auditFail.value > 0 ? 'red' : 'green',
-      note: auditFail === null ? '数据源未接入：缺 opendiscord_admin_audit_append_failures_total' : `追加失败 ${formatNumber(auditFail.value)} 次`,
+      note: auditFail === null ? t('dashboard.auditMissing') : `追加失败 ${formatNumber(auditFail.value)} 次`,
     },
     {
-      name: 'Bridge 熔断器',
+      name: t('dashboard.bridgeBreaker'),
       status: circuitOpen === null ? 'na' : circuitOpen.value > 0 ? 'red' : bridgeFail !== null && bridgeFail > 0 ? 'yellow' : 'green',
-      note: circuitOpen === null ? '数据源未接入：缺 opendiscord_admin_bridge_circuit_open' : circuitOpen.value > 0 ? '熔断打开' : `失败 ${formatNumber(bridgeFail ?? 0)} 次`,
+      note: circuitOpen === null ? t('dashboard.breakerMissing') : circuitOpen.value > 0 ? t('dashboard.breakerOpen') : `失败 ${formatNumber(bridgeFail ?? 0)} 次`,
     },
     {
       name: 'DB integrity（doctor）',
       status: 'na',
-      note: '数据源未接入：需后端暴露 opendiscord_db_integrity_ok 指标',
+      note: t('dashboard.dbMissing'),
     },
   ];
 
@@ -358,15 +359,15 @@ export function Dashboard() {
   return (
     <>
       <PageHeader
-        title="仪表盘"
-        description="全局统计 + 实时刷新。轮询 5s（metrics + archive/status），页面隐藏自动暂停。"
+        title={t('dashboard.title')}
+        description={t('dashboard.description')}
         meta={
           <>
             <span>
-              更新于 <span className="nums">{state.lastAt ? formatClock(state.lastAt) : '—'}</span>
+              {t('dashboard.updatedAt')} <span className="nums">{state.lastAt ? formatClock(state.lastAt) : '—'}</span>
             </span>
-            {state.inFlight && <span className="text-text-tertiary">拉取中…</span>}
-            {!state.visible && <span className="text-warning-700">页面隐藏，轮询已暂停</span>}
+            {state.inFlight && <span className="text-text-tertiary">{t('common.pulling')}</span>}
+            {!state.visible && <span className="text-warning-700">{t('dashboard.paused')}</span>}
             {state.error && <span className="text-danger-600">{state.error}</span>}
             {buildInfo && <span className="text-text-tertiary">build {buildInfo.samples[0]?.labels.version ?? '?'}</span>}
             {uptime !== null && <span className="text-text-tertiary">运行 {formatDurationShort(uptime.value)}</span>}
@@ -389,7 +390,7 @@ export function Dashboard() {
         <div className="mb-4 flex items-start gap-2 rounded-md border border-danger-300 bg-danger-50 px-3 py-2 text-body-sm text-danger-700">
           <IconAlert size={16} className="mt-0.5 shrink-0" />
           <div>
-            <strong className="font-semibold">审计追加失败（P0）</strong>
+            <strong className="font-semibold">{t('dashboard.auditAppendFail.title')}</strong>
             <p>opendiscord_admin_audit_append_failures_total = {formatNumber(auditFail!.value)}。主操作已成功但审计未落库，需立即排查。</p>
           </div>
         </div>
@@ -399,7 +400,7 @@ export function Dashboard() {
           <IconAlert size={16} className="mt-0.5 shrink-0" />
           <div>
             <strong className="font-semibold">Bridge 熔断打开</strong>
-            <p>注入通道已熔断，消息桥接暂不可用（opendiscord_admin_bridge_circuit_open=1）。</p>
+            <p>{t('dashboard.bridgeOpen.desc')}</p>
           </div>
         </div>
       )}
@@ -407,24 +408,24 @@ export function Dashboard() {
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
           index={0}
-          label="在线 WS 连接"
+          label={t('dashboard.connections')}
           raw={connections?.value ?? null}
           value={connections ? formatNumber(connections.value) : '—'}
-          unit="条"
+          unit={t('common.itemsUnit')}
           tone="default"
           hint={connections ? `${connections.name} · ${TREND_ARROW[connTrend]}` : 'opendiscord_ws_connections_active'}
           missing={connections ? undefined : 'opendiscord_ws_connections_active（chatd 未暴露）'}
           footer={
             connBuf.current.points.length >= 2 ? (
               <div className="mt-2">
-                <Sparkline points={connBuf.current.points} ariaLabel="在线连接趋势" />
+                <Sparkline points={connBuf.current.points} ariaLabel={t('dashboard.connectionsTrend')} />
               </div>
             ) : undefined
           }
         />
         <StatCard
           index={1}
-          label="总用户数"
+          label={t('dashboard.totalUsers')}
           raw={totalUsers}
           value="—"
           hint={totalUsers !== null ? 'opendiscord_users_total' : undefined}
@@ -432,7 +433,7 @@ export function Dashboard() {
         />
         <StatCard
           index={2}
-          label="今日新增用户"
+          label={t('dashboard.newUsersToday')}
           raw={newUsersToday}
           value="—"
           hint={newUsersToday !== null ? 'opendiscord_users_created_today_total' : undefined}
@@ -440,7 +441,7 @@ export function Dashboard() {
         />
         <StatCard
           index={3}
-          label="今日消息数"
+          label={t('dashboard.messagesToday')}
           raw={messagesToday}
           value="—"
           hint={messagesToday !== null ? `opendiscord_messages_today_total · ${formatRate(bridgeRate ?? undefined)}` : undefined}
@@ -449,32 +450,32 @@ export function Dashboard() {
             bridgeBuf.current.points.length >= 2 ? (
               <div className="mt-2">
                 <div className="text-caption text-text-tertiary">
-                  注入速率 <span className="nums">{formatRate(bridgeRate)}</span>（opendiscord_admin_bridge_requests_total）
+                  {t('dashboard.injectionRate')} <span className="nums">{formatRate(bridgeRate)}</span>（opendiscord_admin_bridge_requests_total）
                 </div>
-                <Sparkline points={bridgeBuf.current.points} stroke="rgb(var(--oc-success-500))" ariaLabel="注入请求趋势" />
+                <Sparkline points={bridgeBuf.current.points} stroke="rgb(var(--oc-success-500))" ariaLabel={t('dashboard.injectionTrend')} />
               </div>
             ) : undefined
           }
         />
         <StatCard
           index={4}
-          label="举报待处理"
+          label={t('dashboard.reportsPending')}
           raw={pendingReports}
           value="—"
           tone={pendingReports !== null && pendingReports > 0 ? 'warning' : 'default'}
-          hint="GET /reports?status=pending 的 total"
+          hint={t('dashboard.reportsHint')}
         />
         <StatCard
           index={5}
-          label="归档状态 / 上次运行"
+          label={t('dashboard.archiveStatus')}
           value={
             !snap.archive
               ? '—'
               : snap.archive.running
-                ? '运行中'
+                ? t('dashboard.running')
                 : snap.archive.last_run
                   ? snap.archive.last_run.status
-                  : '未运行'
+                  : t('dashboard.notRun')
           }
           hint={
             snap.archive?.last_run
@@ -485,14 +486,14 @@ export function Dashboard() {
         />
         <StatCard
           index={6}
-          label="进程内存 / Goroutine"
+          label={t('dashboard.memory')}
           value={rss ? formatBytes(rss.value) : '—'}
           hint={goroutines ? `${formatNumber(goroutines.value)} goroutines · go_goroutines` : 'process_resident_memory_bytes'}
           tone={goroutines && goroutines.value > 5000 ? 'warning' : 'default'}
         />
         <StatCard
           index={7}
-          label="登录失败累计"
+          label={t('dashboard.loginFailures')}
           raw={loginFail}
           value={loginFail !== null ? formatNumber(loginFail) : '—'}
           hint="opendiscord_admin_login_failures_total"

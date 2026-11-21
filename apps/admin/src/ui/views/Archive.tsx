@@ -14,6 +14,7 @@ import { DryRunPreview } from '../components/DryRunPreview';
 import { PageHeader } from '../components/PageHeader';
 import { StatusTag } from '../components/StatusTag';
 import { IconAlert, IconArchive, IconRefresh } from '../components/icons';
+import { t } from '../i18n';
 
 export function Archive() {
   const [status, setStatus] = useState<ArchiveStatus | null>(null);
@@ -77,53 +78,53 @@ export function Archive() {
   const columns: Column<ArchiveRun>[] = [
     {
       key: 'id',
-      header: '运行',
+      header: t('archive.status.running'),
       width: 90,
       render: (r) => <span className="nums text-body-sm text-text-secondary">#{r.id}</span>,
     },
     {
       key: 'status',
-      header: '状态',
+      header: t('common.status'),
       width: 110,
       render: (r) => (
         <StatusTag tone={r.status === 'ok' ? 'success' : r.status === 'running' ? 'warning' : 'danger'}>
-          {r.status === 'ok' ? '成功' : r.status === 'running' ? '运行中' : r.status === 'partial' ? '部分成功' : '失败'}
+          {r.status === 'ok' ? t('archive.status.ok') : r.status === 'running' ? t('archive.status.running') : r.status === 'partial' ? t('archive.status.partial') : t('archive.status.failed')}
         </StatusTag>
       ),
     },
     {
       key: 'moved',
-      header: '搬运行数',
+      header: t('archive.rows'),
       width: 120,
       align: 'right',
       render: (r) => <span className="nums text-table text-text-primary">{formatNumber(r.moved_rows)}</span>,
     },
     {
       key: 'convs',
-      header: '涉及会话',
+      header: t('dryRun.conversations'),
       width: 110,
       align: 'right',
       render: (r) => <span className="nums text-table text-text-secondary">{formatNumber(r.convs_touched)}</span>,
     },
     {
       key: 'started',
-      header: '开始时间',
+      header: t('archive.startedAt'),
       width: 180,
       render: (r) => <span className="nums text-body-sm text-text-secondary">{formatDateTime(r.started_at)}</span>,
     },
     {
       key: 'duration',
-      header: '耗时',
+      header: t('common.duration'),
       width: 120,
       render: (r) => {
-        if (!r.finished_at) return <span className="text-body-sm text-warning-700">进行中</span>;
+        if (!r.finished_at) return <span className="text-body-sm text-warning-700">{t('archive.inProgress')}</span>;
         const sec = (new Date(r.finished_at).getTime() - new Date(r.started_at).getTime()) / 1000;
         return <span className="nums text-body-sm text-text-secondary">{sec < 60 ? `${Math.round(sec)}s` : `${Math.round(sec / 60)}m`}</span>;
       },
     },
     {
       key: 'error',
-      header: '备注',
+      header: t('common.note'),
       render: (r) => <span className="text-body-sm text-text-tertiary">{r.error ?? '—'}</span>,
     },
   ];
@@ -131,16 +132,16 @@ export function Archive() {
   return (
     <>
       <PageHeader
-        title="归档"
-        description="热库 SQLite 按 hot_retention_days 搬运至冷库 Postgres。作业幂等、可重跑，运行中禁止再次触发（单飞）。"
+        title={t('archive.title')}
+        description={t('archive.description')}
         meta={
           <>
             {status && (
               <span>
-                下次运行 <span className="nums">{formatDateTime(status.next_run_at)}</span>（{formatRelative(status.next_run_at)}）
+                {t('archive.nextRun')} <span className="nums">{formatDateTime(status.next_run_at)}</span>（{formatRelative(status.next_run_at)}）
               </span>
             )}
-            {flash && <span className="text-success-600">已刷新</span>}
+            {flash && <span className="text-success-600">{t('common.updated')}</span>}
           </>
         }
         actions={
@@ -160,7 +161,7 @@ export function Archive() {
                 setRunOpen(true);
                 if (!preview) void dryRun();
               }}
-              title={running ? '作业运行中，禁止重复触发（409）' : undefined}
+              title={running ? t('archive.triggerRunning') : undefined}
             >
               手动触发归档
             </button>
@@ -176,45 +177,45 @@ export function Archive() {
 
       <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
-          label="作业状态"
-          value={running ? '运行中' : status?.last_run ? '空闲' : '未运行'}
+          label={t('archive.jobStatus')}
+          value={running ? t('archive.status.running') : status?.last_run ? t('archive.idle') : t('archive.notRun')}
           tone={running ? 'warning' : 'success'}
           hint={
             status?.last_run
               ? `上次 ${formatRelative(status.last_run.finished_at ?? status.last_run.started_at)} · 搬运 ${formatNumber(status.last_run.moved_rows)} 行`
-              : '尚无归档记录'
+              : t('archive.noRuns')
           }
         />
         <StatCard
-          label="热库行数"
+          label={t('archive.hotRows')}
           value={formatNumber(status?.hot_rows ?? null)}
           hint={`占用 ${formatBytes(status?.hot_bytes ?? null)}`}
         />
         <StatCard
-          label="最老消息"
+          label={t('archive.oldestMessage')}
           value={status?.oldest_message_at ? formatRelative(status.oldest_message_at) : '—'}
-          hint={status?.oldest_message_at ? formatDateTime(status.oldest_message_at) : '热库为空'}
+          hint={status?.oldest_message_at ? formatDateTime(status.oldest_message_at) : t('archive.hotEmpty')}
           tone={(status?.lag_days ?? 0) > 7 ? 'danger' : 'default'}
         />
         <StatCard
-          label="冷库连通性"
-          value={status?.cold_db.reachable ? '正常' : '不可达'}
+          label={t('archive.coldReach')}
+          value={status?.cold_db.reachable ? t('common.normal') : t('dashboard.unreachable')}
           tone={status?.cold_db.reachable ? 'success' : 'danger'}
-          hint={status?.cold_db.reachable ? `延迟 ${status.cold_db.latency_ms} ms` : status?.cold_db.error ?? '检查 cold_dsn'}
+          hint={status?.cold_db.reachable ? `延迟 ${status.cold_db.latency_ms} ms` : status?.cold_db.error ?? t('archive.coldError')}
         />
       </div>
 
       <div className="card mb-4 card-pad">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-table font-semibold text-text-primary">当前策略</h2>
+            <h2 className="text-table font-semibold text-text-primary">{t('archive.policy')}</h2>
             <p className="text-body-sm text-text-tertiary">
               策略来自 <span className="code">/etc/opendiscord/policy.json</span>，改完 <span className="code">systemctl reload opendiscord</span> 热生效。
             </p>
           </div>
           <dl className="flex flex-wrap gap-x-6 gap-y-2 text-body-sm">
             <div className="flex items-center gap-2">
-              <dt className="text-text-tertiary">保留天数</dt>
+              <dt className="text-text-tertiary">{t('archive.retentionDays')}</dt>
               <dd className="nums font-semibold text-text-primary">{status?.policy.hot_retention_days ?? '—'}</dd>
             </div>
             <div className="flex items-center gap-2">
@@ -222,11 +223,11 @@ export function Archive() {
               <dd className="code">{status?.policy.cron ?? '—'}</dd>
             </div>
             <div className="flex items-center gap-2">
-              <dt className="text-text-tertiary">批大小</dt>
+              <dt className="text-text-tertiary">{t('archive.batchSize')}</dt>
               <dd className="nums font-semibold text-text-primary">{status?.policy.batch_size ?? '—'}</dd>
             </div>
             <div className="flex items-center gap-2">
-              <dt className="text-text-tertiary">滞后</dt>
+              <dt className="text-text-tertiary">{t('archive.lag')}</dt>
               <dd className={cn('nums font-semibold', (status?.lag_days ?? 0) > 0 ? 'text-warning-700' : 'text-success-600')}>
                 {status?.lag_days ?? 0} 天
               </dd>
@@ -241,23 +242,23 @@ export function Archive() {
         )}
       </div>
 
-      <h2 className="mb-2 text-body-sm font-semibold uppercase tracking-wide text-text-tertiary">最近运行（archive_runs 账本）</h2>
+      <h2 className="mb-2 text-body-sm font-semibold uppercase tracking-wide text-text-tertiary">{t('archive.recentRuns')}</h2>
       <DataTable<ArchiveRun>
         columns={columns}
         rows={runs}
         rowKey={(r) => String(r.id)}
         loading={loading}
         error={null}
-        emptyText="还没有归档运行记录"
-        footerLeft="dry-run 不计入账本；真实运行的断点可在下轮幂等续跑"
+        emptyText={t('archive.empty.title')}
+        footerLeft={t('archive.footer')}
       />
 
       <ConfirmDialog
         open={runOpen}
-        title="手动触发归档"
-        description="dry-run 只估算；确认后立即执行一轮真实搬运并写入 archive_runs 账本。"
+        title={t('archive.trigger')}
+        description={t('archive.confirm.desc')}
         tone="primary"
-        confirmLabel="确认执行"
+        confirmLabel={t('archive.confirm.action')}
         busy={busy || previewLoading}
         error={actionError ?? previewError}
         onCancel={() => {

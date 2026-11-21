@@ -1,5 +1,6 @@
 /** 纯 SVG sparkline（无图表库）：折线 + 最新点，ViewBox 固定，自适应宽度。 */
 import type { Sample } from '../../lib/polling';
+import { t } from '../i18n';
 
 export function Sparkline({
   points,
@@ -47,7 +48,7 @@ export function Sparkline({
       width="100%"
       height={height}
       role="img"
-      aria-label={ariaLabel ?? '趋势图'}
+      aria-label={ariaLabel ?? t('common.trend')}
       preserveAspectRatio="none"
     >
       <polyline points={coords.join(' ')} fill="none" stroke={stroke} strokeWidth="1.5" strokeLinejoin="round" />

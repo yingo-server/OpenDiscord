@@ -8,25 +8,26 @@ import { DryRunPreview } from '../components/DryRunPreview';
 import { PageHeader, Placeholder } from '../components/PageHeader';
 import { StatusTag } from '../components/StatusTag';
 import { IconAlert, IconRefresh } from '../components/icons';
+import { t } from '../i18n';
 
 const FLAG_LABEL: Record<string, string> = {
-  registration: '开放注册',
-  readonly: '全站只读',
-  video_enabled: '视频消息',
-  e2ee: '端到端加密',
-  call_enabled: '语音/视频通话',
+  registration: t('flags.label.registration'),
+  readonly: t('flags.label.readonly'),
+  video_enabled: t('flags.label.video_enabled'),
+  e2ee: t('flags.label.e2ee'),
+  call_enabled: t('flags.label.call_enabled'),
 };
 
 const FLAG_HINT: Record<string, string> = {
-  registration: '关闭后注册接口与游客通道同时停用（应急封禁预案 §6.4.3）',
-  readonly: '开启后网关拒绝 MSG_SEND（NACK code=READONLY），保留收信与 ack',
-  video_enabled: '客户端功能开关，经 FEATURE_FLAGS 帧（kind 911）下发',
-  e2ee: '实验特性，关闭时不影响历史消息读取',
-  call_enabled: '通话号段 350-399，默认关闭',
+  registration: t('flags.hint.registration'),
+  readonly: t('flags.hint.readonly'),
+  video_enabled: t('flags.hint.video_enabled'),
+  e2ee: t('flags.hint.e2ee'),
+  call_enabled: t('flags.hint.call_enabled'),
 };
 
 function describeValue(value: FlagValue): string {
-  return typeof value === 'boolean' ? (value ? '开启' : '关闭') : String(value);
+  return typeof value === 'boolean' ? (value ? t('common.on') : t('common.off')) : String(value);
 }
 
 export function Flags() {
@@ -89,14 +90,14 @@ export function Flags() {
   const confirm = async (totp?: string) => {
     if (!editing) return;
     if (reason.trim().length < 4) {
-      setFormError('请填写变更原因（≥4 字），会写入审计日志');
+      setFormError(t('flags.error.noReason'));
       return;
     }
     let next = editing.next;
     if (editing.flag.type === 'number') next = Number(customValue);
     if (editing.flag.type === 'string') next = customValue;
     if (editing.flag.type === 'number' && Number.isNaN(next as number)) {
-      setFormError('请输入合法数字');
+      setFormError(t('flags.error.badNumber'));
       return;
     }
     setBusy(true);
@@ -122,14 +123,14 @@ export function Flags() {
   return (
     <>
       <PageHeader
-        title="Flag 管理"
-        description="feature flag 即策略表：改动立即生效（经 kind 911 下发全端），并写入不可删除的审计流。"
+        title={t('flags.title')}
+        description={t('flags.description')}
         meta={
           <>
             <span>
               共 <span className="nums font-semibold text-text-secondary">{flags.length}</span> 个 flag
             </span>
-            {flash && <span className="text-success-600">已生效</span>}
+            {flash && <span className="text-success-600">{t('flags.effect')}</span>}
           </>
         }
         actions={
@@ -154,13 +155,13 @@ export function Flags() {
       )}
 
       {!loading && flags.length === 0 && !error && (
-        <Placeholder title="没有可管理的 flag" description="检查 chatd 的 feature flags 初始化与 admin 层连通性。" />
+        <Placeholder title={t('flags.empty.title')} description={t('flags.empty.desc')} />
       )}
 
       <div className="space-y-6">
         {[
-          { title: '安全与合规（高危）', items: flags.filter((f) => f.high_impact) },
-          { title: '产品功能', items: flags.filter((f) => !f.high_impact) },
+          { title: t('flags.section.high'), items: flags.filter((f) => f.high_impact) },
+          { title: t('flags.section.feature'), items: flags.filter((f) => !f.high_impact) },
         ].map((group) =>
           group.items.length === 0 ? null : (
             <section key={group.title}>
@@ -172,8 +173,8 @@ export function Flags() {
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="text-table font-semibold text-text-primary">{FLAG_LABEL[flag.key] ?? flag.key}</span>
                         <span className="code">{flag.key}</span>
-                        {flag.high_impact && <StatusTag tone="danger">高危</StatusTag>}
-                        {flag.value === true && flag.key === 'readonly' && <StatusTag tone="warning">全站只读中</StatusTag>}
+                        {flag.high_impact && <StatusTag tone="danger">{t('flags.highRisk')}</StatusTag>}
+                        {flag.value === true && flag.key === 'readonly' && <StatusTag tone="warning">{t('flags.readonlyOn')}</StatusTag>}
                       </div>
                       <p className="mt-1 text-body-sm text-text-tertiary">
                         {FLAG_HINT[flag.key] ?? flag.description}
@@ -214,7 +215,7 @@ export function Flags() {
         title={editing ? `将 ${FLAG_LABEL[editing.flag.key] ?? editing.flag.key} 改为「${describeValue(editing.next)}」？` : ''}
         description={editing ? `flag: ${editing.flag.key} · 变更立即下发，无需重启` : undefined}
         tone={highImpact ? 'danger' : 'primary'}
-        confirmLabel="应用变更"
+        confirmLabel={t('flags.confirmAction')}
         confirmWord={highImpact ? editing?.flag.key : undefined}
         requireTotp={highImpact}
         busy={busy}
@@ -248,20 +249,20 @@ export function Flags() {
               rows={3}
               value={reason}
               onChange={(event) => setReason(event.target.value)}
-              placeholder="如：注册接口被刷，按应急预案临时关闭注册"
+              placeholder={t('flags.reasonPlaceholder')}
             />
           </div>
 
           {highImpact && (
             <div className="flex items-start gap-2 rounded-md bg-danger-50 px-3 py-2 text-body-sm text-danger-700">
               <IconAlert size={16} className="mt-0.5 shrink-0" />
-              <span>高危开关，影响全站。需输入 flag 名确认并完成二次 TOTP；要求 5 分钟内可执行（security-spec §6.4.3）。</span>
+              <span>{t('flags.riskHint')}</span>
             </div>
           )}
 
           <div className="flex justify-end">
             <button type="button" className="btn btn-ghost btn-sm" onClick={() => void loadPreview()} disabled={previewLoading}>
-              {previewLoading ? '预估中…' : '预估影响'}
+              {previewLoading ? t('common.estimating') : t('common.estimateImpact')}
             </button>
           </div>
           <DryRunPreview result={preview} loading={previewLoading} error={previewError} compact />

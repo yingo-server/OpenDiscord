@@ -2,6 +2,7 @@ import { useEffect, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { cn } from '../../lib/format';
 import { IconX } from './icons';
+import { t } from '../i18n';
 
 /**
  * 后台模态：radius-xl + shadow-lg + scrim（§1.5 / §10.4）。
@@ -83,7 +84,7 @@ export function Modal({
         ref={panelRef}
         role="dialog"
         aria-modal="true"
-        aria-label={typeof title === 'string' ? title : '对话框'}
+        aria-label={typeof title === 'string' ? title : t('common.dialog')}
         className="w-full overflow-hidden rounded-xl bg-bg-elevated shadow-lg"
         style={{ maxWidth: width }}
       >
@@ -97,7 +98,7 @@ export function Modal({
             className="btn btn-ghost btn-sm -mr-2"
             onClick={onClose}
             disabled={busy}
-            aria-label="关闭"
+            aria-label={t('modal.close')}
           >
             <IconX size={16} />
           </button>

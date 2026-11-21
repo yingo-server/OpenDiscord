@@ -7,19 +7,20 @@ import { StatusTag, type Tone } from '../components/StatusTag';
 import { Highlight } from '../components/Highlight';
 import { JsonTree } from '../components/JsonTree';
 import { IconCopy, IconPause, IconPlay, IconRefresh, IconScroll } from '../components/icons';
+import { t } from '../i18n';
 
 const PAGE_SIZE = 200;
 const ROW_HEIGHT = 32;
 const FOLLOW_INTERVAL = 2000;
 
 const TYPE_GROUPS: Array<{ label: string; prefixes: string[] }> = [
-  { label: '全部事件', prefixes: [] },
-  { label: '用户与封禁', prefixes: ['user.'] },
-  { label: '举报处置', prefixes: ['report.'] },
+  { label: t('audit.filter.all'), prefixes: [] },
+  { label: t('audit.filter.users'), prefixes: ['user.'] },
+  { label: t('audit.filter.reports'), prefixes: ['report.'] },
   { label: 'Feature flag', prefixes: ['flag.'] },
-  { label: '广播', prefixes: ['broadcast.'] },
-  { label: '归档/备份', prefixes: ['archive.', 'backup.', 'job.'] },
-  { label: '登录与权限', prefixes: ['auth.', 'admin.'] },
+  { label: t('audit.filter.broadcast'), prefixes: ['broadcast.'] },
+  { label: t('audit.filter.archive'), prefixes: ['archive.', 'backup.', 'job.'] },
+  { label: t('audit.filter.auth'), prefixes: ['auth.', 'admin.'] },
 ];
 
 function toneForType(type: string): Tone {
@@ -298,15 +299,15 @@ export function Audit() {
   return (
     <div className="flex h-full flex-col">
       <PageHeader
-        title="审计日志"
-        description="journalctl 式顺序流：since_id 游标只进不退，向上加载更早、暂停后继续跟随。写入为 append-only 哈希链。"
+        title={t('audit.title')}
+        description={t('audit.description')}
         meta={
           <>
             <span>
-              已加载 <span className="nums font-semibold text-text-secondary">{formatNumber(events.length)}</span> 条
+              {t('audit.loaded')} <span className="nums font-semibold text-text-secondary">{formatNumber(events.length)}</span> 条
             </span>
             <span>
-              游标 <span className="nums">#{cursor || '—'}</span>
+              {t('audit.cursor')} <span className="nums">#{cursor || '—'}</span>
             </span>
             {following ? (
               <span className="flex items-center gap-1.5 text-success-600">
@@ -336,7 +337,7 @@ export function Audit() {
                 }
               }}
             >
-              <IconRefresh size={14} /> {verifying ? '校验中…' : '校验哈希链'}
+              <IconRefresh size={14} /> {verifying ? t('audit.verifying') : t('audit.verify')}
             </button>
             <button
               type="button"
@@ -352,7 +353,7 @@ export function Audit() {
               }}
             >
               {following ? <IconPause size={14} /> : <IconPlay size={14} />}
-              {following ? '暂停跟随' : '继续跟随'}
+              {following ? t('audit.pauseFollow') : t('audit.resumeFollow')}
             </button>
           </>
         }
@@ -394,14 +395,14 @@ export function Audit() {
               className="input w-[280px] pr-8"
               value={grep}
               onChange={(e) => setGrep(e.target.value)}
-              placeholder="如 user.ban 12345"
+              placeholder={t('audit.grepPlaceholder')}
             />
             {grep && (
               <button
                 type="button"
                 className="absolute right-2 top-1/2 -translate-y-1/2 text-text-tertiary hover:text-text-primary"
                 onClick={() => setGrep('')}
-                aria-label="清空 grep"
+                aria-label={t('audit.clearGrep')}
               >
                 ×
               </button>
@@ -435,10 +436,10 @@ export function Audit() {
       {/* 顺序流容器 */}
       <div className="card flex min-h-0 flex-1 flex-col overflow-hidden">
         <div className="flex h-9 shrink-0 items-center gap-3 border-b border-border-default bg-bg-surface-2 px-3 text-caption text-text-tertiary">
-          <span className="w-[92px] shrink-0">时间</span>
-          <span className="w-[150px] shrink-0">事件类型</span>
-          <span className="w-[120px] shrink-0">操作者</span>
-          <span className="min-w-0 flex-1">摘要</span>
+          <span className="w-[92px] shrink-0">{t('common.time')}</span>
+          <span className="w-[150px] shrink-0">{t('common.eventType')}</span>
+          <span className="w-[120px] shrink-0">{t('common.operator')}</span>
+          <span className="min-w-0 flex-1">{t('common.summary')}</span>
           <span className="w-10" />
         </div>
 
@@ -452,7 +453,7 @@ export function Audit() {
         >
           {hasOlder && (
             <div className="flex h-8 items-center justify-center border-b border-border-default text-caption text-text-tertiary">
-              {loadingOlder ? '加载更早的日志…' : '向上滚动加载更早的日志'}
+              {loadingOlder ? t('audit.loadingOlder') : t('audit.loadOlder')}
             </div>
           )}
 
@@ -467,8 +468,8 @@ export function Audit() {
           {!loading && events.length === 0 && (
             <div className="flex flex-col items-center gap-2 py-16 text-center">
               <IconScroll size={26} className="text-text-tertiary" />
-              <p className="text-table text-text-secondary">没有匹配的事件</p>
-              <p className="text-body-sm text-text-tertiary">放宽时间范围或清空 grep 关键词</p>
+              <p className="text-table text-text-secondary">{t('audit.empty.title')}</p>
+              <p className="text-body-sm text-text-tertiary">{t('audit.empty.desc')}</p>
             </div>
           )}
 
@@ -518,7 +519,7 @@ export function Audit() {
                 跳到底部 · {pendingNew} 条新日志
               </button>
             )}
-            <span>{following ? '实时跟随中' : '暂停中（不会丢失，继续时补齐）'}</span>
+            <span>{following ? t('audit.following') : t('audit.followPaused')}</span>
           </div>
         </div>
       </div>
@@ -582,7 +583,7 @@ function AuditRow({
           title={`复制 ${event.ts}`}
         >
           {formatClock(event.ts)}
-          {copied && <span className="ml-1 text-success-600">已复制</span>}
+          {copied && <span className="ml-1 text-success-600">{t('audit.copied')}</span>}
         </button>
         <span className="w-[150px] shrink-0">
           <StatusTag tone={tone} dot={false}>
@@ -600,9 +601,9 @@ function AuditRow({
           className="w-10 shrink-0 text-center text-caption text-text-tertiary hover:text-primary-600"
           onClick={onToggle}
           aria-expanded={expanded}
-          aria-label={expanded ? '收起载荷' : '展开载荷'}
+          aria-label={expanded ? t('dashboard.collapsePayload') : t('dashboard.expandPayload')}
         >
-          {expanded ? '收起' : 'JSON'}
+          {expanded ? t('dashboard.collapse') : 'JSON'}
         </button>
       </div>
 
@@ -617,7 +618,7 @@ function AuditRow({
                 <button
                   type="button"
                   className="hover:text-text-primary"
-                  aria-label="复制 trace id"
+                  aria-label={t('dashboard.copyTrace')}
                   onClick={async () => {
                     await copyText(event.request_id ?? '');
                   }}

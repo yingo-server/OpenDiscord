@@ -2,6 +2,7 @@ import { Fragment, useEffect, useRef, type ReactNode } from 'react';
 import type { SortOrder } from '../../api/types';
 import { cn, formatNumber } from '../../lib/format';
 import { IconChevronDown, IconChevronLeft, IconChevronRight, IconChevronUp, IconSearch } from './icons';
+import { t } from '../i18n';
 
 export interface Column<T> {
   key: string;
@@ -137,7 +138,7 @@ export function DataTable<T>({
                       className="h-4 w-4 accent-primary-500 align-middle"
                       checked={allOnPage}
                       onChange={togglePage}
-                      aria-label="选择本页全部"
+                      aria-label={t('dataTable.selectAllPage')}
                     />
                   </th>
                 )}
@@ -216,7 +217,7 @@ export function DataTable<T>({
         {selectable && selectedOnPage > 0 && (
           <div className="flex flex-wrap items-center gap-3 border-t border-border-default bg-bg-surface-2 px-4 py-2">
             <span className="text-body-sm text-text-secondary">
-              已选本页 <span className="nums font-semibold">{selectedOnPage}</span> 条
+              {t('dataTable.selectedPage')} <span className="nums font-semibold">{selectedOnPage}</span> 条
               {selection.size > selectedOnPage && (
                 <span className="nums"> （共 {formatNumber(selection.size)} 条）</span>
               )}
@@ -244,7 +245,7 @@ export function DataTable<T>({
               className="btn btn-secondary btn-sm"
               disabled={pagination.page <= 1}
               onClick={() => pagination.onPageChange(pagination.page - 1)}
-              aria-label="上一页"
+              aria-label={t('dataTable.prevPage')}
             >
               <IconChevronLeft size={14} />
             </button>
@@ -273,7 +274,7 @@ export function DataTable<T>({
               className="btn btn-secondary btn-sm"
               disabled={pagination.page >= totalPages}
               onClick={() => pagination.onPageChange(pagination.page + 1)}
-              aria-label="下一页"
+              aria-label={t('dataTable.nextPage')}
             >
               <IconChevronRight size={14} />
             </button>
@@ -319,7 +320,7 @@ export function FilterBar({ children, onReset }: { children: ReactNode; onReset?
 export function SearchInput({
   value,
   onChange,
-  placeholder = '搜索…',
+  placeholder = t('dataTable.search'),
   width = 280,
 }: {
   value: string;

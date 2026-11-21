@@ -189,7 +189,9 @@ export function Settings() {
         <ConfirmDialog
           title={confirm === 'logout' ? t('settings.logout') : t('settings.clearCache')}
           message={confirm === 'logout' ? t('settings.logoutConfirm') : t('settings.clearConfirm')}
-          confirmLabel={confirm === 'logout' ? t('settings.logout') : t('common.confirm')}
+          confirmLabel={
+            confirm === 'logout' ? t('settings.logoutConfirmAction') : t('settings.clearConfirmAction')
+          }
           onCancel={() => setConfirm(null)}
           onConfirm={() => {
             if (confirm === 'logout') {
