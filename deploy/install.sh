@@ -375,7 +375,7 @@ fi
 # ---------------------------------------------------------------------------
 # 9. 红线自检：other 位不得有 rwx（security-spec §6.2）
 # ---------------------------------------------------------------------------
-violations=$(find "$ETC" "$STATE" -perm /o+rwx 2>/dev/null || true)
+violations=$(find "$ETC" "$STATE" ! -type l -perm /o+rwx 2>/dev/null || true)
 if [ -n "$violations" ]; then
   warn "以下路径对 other 开放（违反 security-spec §6.2 红线）："
   printf '%s\n' "$violations"
