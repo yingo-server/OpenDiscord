@@ -74,23 +74,20 @@
     animation: fadein 2s var(--ease) .6s forwards;
   }
 
-  /* 底部：呼吸指示（唯一交互动效） */
-  .hint {
-    position: fixed;
-    bottom: 2.5rem;
-    left: 50%;
-    transform: translateX(-50%);
-    font-family: 'Song Subset', serif;
-    font-size: .8rem;
-    letter-spacing: .3em;
-    color: rgba(255,255,255,.35);
-    opacity: 0;
-    animation: fadein 2s var(--ease) 1.5s forwards;
-  }
 
   @keyframes fadein {
     to { opacity: 1; }
   }
+
+  /* 整页链接：覆盖全屏、无链接视觉噪音，继承点击行为 */
+  .page {
+    position: fixed; inset: 0;
+    display: block;
+    color: inherit; text-decoration: none;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .page > .bg, .page > .vignette { position: absolute; }
 
   /* 三档断点预设换行 */
   @media (max-width: 600px) {
@@ -111,14 +108,13 @@
     main { gap: 1rem; }
     .en { font-size: clamp(1.5rem, 4.2vw, 2.5rem); }
     .zh { font-size: clamp(.9rem, 1.8vw, 1.15rem); }
-    .hint { bottom: 1.25rem; font-size: .72rem; }
   }
 
-  /* 音效触发后的静音类（如果用户禁音） */
-  .muted .hint { opacity: .2 !important; }
 </style>
 </head>
 <body>
+  <!-- 整页可点击的仓库链接：无 JS 也能跳转（预览 WebView 拦 JS 导航时仍有效） -->
+  <a class="page" href="https://github.com/yingo-server/OpenDiscord" aria-label="进入 OpenDiscord 仓库">
   <div class="bg"></div>
   <div class="vignette"></div>
 
@@ -126,51 +122,8 @@
     <div class="en">They demanded unfettered freedom of thought.</div>
     <div class="zh">他们要求不受束缚的思想自由</div>
   </main>
+  </a>
 
-  <div class="hint">进入</div>
 
-  <script>
-    // 音效：极轻的环境氛围音（可选，需用户手势）
-    // 生成一个简单的呼吸/风声白噪声（Web Audio API）
-    let audioCtx = null;
-    function initAudio() {
-      if (audioCtx) return;
-      try {
-        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        const bufferSize = audioCtx.sampleRate * 4;
-        const buffer = audioCtx.createBuffer(2, bufferSize, audioCtx.sampleRate);
-        for (let ch = 0; ch < 2; ch++) {
-          const data = buffer.getChannelData(ch);
-          let last = 0;
-          for (let i = 0; i < bufferSize; i++) {
-            // 极低频滤波的噪声，模拟环境风声
-            const white = Math.random() * 2 - 1;
-            last = last * 0.95 + white * 0.05;
-            data[i] = last * 0.15;
-          }
-        }
-        const src = audioCtx.createBufferSource();
-        src.buffer = buffer;
-        src.loop = true;
-        const gain = audioCtx.createGain();
-        gain.gain.value = 0.08;
-        src.connect(gain);
-        gain.connect(audioCtx.destination);
-        src.start();
-      } catch(e) { /* 静默失败 */ }
-    }
-
-    // 点击跳转仓库
-    document.body.addEventListener('click', () => {
-      initAudio();
-      window.location.href = 'https://github.com/yingo-server/OpenDiscord';
-    });
-
-    // 触摸也支持
-    document.body.addEventListener('touchstart', () => {
-      initAudio();
-      window.location.href = 'https://github.com/yingo-server/OpenDiscord';
-    });
-  </script>
 </body>
 </html>
