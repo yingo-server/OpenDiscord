@@ -196,7 +196,9 @@ if [ -n "$ADMIN_PASS_FILE" ]; then
   admin_env_extra+="UFOT_ADMIN_PASS_FILE=$ADMIN_PASS_FILE"$'\n'
   ok "$(t_msg admin_env_written)"
 fi
-[ -n "$COLD_DSN" ] && admin_env_extra+="UFOT_COLD_DSN=$COLD_DSN"$'\n'
+if [ -n "$COLD_DSN" ]; then
+  admin_env_extra+="UFOT_COLD_DSN=$COLD_DSN"$'\n'
+fi
 if [ -n "$TURN_SERVER" ]; then
   # TURN 服务器写进配置注释（未配置凭据前不生效）
   admin_env_extra+="# TURN server: $TURN_SERVER (see deploy/coturn)"$'\n'
