@@ -106,6 +106,14 @@
     .zh { font-size: 1.5rem; }
   }
 
+  /* 横屏（矮视口）：压缩纵向间距，给底部提示留出行 */
+  @media (orientation: landscape) and (max-height: 500px) {
+    main { gap: 1rem; }
+    .en { font-size: clamp(1.5rem, 4.2vw, 2.5rem); }
+    .zh { font-size: clamp(.9rem, 1.8vw, 1.15rem); }
+    .hint { bottom: 1.25rem; font-size: .72rem; }
+  }
+
   /* 音效触发后的静音类（如果用户禁音） */
   .muted .hint { opacity: .2 !important; }
 </style>
