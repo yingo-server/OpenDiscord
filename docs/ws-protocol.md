@@ -1,6 +1,6 @@
 # OpenDiscord WebSocket 协议参考（1.0）
 
-> 只描述 `proto/chat.proto`、`server/internal/proto/kinds/kinds.go`、`server/internal/user/net/frame/codec.go`、`server/internal/user/net/ws/acceptor.go`、`server/internal/data/pipe/wire/wire.go` 中**真实存在**的帧结构与语义。kind 号段逐条取自 `kinds.go`（共 **77** 个常量），状态列标注是否已有处理分支。
+> 只描述 `proto/chat.proto`、`server/internal/proto/kinds/kinds.go`、`server/internal/user/net/frame/codec.go`、`server/internal/user/net/ws/acceptor.go`、`server/internal/data/pipe/wire/wire.go` 中**真实存在**的帧结构与语义。kind 号段逐条取自 `kinds.go`（共 **84** 个常量；客户端真源 `apps/client/src/net/protocol/kinds.ts` 与之一一对应），状态列标注是否已有处理分支。本文描述 v1.4.0 行为。
 
 ---
 
@@ -54,7 +54,7 @@
 
 ---
 
-## 4. kind 号段总表（77 个常量）
+## 4. kind 号段总表（84 个常量）
 
 > 唯一真源：`server/internal/proto/kinds/kinds.go`。「状态」依据是否有实际处理分支（网关本地 / 数据 pipe / 下行投递）。
 
@@ -88,14 +88,14 @@
 | 101 | MSG_SEND | message | 实现（数据层 onMsgSend→ACK） |
 | 102 | MSG_NEW | message | 实现（ACK 后 fan-out / SYNC 补拉） |
 | 103 | MSG_ACK | message | 实现（下行投递） |
-| 104 | MSG_READ | message | ⚠️ 未实现（无限流之外的处理分支） |
-| 105 | MSG_DELIVERED | message | ⚠️ 未实现 |
-| 106 | MSG_EDIT | message | ⚠️ 未实现 |
-| 107 | MSG_DELETE | message | ⚠️ 未实现 |
-| 108 | MSG_RECALL | message | ⚠️ 未实现（WS；管理端召回走 REST） |
-| 109 | MSG_FORWARD | message | ⚠️ 未实现 |
+| 104 | MSG_READ | message | 实现（数据层 onReceipt，瞬时回执） |
+| 105 | MSG_DELIVERED | message | 实现（数据层 onReceipt，瞬时回执） |
+| 106 | MSG_EDIT | message | 实现（`msg_domain_v2_enabled` 门控，v1.4 默认 true；关闭时丢弃） |
+| 107 | MSG_DELETE | message | 实现（数据层 onRecall，持久化） |
+| 108 | MSG_RECALL | message | 实现（数据层 onRecall，持久化；管理端召回另走 REST） |
+| 109 | MSG_FORWARD | message | 实现（`msg_domain_v2_enabled` 门控，v1.4 默认 true；关闭时丢弃） |
 | 110 | MSG_SYNC | message | ⚠️ 未实现 |
-| 111 | MSG_SEARCH | message | ⚠️ 未实现 |
+| 111 | MSG_SEARCH | message | ⚠️ 未实现（搜索走管理面 REST `/api/v1/messages/search`） |
 
 **200–299 会话层**
 
@@ -110,7 +110,7 @@
 | 213 | ROLE_SET | conv | ⚠️ 未实现 |
 | 220 | MUTE | conv | ⚠️ 未实现 |
 | 221 | PIN | conv | ⚠️ 未实现 |
-| 230 | TYPING | conv | ⚠️ 未实现（有限流规则无处理） |
+| 230 | TYPING | conv | 实现（数据层 onTyping，瞬时事件） |
 | 231 | DRAFT | conv | ⚠️ 未实现 |
 
 **300–349 媒体层**
@@ -127,19 +127,21 @@
 
 | kind | 名称 | 层 | 状态 |
 |------|------|----|------|
-| 350 | CALL_OFFER | call | ⚠️ 未实现（flag 关闭） |
-| 351 | CALL_ANSWER | call | ⚠️ 未实现 |
-| 352 | CALL_CANDIDATE | call | ⚠️ 未实现 |
-| 353 | CALL_BUSY | call | ⚠️ 未实现 |
-| 354 | CALL_HANGUP | call | ⚠️ 未实现 |
+| 350 | CALL_OFFER | call | flag 门控（`call_enabled` 默认 false；处理分支在 `data/pipe/call.go`，关闭时上行回 `ERROR 403 "calls disabled"`） |
+| 351 | CALL_ANSWER | call | 同上（flag 门控） |
+| 352 | CALL_CANDIDATE | call | 同上（flag 门控） |
+| 353 | CALL_BUSY | call | 同上（flag 门控） |
+| 354 | CALL_HANGUP | call | 同上（flag 门控） |
 
 **400–449 presence**
 
 | kind | 名称 | 层 | 状态 |
 |------|------|----|------|
-| 400 | PRESENCE_UPDATE | presence | ⚠️ 未实现（有限流规则无处理） |
-| 401 | PRESENCE_SUBSCRIBE | presence | ⚠️ 未实现 |
-| 402 | PRESENCE_UNSUBSCRIBE | presence | ⚠️ 未实现 |
+| 400 | PRESENCE_UPDATE | presence | 实现（客户端上报状态，数据层 onPresenceUp） |
+| 401 | PRESENCE_ONLINE | presence | 实现（**服务端产生**：连接建立时向共享会话的对端广播；客户端上行被拒 → `ERROR 4003`。旧名 `PRESENCE_SUBSCRIBE` 仅为别名，值不变） |
+| 402 | PRESENCE_OFFLINE | presence | 实现（**服务端产生**：连接断开事件，语义同 401；旧名 `PRESENCE_UNSUBSCRIBE` 仅为别名） |
+
+> 注意：kinds.go 明确 401/402 是用户层内部连接生命周期事件，**不是**客户端订阅机制；proto 里的 `PresenceSubscribe{user_ids}`（客户端订阅他人在线状态）是另一个当前未使用的概念。
 
 **450–499 用户层**
 
@@ -148,7 +150,7 @@
 | 450 | PROFILE_UPDATE | user | ⚠️ 未实现 |
 | 451 | BLOCK | user | ⚠️ 未实现 |
 | 452 | UNBLOCK | user | ⚠️ 未实现 |
-| 453 | REPORT | user | ⚠️ 未实现 |
+| 453 | REPORT | user | **上行链路未实现（规划中，v1.5 步骤 3 打通）**：数据层处理分支在位（`data/pipe/msgdomain.go` `onReport`→`sys_reports`，`msg_domain_v2_enabled` 门控），但用户层上行白名单未放行 453，前端举报按钮保持占位 |
 
 **500–599 管理下行**
 
@@ -353,7 +355,7 @@ payload 在 JSON 线格式下是 base64；解析后按下列结构（`wire.go` �
 | `KICKED` | — | 管理端踢下线：下发 `Kicked{reason,bannedUntil}` 并断连 |
 | `RATE_LIMITED` | — | L2 降级 |
 
-默认桶（`limit.DefaultConfig`）：`MSG_SEND 20/s`、`MSG_READ/DELIVERED 10/s`、`SYNC_REQUEST 2/s`、`MEDIA_PRESIGN 1/30s`、`TYPING/PRESENCE 1/s`（Silent）、未列出 kind 兜底 `10/s`；`PING/PONG` 完全豁免。
+默认桶（`limit.DefaultConfig`）：`MSG_SEND 20/s`、`MSG_READ/DELIVERED 10/s`、`MSG_DELETE/MSG_RECALL 2/s`、`SYNC_REQUEST 2/s`、`MEDIA_PRESIGN 1/30s`、`TYPING 1/s`、`PRESENCE(400/401/402) 1/10s`、`CALL 信令(350-354) 40/s`；未列出 kind 兜底 `10/s`；`PING/PONG` 完全豁免。
 
 ---
 
@@ -364,7 +366,7 @@ payload 在 JSON 线格式下是 base64；解析后按下列结构（`wire.go` �
 3. **心跳**：响应服务端 25s Ping（浏览器 WebSocket 自动回 Pong）；应用层可另发 `PING(4)`，收 `PONG(5)`（带上 `ack_id` 与 `server_ms`）。
 4. **seq 单调校验**：对每条 `MSG_NEW`/`MSG_ACK` 校验会话内 `seq` 连续；发现 gap 立即发 `SYNC_REQUEST(8){convId, sinceSeq}` 补拉。
 5. **ACK 配对**：用 `MSG_ACK.clientMsgId` 匹配本地待确认消息，替换临时 id 为 `msgId`。
-6. **tombstone 处理**：消息删除/召回（108/107 等）当前 **⚠️ 未实现**；客户端应先按"未收到即不存在"处理，预留 tombstone 分支。
+6. **tombstone 处理**：消息删除/召回（107/108）已在服务端实现（下行 `MSG_DELETE`/`MSG_RECALL` 帧到达时按 tombstone 渲染）；未收到相关帧时按"未收到即不存在"处理。
 7. **断线重连**：重连后凭 Cookie 重新握手，若本地 seq 已老化，发 SYNC_REQUEST 补齐；收到 `KICKED` 帧则停止重连并提示封禁原因。
 8. **限流退避**：收 `RATE_LIMITED` 按 `retry_after_ms` 指数退避；连接被 1008 关闭后 60s 内不重连。
 9. **错误处理**：`ERROR.code` 决定 UI（403 无权限、503 稍后重试、4000 协议错误需升级客户端）。
@@ -374,9 +376,10 @@ payload 在 JSON 线格式下是 base64；解析后按下列结构（`wire.go` �
 ## 9. 未实现清单（协议层）
 
 - `SYNC_RESULT(9)`、`RESUME_RESULT(7)`：常量存在但无生产者（SYNC 实际回 102，RESUME 仅转发）。
-- 消息类 `104/105/106/107/108/109/110/111`：无用例处理（编辑/删除/转发/回执/WS 搜索/WS 召回）。
-- 会话类 `212 MEMBER_UPDATE`、`213 ROLE_SET`、`220 MUTE`、`221 PIN`、`230 TYPING`、`231 DRAFT`：无翻译/处理分支。
+- 消息类 `110 MSG_SYNC`、`111 MSG_SEARCH`：无用例处理（104/105/106/107/108/109 已实现，106/109 由 `msg_domain_v2_enabled` 门控）。
+- 会话类 `212 MEMBER_UPDATE`、`213 ROLE_SET`、`220 MUTE`、`221 PIN`、`231 DRAFT`：无翻译/处理分支（230 TYPING 已实现）。
 - 媒体 WS `300–304`：媒体一律走 HTTP，WS presign 未接。
-- 通话 `350–354`、presence `400–402`、用户 `450–453`：常量已定义，无处理器（call flag 关闭）。
+- 通话 `350–354`：处理分支已实现但由 `call_enabled` 门控，默认关闭（上行回 403 "calls disabled"）。
+- 用户 `450 PROFILE_UPDATE / 451 BLOCK / 452 UNBLOCK`：常量已定义，无处理器；`453 REPORT` 上行链路未放行（规划中，v1.5 步骤 3）。
 - 管理下行 `501 ANNOUNCE`、`502 MAINTENANCE`：无生产者（仅 `500 ADMIN_BROADCAST` 有注入链路）。
 - 高风险：以上未实现 kind 若客户端上行，网关会因"能力外/无 handler"被丢弃或转 `ERROR`——**客户端不应假设其可用**。

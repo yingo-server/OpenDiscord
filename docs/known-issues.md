@@ -1,30 +1,31 @@
 # OpenDiscord 已知问题（v1.4.0 发布稿）
 
-> 版本：**v1.4.0（已按用户知情决策发布）**。四个实验性 flag 已转生产默认开启
-> （`universal_pull_enabled` / `adaptive_control_enabled` / `v3_bus_enabled` / `v3_bus_percent=100`），
-> CI 全绿。基线 1.1.0 的 12 条 + 容量段逐条给出三态结论：**已修 / 保持（写明理由） / 延后 v1.5**。
+> 版本：**v1.4.0（已发布，2026-11-18）**。CI 全绿；v1.4 四项实验性 flag 已转生产默认开启
+> （`universal_pull_enabled` / `adaptive_control_enabled` / `v3_bus_enabled` / `v3_bus_percent=100`，
+> 另 `msg_domain_v2_enabled` 默认开启，见 `server/internal/pkg/featureflags/flags.go` `Defaults()`）。
+> 基线 1.1.0 的 12 条 + 容量段逐条给出三态结论：**已修 / 保持（写明理由） / 延后 v1.5**。
 > 纪律：凡未经 S-1~S-7 压测守门的性能声明一律不写成"达标"。v1.4 首轮压测
-> PASS=0 / FAIL=6 / BLOCKED=8，S-1/S-2 容量限制已知并随本次发布一并交付，
-> 转入 v1.5 架构重设专项；详见 `docs/lts-1.4-plan.md §9`。
+> PASS=0 / FAIL=6 / BLOCKED=8，**S-1/S-2 容量缺口未解决**，随 v1.4.0 知情发布一并交付，
+> 转入 v1.5 架构重设专项；详见 `docs/lts-1.4-plan.md §9` 与 `docs/architecture-reset-v2-plan.md`。
 
 ## 状态速览
 
 | # | 问题 | 状态 |
 |---|---|---|
-| 1 | 冷库 PG driver 需部署层注册 | 已修（`chatd-pg` 变体，CI 待绿） |
-| 2 | 短信/邮件/图形验证码供应商未接 | 已修（webhook 适配器，CI 待绿） |
+| 1 | 冷库 PG driver 需部署层注册 | 已修（`chatd-pg` 变体，CI 全绿） |
+| 2 | 短信/邮件/图形验证码供应商未接 | 已修（webhook 适配器，CI 全绿） |
 | 3 | Windows ARM/ARM64 无产物 | 保持（明确不做，理由见下） |
 | 4 | split 多进程部署未实现 | 已修（删除死 systemd 单元，标注 embedded-only） |
 | 5 | 群通话/屏幕共享 | 保持（明确不做，理由见下） |
-| 6 | 移动端无推送 | 代码在位·待验证（前端 PWA/Push 在位；服务端 `/api/push/subscribe` 未实现，推送 fail-closed） |
-| 7 | 通话需自备 TURN | 已修（自动化部分：管理面 TURN 自检，CI 待绿） |
-| 8 | 群人数上限默认 100 | 保持（默认值不动；理由：三核心未验证前不放大默认值） |
-| 9 | 编辑/转发/@提及 服务端未实现 | 代码在位·待验证（`msg_domain_v2_enabled=false`） |
-| 10 | 举报 kind 453 无 handler | 代码在位·待验证（同上 flag 门控） |
-| 10b | 会话列表未虚拟滚动 | 已修（ConvList 接 react-virtual，CI 待绿） |
-| 11 | auto_vacuum 需手工转换 | 已修（`opendiscordctl upgrade` 自动化，CI 待绿） |
-| 12 | 旧 thumb_data 需手工迁移 | 已修（并入 `opendiscordctl upgrade`，dry-run 默认，CI 待绿） |
-| 容量 | 扇出写放大 | 代码在位·待验证（三核心全部 flag-off，等 S-1~S-7） |
+| 6 | 移动端无推送 | **未实现（规划中，v1.5 步骤 3 补齐）**：前端 PWA/Push 在位；服务端 `/api/push/subscribe` 与 push 事件下发未实现，推送 fail-closed |
+| 7 | 通话需自备 TURN | 已修（自动化部分：管理面 TURN 自检，CI 全绿） |
+| 8 | 群人数上限默认 100 | 保持（默认值不动；理由：S-1/S-2 容量缺口未解决前不放大默认值） |
+| 9 | 编辑/转发/@提及 服务端 | 已实现（`msg_domain_v2_enabled` 默认开启；处理分支在 `data/pipe`，经压测守门前不宣称达标） |
+| 10 | 用户举报 kind 453 | **上行链路未实现（规划中，v1.5 步骤 3 补齐）**：数据层 `onReport`→`sys_reports` 处理代码在位（flag 门控），但用户层上行白名单未放行 453，前端举报按钮保持占位 |
+| 10b | 会话列表未虚拟滚动 | 已修（ConvList 接 react-virtual，CI 全绿） |
+| 11 | auto_vacuum 需手工转换 | 已修（`opendiscordctl upgrade` 自动化，CI 全绿） |
+| 12 | 旧 thumb_data 需手工迁移 | 已修（并入 `opendiscordctl upgrade`，dry-run 默认，CI 全绿） |
+| 容量 | 扇出写放大（S-1/S-2 缺口） | **未解决**：v1.4 三核心已默认开启，但未达 S-1~S-7 门槛；转入 v1.5/v2.0 架构重设专项 |
 
 另：**CORE-3（v3 总线接线）代码已落盘、待 CI/压测验证**——`AttachV3Deliver` 已在
 `newAssembly` 末尾调用，`AddConnLifecycle` 已注入 user 层 Server，自适应控制循环
@@ -49,11 +50,11 @@ Plane 背压指标。双投递保护按 uid 单一路径判定。**但**：`v3_b
   判定（DeliveryEnabled / LegacyDirectEnabled 共用），关闭旧逐成员直投，无双投递窗口。
   全链路不双投递的 e2e 断言未写，交 CI/压测。
 
-**状态更新（v1.4.0 发布）**：以上 §0 三段为转生产前的收敛记录。四个 flag
+**状态更新（v1.4.0 已发布）**：以上 §0 三段为转生产前的收敛记录。四个 flag
 （`universal_pull_enabled` / `adaptive_control_enabled` / `v3_bus_enabled` / `v3_bus_percent=100`）
 现已在 v1.4 默认开启；CORE-1/2/3 单测与 cmd 层 e2e（`core3_test.go`、`v3deliver_test.go` 等）
 在 CI `-race` 全绿，热生效/不双投递断言已补齐。唯一未过的是容量门槛 S-1~S-7
-（见 `lts-1.4-plan.md §9`），属**性能限制**而非"未接线/未验证"。
+（见 `lts-1.4-plan.md §9`），属**性能限制**而非"未接线/未验证"——S-1/S-2 容量缺口仍未解决。
 
 ## 部署与依赖
 
@@ -61,7 +62,7 @@ Plane 背压指标。双投递保护按 uid 单一路径判定。**但**：`v3_b
 
 v1.4 提供 `chatd-pg` 构建变体（内嵌 pgx driver），启动时自检并落审计事件；
 `require_audit_store=true` 的拒启语义不变。普通 `chatd` 架构约定（不 import
-任何 driver）保持不变。CI 待绿后正式转为已修。
+任何 driver）保持不变。CI 全绿，正式转为已修。
 
 ### 2. 短信 / 邮件 / 图形验证码供应商未接入 —— 已修
 
@@ -90,12 +91,12 @@ systemd 单元已删除，不留会启动失败的运维指引。文档明确 ch
 1v1 通话完整（含忙线、超时、ICE 失败处理）。自建 SFU 超出 2C2G 带宽预算，
 LTS 不引入；云 SFU 集成留待 v1.5+ 按需求评估。
 
-### 6. 移动端无推送 —— 代码在位·待验证
+### 6. 移动端无推送 —— 未实现（规划中，v1.5 步骤 3 补齐）
 
 前端已完成：`public/manifest.webmanifest` + `public/sw.js`（只缓存静态壳，
 不缓存 `/api/` 与 `/ws`，离线回退 index.html）+ `src/net/push/` VAPID 订阅封装
-（production-only 注册，dev/mock 不注册）。**服务端 `/api/push/subscribe` 与
-push 事件下发未实现**，前端 fail-closed 只记日志不弹错。手机收不到系统通知的
+（production-only 注册，dev/mock 不注册）。**服务端订阅接收端点与 push 事件下发未实现**
+（v1.5 步骤 3 实现），前端 fail-closed 只记日志不弹错。手机收不到系统通知的
 问题在本版本内未解决，待服务端补齐后转已修。
 
 ### 7. 通话需要自备 TURN 服务器 —— 已修（自动化部分）
@@ -107,29 +108,28 @@ push 事件下发未实现**，前端 fail-closed 只记日志不弹错。手机
 ### 8. 群人数上限（默认 100，硬上限 1000）—— 保持
 
 **默认值仍为 100，本版未放大到 1000。** 理由：放大默认值的前提是普遍拉取 +
-自适应经 S-1~S-2 压测证明可用性达标，而这两项仍是 flag-off 未验证状态
-（见 §0）。在验证完成前放大默认值，等于向 2 核用户承诺实测撑不住的规模
-（v1.1.1 降级教训）。验证通过后再改默认值（改动是一行 policy 默认 + 文档，
-v1.4.0 正式发布前或 v1.5 完成）。硬上限 1000（64KB 帧约束）不变。
+自适应经 S-1~S-2 压测证明可用性达标，而 S-1/S-2 容量缺口仍未解决（见 §0 与
+`architecture-reset-v2-plan.md`）。在验证完成前放大默认值，等于向 2 核用户承诺实测撑不住的规模
+（v1.1.1 降级教训）。验证通过后再改默认值（改动是一行 policy 默认 + 文档）。硬上限 1000（64KB 帧约束）不变。
 容量核算公式与实测表见下「容量」段，仍然有效。
 
-### 9. 消息编辑 / 转发 / @提及 服务端未实现 —— 代码在位·待验证
+### 9. 消息编辑 / 转发 / @提及 服务端实现 —— 已实现（flag 默认开启）
 
 服务端 106 编辑（时间窗内软更新 + 广播）、109 转发元数据、@ 提及定向通知
-已在 `data/pipe` 落地，由 `msg_domain_v2_enabled` 门控，**默认 false**。
-开启前行为与 1.2.1 逐字节一致。客户端 106/107/108 渲染路径已接线。
-压测与灰度验证后转已修。
+已在 `data/pipe` 落地，由 `msg_domain_v2_enabled` 门控，**v1.4 起默认 true**。
+客户端 106/107/108 渲染路径已接线。S-1~S-7 压测守门前不宣称性能达标。
 
-### 10. 用户举报（REPORT kind 453）服务端无处理分支 —— 代码在位·待验证
+### 10. 用户举报（REPORT kind 453）服务端上行链路 —— 未实现（规划中，v1.5 步骤 3 补齐）
 
-453 → `sys_reports` 入库 + 审计的实现已落地，与第 9 条同一 flag
-（`msg_domain_v2_enabled`）门控，默认 false。开启前上行举报帧仍无响应、
-前端「举报」菜单保持占位。
+453 → `sys_reports` 入库 + 审计的处理代码已落地（`data/pipe/msgdomain.go` `onReport`，
+与第 9 条同一 flag `msg_domain_v2_enabled` 门控），**但用户层上行白名单尚未放行 453**——
+客户端上行举报帧到不了数据层。前端「举报」菜单保持占位（`MessageList.tsx` 注释如实标注）。
+v1.5 步骤 3 打通上行链路后转已实现。
 
 ### 10b. 会话列表未虚拟滚动 —— 已修
 
 `ConvList.tsx` 已接 `@tanstack/react-virtual`（复用消息列表方案），
-无 flag 门控，随构建生效。单测在位，CI 待绿后正式转为已修。
+无 flag 门控，随构建生效。单测在位，CI 全绿，正式转为已修。
 
 ## 运维注意
 
@@ -144,7 +144,7 @@ v1.4.0 正式发布前或 v1.5 完成）。硬上限 1000（64KB 帧约束）不
 并入 `opendiscordctl upgrade`（默认 dry-run，`--run` 执行）。独立的
 `opendiscordctl migrate thumbs --dry-run/--run` 仍可用。
 
-## 容量：扇出写放大是主要约束 —— 代码在位·待验证
+## 容量：扇出写放大是主要约束 —— 未解决（S-1/S-2 缺口，转入架构重设专项）
 
 以下为 v1.1.1/1.2.1 实测基线（保留，勿删）：
 
@@ -156,7 +156,8 @@ v1.4.0 正式发布前或 v1.5 完成）。硬上限 1000（64KB 帧约束）不
 
 写路径上限 ~5-6k 消息/秒（2 核）；1000 并发握手 1000/1000 成功，连接建立 <100ms。
 
-**1.4 的解法（普遍拉取 + 自适应 + v3 总线）代码全部在位但 flag-off 未压测**
+**1.4 的解法（普遍拉取 + 自适应 + v3 总线）已默认开启，但 S-1~S-7 容量门槛未通过**
 ——上表的数字在本版本内仍然成立，容量规划公式（在线人数 × 群成员数 ×
-每人消息频率 ≈ 帧/秒，压到 40k 帧/秒以内）继续按此执行。三核心经 S-1~S-7
-验证并灰度启用后，本段数字由 CI 刷新（README 容量表同批更新）。
+每人消息频率 ≈ 帧/秒，压到 40k 帧/秒以内）继续按此执行。S-1/S-2 缺口转入
+v1.5/v2.0 架构重设专项（`architecture-reset-v2-plan.md`）；架构重设落地后，
+本段数字由 CI 刷新（README 容量表同批更新）。

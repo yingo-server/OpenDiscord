@@ -1,34 +1,74 @@
-# OpenDiscord 开发文档
+# OpenDiscord 文档导航（v1.5.0-beta.2）
 
 OpenDiscord 采用分层 socket 架构：总线层为骨架，桥接层为枢纽，用户层/管理层/数据层经桥接通信。除管理层到桥接使用 HTTP API 外，所有层间通信均为内部 socket 长连接；前端到用户层使用 WebSocket。
 
-## 文档索引
+本索引按 Diátaxis 四象限归类（**教程 / How-to / 参考 / 解释**），每篇标注读者对象：**新用户 / 部署者 / 开发者**。链接集合与 `docs/` 实际文件一一对应。
 
-| 文档 | 内容 |
-|---|---|
-| [架构总纲](architecture.md) | 分层架构、kind 号段、全链路时序、目录结构、部署形态 |
-| [总线与桥接层设计](bridge-design.md) | 桥接流水线组件、背压、crash-only 恢复、ctl 工具 |
-| [用户层与前端设计](user-frontend-design.md) | WS 网关管道、前端分层、sync 引擎、渲染器注册表 |
-| [管理层与数据层设计](admin-data-design.md) | 数据操作 kind、DDL 分域、写管道、REST API、RBAC |
-| [Web UI 设计规范](web-ui-spec.md) | 设计令牌、组件规范、消息区交互、性能指标 |
-| [限流与安全规范](security-spec.md) | 分层限流、认证、上传安全、运维基线、合规 |
-| [API 参考](api-reference.md) | 全部 HTTP 端点（方法/路径/鉴权/入参/出参/错误码） |
-| [CLI 参考](cli-reference.md) | `adminctl` / `opendiscordctl` / `opchat` 完整参数与退出码 |
-| [WS 协议](ws-protocol.md) | 帧格式、kind 号段、各 kind payload、时序、限流语义 |
-| [路线图](roadmap.md) | 已完成 / v1.2 计划 / 明确不做及理由 |
-| [1.4 LTS 规划](lts-1.4-plan.md) | 普遍拉取 / 参数自适应 / v3 总线三核心、12 条已知问题决策（§5）、S-1~S-7 验收门槛（§6） |
-| [普遍拉取规范](universal-pull-spec.md) | 水位线协议、自适应 AIMD 算法与边界、兼容矩阵、S-6/S-7 断言、回滚开关清单 |
-| [v3 消息总线设计](v3-bus-design.md) | MailboxHub / DeliveryPlane / 灰度双写 / kind 15-17、接线与回滚铁律 |
-| [v1.1 升级说明](release-notes-v1.1.0.md) | 升级步骤、配置变更、破坏性变更、回滚 |
-| [已知问题](known-issues.md) | 已知缺陷、影响范围与计划修复版本 |
-| [LTS 发布清单](lts-checklist.md) | 三轮审查的全部结论与当前状态（发布门槛） |
-| [审查报告](review-server.md) | 协议贯通 / 性能 / 安全三轮独立审查原文 |
+## 教程（Tutorial · 跟着做一遍）
+
+| 文档 | 一句话 | 读者 |
+|---|---|---|
+| [用户指南](user-guide.md) | 从安装客户端到注册登录、收发消息的完整上手路径 | 新用户 |
+| [部署手册（单机 embedded）](deploy.md) | 在一台 2C2G 机器上从零到服务可用的分步部署教程 | 部署者 |
+
+## How-to（完成具体任务）
+
+| 文档 | 一句话 | 读者 |
+|---|---|---|
+| [管理员指南](admin-guide.md) | 管理员日常操作：登录管理面、封禁/踢人/举报处理/广播/归档 | 部署者 |
+| [路线图](roadmap.md) | 项目方向：已完成、进行中与"明确不做"清单及理由 | 全部 |
+| [v1.5 四步版本路线](v1.5-roadmap.md) | v1.5.0-beta.1 → v1.5.0 四步收口计划（UX/文档/README/发布） | 开发者 |
+| [v2.0 架构重设规划（草案）](architecture-reset-v2-plan.md) | 容量缺口转 v2.0 架构重设的规划草稿（未定稿） | 开发者 |
+
+## 参考（Reference · 查事实）
+
+| 文档 | 一句话 | 读者 |
+|---|---|---|
+| [API 参考](api-reference.md) | 全部 HTTP 端点（方法/路径/鉴权/入参/出参/错误码），未实现端点如实标注 | 开发者 |
+| [CLI 参考](cli-reference.md) | `adminctl` / `opendiscordctl` 完整子命令、flag、退出码与已知限制 | 部署者 |
+| [WS 协议](ws-protocol.md) | WebSocket 帧格式、kind 号段总表、payload 结构、限流与错误语义 | 开发者 |
+| [已知问题](known-issues.md) | 逐条列明已修/保持/延后的已知缺陷、容量缺口与规划中功能 | 全部 |
+| [架构总纲](architecture.md) | 四层 + 桥接的分层结构、kind 号段、全链路时序、目录结构 | 开发者 |
+| [发布说明 v1.4.0](release-notes-v1.4.0.md) | v1.4.0 LTS 发布内容、升级步骤与注意事项 | 部署者 |
+| [发布说明 v1.1.0](release-notes-v1.1.0.md) | v1.1.0 升级步骤、配置变更、破坏性变更与回滚 | 部署者 |
+
+## 解释（Explanation · 讲为什么）
+
+| 文档 | 一句话 | 读者 |
+|---|---|---|
+| [总线与桥接层设计](bridge-design.md) | 桥接流水线组件、背压、crash-only 恢复的设计取舍 | 开发者 |
+| [用户层与前端设计](user-frontend-design.md) | WS 网关管道、前端分层、sync 引擎、渲染器注册表的设计 | 开发者 |
+| [管理层与数据层设计](admin-data-design.md) | 数据操作 kind、DDL 分域、写管道、REST API、RBAC 设计 | 开发者 |
+| [限流与安全规范](security-spec.md) | 分层限流、认证、上传安全、运维基线与安全红线（§8.2） | 开发者 |
+| [Web UI 设计规范](web-ui-spec.md) | 设计令牌、组件规范、消息区交互、性能指标 | 开发者 |
+| [普遍拉取规范](universal-pull-spec.md) | 水位线协议、自适应 AIMD 算法、兼容矩阵与回滚开关 | 开发者 |
+| [v3 消息总线设计](v3-bus-design.md) | MailboxHub / DeliveryPlane / 灰度双写的设计与回滚铁律 | 开发者 |
+| [1.4 LTS 规划](lts-1.4-plan.md) | 1.4 LTS 三核心、已知问题决策（§5）与 S-1~S-7 验收门槛（§6） | 开发者 |
+| [性能优化规范 v1.2](perf-spec-v1.2.md) | v1.2 性能目标、优化方案与压测守门规则 | 开发者 |
+| [大群拉取模式规范 v1.2](pull-mode-spec-v1.2.md) | v1.2 引入的按会话水位线拉取模式规范 | 开发者 |
+| [SQLite 写路径精调](perf-sqlite-write-path.md) | SQLite 写路径基准测试报告（arm64 2 核环境） | 开发者 |
+| [慢消费者降级回滚事后分析](perf-postmortem-v1.2-draft.md) | v1.2"慢消费者降级"机制回滚的 postmortem（草稿） | 开发者 |
+
+## 过程与审查记录（开发者）
+
+这些文档记录特定批次的审查/验收结论，是历史锚点而非现行规范；冲突时以代码与本目录"参考"篇为准。
+
+| 文档 | 一句话 | 读者 |
+|---|---|---|
+| [服务端审查报告](review-server.md) | 服务端设计文档符合性三轮独立审查原文 | 开发者 |
+| [Web Push 部署手册](push-setup.md) | 服务端推送订阅端点与 VAPID 发送的部署与验证手册（v1.5.0-beta.3） | 部署者 |
+| [前端审查报告](review-frontend.md) | 前端与用户层文档 vs 代码符合性审查 | 开发者 |
+| [安全红线审查报告](review-security.md) | security-spec §8.2 十二条红线逐条审查 | 开发者 |
+| [LTS 发布清单](lts-checklist.md) | 三轮审查全部问题清单与当前状态（发布门槛） | 开发者 |
+| [1.4 验收锚点](lts-1.4-acceptance.md) | 1.4 验收与转生产的断言/守门执行锚点 | 开发者 |
+| [1.4 剩余批次锚点](lts-1.4-remaining.md) | 1.4 剩余批次的实施执行锚点 | 开发者 |
+| [v3 P0 依赖核实检查单](v3-p0-checklist.md) | v3 总线设计 §9 P0 依赖逐项核实记录 | 开发者 |
 
 ## 技术栈
 
 - 后端：Go（分层组件，单进程 embedded 或分进程部署）
 - 前端：React 18 + TypeScript + Vite
-- 协议：Protobuf Envelope（单一契约源 `proto/`）
+- 协议：Protobuf Envelope（单一契约源 `proto/`；kind 号段双端真源：`server/internal/proto/kinds/kinds.go` 与 `apps/client/src/net/protocol/kinds.ts`）
 - 存储：SQLite（热，本机）/ PostgreSQL（冷，外部）
 
 ## 设计律

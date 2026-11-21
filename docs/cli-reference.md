@@ -179,8 +179,8 @@
 
 ### 3.2 子命令总表（`main.go` case 分支）
 
-`version` · `status` · `doctor` · `backup` · `archive` · `flags` · `ban` · `unban` · `help`
-（8 个功能子命令 + help = 9。）
+`version` · `status` · `doctor` · `backup` · `archive` · `migrate` · `upgrade` · `flags` · `ban` · `unban` · `help`
+（10 个功能子命令 + help；实测以 `rg 'case "' server/cmd/opendiscordctl/main.go` 为准。）
 
 #### version
 - 语法：`opendiscordctl version`
@@ -206,6 +206,16 @@
 - 语法：`opendiscordctl archive --dry-run | --run`（**必须且只能二选一**）
 - 经管理 API `POST /api/v1/archive/run`；未登录时提示改用 `adminctl archive`。
 - 退出码：0 / 64（两者都/都不给）/ 77（未登录）/ 1。
+
+#### migrate
+- 语法：`opendiscordctl migrate thumbs [--dry-run] [--batch N(500)] [--hot-db PATH] [--media-dir DIR]`
+- 一次性把旧 `thumb_data` 内联缩略图迁移到 `media_dir/thumbs/` 文件并清空该列。
+- 退出码：0 / 1 / 64 / 65（热库缺失）/ 77。
+
+#### upgrade
+- 语法：`opendiscordctl upgrade [--run] [--force] [--hot-db PATH] [--media-dir DIR] [--batch N] [--unit NAME]`
+- v1.4 新增的一次性升级维护计划（**默认 dry-run 只读**，`--run` 执行）：检测 `auto_vacuum=0` 生成 auto_vacuum 转换步骤 + 旧 thumb_data 迁移步骤（复用 migrate 机制），并可含备份步骤。
+- 退出码：0 / 1 / 64 / 65 / 77。
 
 #### flags
 - `opendiscordctl flags list` → `GET /api/v1/flags`
@@ -260,6 +270,9 @@ adminctl completion bash > /etc/bash_completion.d/adminctl
 
 1. **`adminctl` 已含 `logout`、`metrics` 子命令（原"缺失"说法已过时）。**
    `main.go` 有 `case "logout"` / `case "metrics"`，对应 `cmdLogout`（`POST /api/v1/logout` + 删凭据）与 `cmdMetrics`（`GET /api/v1/metrics` 原文输出）。实测均可用。
+
+2. **`opendiscordctl` 已含 `migrate`、`upgrade` 子命令（v1.4 新增，原清单未收录）。**
+   `migrate thumbs` 做旧缩略图一次性迁移；`upgrade` 合并 auto_vacuum 转换 + thumbs 迁移为一次维护计划，默认 dry-run、`--run` 执行。详见 §3。
 
 2. **`adminctl <sub> --help` 的行为分两种，非"无输出"。**
    - **叶子子命令**（如 `users list --help`、`login --help`、`metrics --help`）会打印 flag 用法并退出 **0**。

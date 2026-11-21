@@ -1,6 +1,6 @@
 # OpenDiscord API 参考（1.0）
 
-> 本文档只描述**代码中真实存在且经 `go test ./server/cmd/chatd -run TestAPIContract` 实测**的接口。
+> 描述版本：v1.4.0（2026-11 复核）。本文档只描述**代码中真实存在**的接口。
 > 所有字段名、路径、错误码均取自源码（见每节"源码"行）。凡代码未实现的能力一律标注 **⚠️ 未实现**。
 >
 > 验收基线：`server/cmd/chatd/api_contract_test.go` 跑出 **PASS=53 / FAIL=0 / SKIP=0**（2026-10-31 复核）。
@@ -200,6 +200,14 @@ OpenDiscord 有 **两个 HTTP 面 + 一个 WebSocket 面**，全部由同一个 
 | GET | /api/v1/archive/status | archive.read | — | 200 归档账本状态 |
 | POST | /api/v1/archive/run | archive.run | `{dry_run?}`；或 `?dry_run=true` | 200 运行结果 |
 
+### 5.8a 诊断 diagnostics（1 路由，复用 `metrics.read` 权限）
+
+| 方法 | 路径 | 权限 | 请求体 / 查询 | 成功响应 |
+|------|------|------|--------------|---------|
+| GET | /api/v1/diagnostics/turn | metrics.read | — | 200 TURN 连通性自检结果（读配置 turn URL 做 TCP 探测，3s 超时，仅管理面可见；`admin/handler/api.go` `handleTURNCheck`） |
+
+> v1.4 新增（OPS-2）。管理员不再需要手工 telnet 排查 TURN 可达性。
+
 ### 5.9 指标 metrics（1 路由，`metrics.read`）
 
 | 方法 | 路径 | 权限 | 请求体 / 查询 | 成功响应 |
@@ -214,7 +222,7 @@ OpenDiscord 有 **两个 HTTP 面 + 一个 WebSocket 面**，全部由同一个 
 
 > 该端口上的 `/api/admin/*` 返回 404 `{error:"admin REST is served on admin_rest_listen", code:"WRONG_SURFACE"}`（`chatd/admin.go`），**不是**业务端点。
 
-**管理路由计数**：`/api/v1` 下 **20 条**（auth 3 + users 5 + reports 3 + messages 2 + flags 2 + audit 1 + broadcast 1 + archive 2 + metrics 1），另有 `/health` = 21 条 mounted 路由（`api.go Routes()`）。验收表覆盖其中全部业务路径 + review 角色 403 探测。
+**管理路由计数**：`/api/v1` 下 **21 条**（auth 3 + users 5 + reports 3 + messages 2 + flags 2 + audit 1 + broadcast 1 + archive 2 + metrics 1 + diagnostics/turn 1），另有 `/health` = 22 条 mounted 路由（`api.go Routes()`）。验收表覆盖全部业务路径 + review 角色 403 探测。
 
 ---
 
@@ -313,9 +321,11 @@ go test ./server/cmd/chatd/ -run TestAPIContract -count=1 -v
 | 管理面 RBAC REST 挂在 `/api/admin/*` 的旧设计 | ⚠️ 未实现 | 旧注释说返回 `501 NOT_IMPLEMENTED`，实际已改为 `/api/v1/*` 且已实现；此处仅记录历史差异。 |
 | 冷库 Postgres 读路径 | ⚠️ 未实现 | `cold_dsn=""` 默认不连接；读退化为纯热库（`chatd/config.go` 注释）。 |
 | WS 媒体 presign（kinds 300/301 MEDIA_PRESIGN_*） | ⚠️ 未实现 | 常量已定义，但数据层/网关未接处理；媒体走 HTTP `/api/media/*`。 |
-| 消息编辑/删除/转发/搜索/回执类 WS kind（106/107/109/110/111 等） | ⚠️ 未实现 | kind 已注册、能力表列出，但无 handler 分支（`data/pipe/pipe.go dispatch` 未处理）。 |
-| 通话 kinds 350–354 | ⚠️ 未实现 | `kinds.go` 注释明写"flag 关闭，常量已定义但不启用"。 |
-| Presence kinds 400–402 | ⚠️ 未实现 | 常量存在、限流表有规则，但无处理分支。 |
-| SMS 短信发送（`SMSSender`） | ⚠️ 未实现 | `authsvc/otp.go` 注释：未接线；dev 用固定码，生产不下发短信。 |
+| 消息编辑/删除/转发/搜索/回执类 WS kind（106/107/109/110/111 等） | ⚠️ 未实现（除下述例外） | kind 已注册、能力表列出；106/107/108/104/105/109 在 `data/pipe` 有处理分支，**但 106/109（及 453 举报）由 `msg_domain_v2_enabled` 门控、107/108 召回为持久化处理**；110/111 仍无 handler 分支。 |
+| 用户举报 453 REPORT 上行链路 | ⚠️ 规划中（v1.5 步骤 3 实现） | 数据层 `onReport` 处理分支与 `sys_reports` 入库代码在位（`data/pipe/msgdomain.go`，`msg_domain_v2_enabled` 门控），但用户层上行白名单未放行 453，前端举报按钮保持占位。 |
+| 通话 kinds 350–354 | ⚠️ 默认关闭（flag 门控） | 处理分支已实现（`data/pipe/call.go` `onCall`），由 `call_enabled` 门控，**默认 false**；开启前上行回 403 "calls disabled"。 |
+| Presence kinds 400–402 | ⚠️ 部分 | 400 由客户端上报、数据层处理；401/402 为**服务端产生的连接生命周期事件**（连接建立/断开向同会话对端广播，上行发送回 `ERROR 4003`），非客户端订阅机制（`kinds.go` 注释）。 |
+| SMS 短信发送（`SMSSender`） | ⚠️ 未实现 | `authsvc/otp.go` 注释：未接线；dev 用固定码，生产经 v1.4 webhook 适配器下发（未配置时 fail-closed）。 |
+| 推送订阅端点（前端 `net/push` 期望的订阅上行） | ⚠️ 未实现（规划中，v1.5 步骤 3 实现） | 前端 `apps/client/src/net/push/index.ts` 的 VAPID 订阅封装已就位，但服务端尚无对应订阅接收端点与 push 事件下发；推送 fail-closed。 |
 | 媒体异步病毒扫描（ClamAV） | ⚠️ 未实现 | `mediasvc` 注释：MVP 行出厂即用（status=1），1.1 才有扫描流水线。 |
 | Captcha 强制校验 | ⚠️ 未实现 | `authsvc/handlers.go` 注释：字段接受但未强制（TODO-CAPTCHA）。 |
