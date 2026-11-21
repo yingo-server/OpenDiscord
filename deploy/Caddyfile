@@ -1,4 +1,4 @@
-# OpenDiscord 边缘网关（Caddy v2）
+# UFOT 边缘网关（Caddy v2）
 #
 # 职责边界：
 #   - 自动 HTTPS（ACME，Let's Encrypt）
@@ -12,7 +12,7 @@
 #   (c) 云厂商 WAF / CDN 边缘规则
 # 本文件保留 (a) 的配置位置，默认注释掉以保证 stock caddy 可直接加载。
 {
-	email {$OPENDISCORD_ACME_EMAIL:ops@example.com}
+	email {$UFOT_ACME_EMAIL:ops@example.com}
 	# 关掉版本头，减少指纹
 	servers {
 		trusted_proxies static private_ranges
@@ -21,8 +21,8 @@
 	admin off
 }
 
-# 站点域名从环境变量注入：OPENDISCORD_DOMAIN=chat.example.com
-{$OPENDISCORD_DOMAIN:chat.example.com} {
+# 站点域名从环境变量注入：UFOT_DOMAIN=chat.example.com
+{$UFOT_DOMAIN:chat.example.com} {
 	encode zstd gzip
 
 	# ------------------------------------------------------------------
@@ -81,9 +81,9 @@
 		#     }
 		# }
 
-		# 端口：embedded 单进程默认 8080（与 opendiscord.toml 的 listen 一致）。
+		# 端口：embedded 单进程默认 8080（与 ufot.toml 的 listen 一致）。
 		# embedded-only：split 用户层 8081 形态未实现，勿改默认端口。
-		reverse_proxy 127.0.0.1:{$OPENDISCORD_WS_PORT:8081} {
+		reverse_proxy 127.0.0.1:{$UFOT_WS_PORT:8081} {
 			# WS 需要长连接：关闭响应缓冲与超时
 			flush_interval -1
 			transport http {
@@ -141,8 +141,8 @@
 	handle @metrics {
 		@metricsDenied not remote_ip 127.0.0.1/32 10.0.0.0/8 192.168.0.0/16
 		respond @metricsDenied "Not Found" 404
-		# 指到 opendiscord.toml 的 metrics_listen（默认 9090），不是用户层端口。
-		reverse_proxy 127.0.0.1:{$OPENDISCORD_METRICS_PORT:9090}
+		# 指到 ufot.toml 的 metrics_listen（默认 9090），不是用户层端口。
+		reverse_proxy 127.0.0.1:{$UFOT_METRICS_PORT:9090}
 	}
 
 	# ------------------------------------------------------------------

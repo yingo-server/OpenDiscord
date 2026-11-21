@@ -10,7 +10,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/pkg/i18n"
+	"github.com/yingo-server/UFOT/server/internal/pkg/i18n"
 )
 
 var errUsage = errors.New("usage")
@@ -163,24 +163,24 @@ func resolveGlobals(g *globals) error {
 	// commands that do not need auth; treat it as empty.
 	creds, _ := loadCredentials()
 	if g.Server == "" {
-		g.Server = os.Getenv("OPENDISCORD_ADMIN_URL")
+		g.Server = os.Getenv("UFOT_ADMIN_URL")
 	}
 	if g.Server == "" {
 		g.Server = creds.Server
 	}
 	if g.Server == "" {
 		// Built-in default matches config/chatd.toml admin_listen; override with
-		// --server or OPENDISCORD_ADMIN_URL.
+		// --server or UFOT_ADMIN_URL.
 		g.Server = "http://127.0.0.1:7780"
 	}
 	if g.Token == "" {
-		g.Token = os.Getenv("OPENDISCORD_ADMIN_TOKEN")
+		g.Token = os.Getenv("UFOT_ADMIN_TOKEN")
 	}
 	if g.Token == "" {
 		g.Token = creds.Token
 	}
 	if g.CSRF == "" {
-		g.CSRF = os.Getenv("OPENDISCORD_ADMIN_CSRF")
+		g.CSRF = os.Getenv("UFOT_ADMIN_CSRF")
 	}
 	if g.CSRF == "" {
 		g.CSRF = creds.CSRF
@@ -189,7 +189,7 @@ func resolveGlobals(g *globals) error {
 }
 
 func printUsage(w io.Writer) {
-	fmt.Fprint(w, `adminctl — OpenDiscord management API client
+	fmt.Fprint(w, `adminctl — UFOT management API client
 
 usage: adminctl [global flags] <command> [args]
 
@@ -209,9 +209,9 @@ Commands:
   completion bash             Print bash completion
 
 Global flags:
-  --server <url>              Admin API base URL (env OPENDISCORD_ADMIN_URL)
-  --token <token>             Bearer token (env OPENDISCORD_ADMIN_TOKEN)
-  --csrf-token <token>        CSRF token (env OPENDISCORD_ADMIN_CSRF)
+  --server <url>              Admin API base URL (env UFOT_ADMIN_URL)
+  --token <token>             Bearer token (env UFOT_ADMIN_TOKEN)
+  --csrf-token <token>        CSRF token (env UFOT_ADMIN_CSRF)
   --output json|table         Output format (default table)
   --idempotency-key <key>     Explicit key for a write operation
   --no-save                   login only: do not persist credentials

@@ -9,7 +9,7 @@
     <meta name="color-scheme" content="light dark" />
     <meta name="theme-color" content="#F9FAFB" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#17181C" media="(prefers-color-scheme: dark)" />
-    <title>OpenDiscord</title>
+    <title>UFOT</title>
     <!--
       §1.2 防闪白：内联阻塞脚本，必须在任何样式表/模块脚本之前执行。
       1) 读 localStorage 主题；无手动选择时跟随系统；
@@ -20,14 +20,14 @@
       (function () {
         try {
           var root = document.documentElement;
-          var pref = localStorage.getItem('opendiscord.theme');
+          var pref = localStorage.getItem('ufot.theme');
           var dark =
             pref === 'dark' ||
             (pref !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
           if (dark) root.classList.add('dark');
           root.setAttribute('data-theme', dark ? 'dark' : 'light');
           root.style.colorScheme = dark ? 'dark' : 'light';
-          var scale = localStorage.getItem('opendiscord.fontScale');
+          var scale = localStorage.getItem('ufot.fontScale');
           if (scale === 'large') root.style.fontSize = '18px';
           else if (scale === 'xlarge') root.style.fontSize = '20px';
         } catch (e) {
@@ -40,6 +40,6 @@
   </head>
   <body>
     <div id="root"></div>
-    <noscript>OpenDiscord 需要启用 JavaScript。</noscript>
+    <noscript>UFOT 需要启用 JavaScript。</noscript>
   </body>
 </html>

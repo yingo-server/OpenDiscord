@@ -6,7 +6,7 @@ import (
 	"context"
 	"io"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/proto"
+	"github.com/yingo-server/UFOT/server/internal/proto"
 )
 
 // FrameCh 全流水线级间唯一流通货币。

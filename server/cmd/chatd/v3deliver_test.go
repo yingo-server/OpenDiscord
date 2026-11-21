@@ -9,11 +9,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/bus/mailbox"
-	"github.com/yingo-server/OpenDiscord/server/internal/data/store"
-	"github.com/yingo-server/OpenDiscord/server/internal/proto/gen/chatpb"
-	"github.com/yingo-server/OpenDiscord/server/internal/proto/kinds"
-	"github.com/yingo-server/OpenDiscord/server/internal/user/net/frame"
+	"github.com/yingo-server/UFOT/server/internal/bus/mailbox"
+	"github.com/yingo-server/UFOT/server/internal/data/store"
+	"github.com/yingo-server/UFOT/server/internal/proto/gen/chatpb"
+	"github.com/yingo-server/UFOT/server/internal/proto/kinds"
+	"github.com/yingo-server/UFOT/server/internal/user/net/frame"
 )
 
 // v3GreyOn 热改 flag 到全量灰度（测试进程内快照，SIGHUP 语义同源）。

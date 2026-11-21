@@ -223,16 +223,16 @@ export function Dashboard() {
     });
 
     const conn = firstMetric(families, [
-      'opendiscord_ws_connections_active',
+      'ufot_ws_connections_active',
       'ws_connections_active',
       'gateway_connections_active',
-      'opendiscord_connections_active',
+      'ufot_connections_active',
     ]);
     if (conn) {
       connBuf.current.push(Date.now(), conn.value);
       setSamplesVersion((v) => v + 1);
     }
-    const bridge = sumMetric(families, 'opendiscord_admin_bridge_requests_total');
+    const bridge = sumMetric(families, 'ufot_admin_bridge_requests_total');
     if (bridge !== null) {
       bridgeBuf.current.push(Date.now(), bridge);
       setSamplesVersion((v) => v + 1);
@@ -294,22 +294,22 @@ export function Dashboard() {
 
   const f = snap.families;
   const connections = firstMetric(f, [
-    'opendiscord_ws_connections_active',
+    'ufot_ws_connections_active',
     'ws_connections_active',
     'gateway_connections_active',
-    'opendiscord_connections_active',
+    'ufot_connections_active',
   ]);
-  const totalUsers = sumMetric(f, 'opendiscord_users_total');
-  const newUsersToday = sumMetric(f, 'opendiscord_users_created_today_total');
-  const messagesToday = sumMetric(f, 'opendiscord_messages_today_total');
-  const auditFail = firstMetric(f, ['opendiscord_admin_audit_append_failures_total']);
+  const totalUsers = sumMetric(f, 'ufot_users_total');
+  const newUsersToday = sumMetric(f, 'ufot_users_created_today_total');
+  const messagesToday = sumMetric(f, 'ufot_messages_today_total');
+  const auditFail = firstMetric(f, ['ufot_admin_audit_append_failures_total']);
   const goroutines = firstMetric(f, ['go_goroutines'], 'max');
   const rss = firstMetric(f, ['process_resident_memory_bytes'], 'max');
-  const uptime = firstMetric(f, ['opendiscord_admin_uptime_seconds'], 'max');
-  const bridgeFail = sumMetric(f, 'opendiscord_admin_bridge_failures_total');
-  const loginFail = sumMetric(f, 'opendiscord_admin_login_failures_total');
-  const circuitOpen = firstMetric(f, ['opendiscord_admin_bridge_circuit_open'], 'max');
-  const buildInfo = f.find((x) => x.name === 'opendiscord_admin_build_info');
+  const uptime = firstMetric(f, ['ufot_admin_uptime_seconds'], 'max');
+  const bridgeFail = sumMetric(f, 'ufot_admin_bridge_failures_total');
+  const loginFail = sumMetric(f, 'ufot_admin_login_failures_total');
+  const circuitOpen = firstMetric(f, ['ufot_admin_bridge_circuit_open'], 'max');
+  const buildInfo = f.find((x) => x.name === 'ufot_admin_build_info');
 
   const connTrend = trendOf(connections?.value ?? null, connBuf.current.points.length >= 2 ? connBuf.current.points[connBuf.current.points.length - 2]!.value : null);
   const bridgeRate = bridgeBuf.current.ratePerSecond();
@@ -391,7 +391,7 @@ export function Dashboard() {
           <IconAlert size={16} className="mt-0.5 shrink-0" />
           <div>
             <strong className="font-semibold">{t('dashboard.auditAppendFail.title')}</strong>
-            <p>opendiscord_admin_audit_append_failures_total = {formatNumber(auditFail!.value)}。主操作已成功但审计未落库，需立即排查。</p>
+            <p>ufot_admin_audit_append_failures_total = {formatNumber(auditFail!.value)}。主操作已成功但审计未落库，需立即排查。</p>
           </div>
         </div>
       )}
@@ -413,8 +413,8 @@ export function Dashboard() {
           value={connections ? formatNumber(connections.value) : '—'}
           unit={t('common.itemsUnit')}
           tone="default"
-          hint={connections ? `${connections.name} · ${TREND_ARROW[connTrend]}` : 'opendiscord_ws_connections_active'}
-          missing={connections ? undefined : 'opendiscord_ws_connections_active（chatd 未暴露）'}
+          hint={connections ? `${connections.name} · ${TREND_ARROW[connTrend]}` : 'ufot_ws_connections_active'}
+          missing={connections ? undefined : 'ufot_ws_connections_active（chatd 未暴露）'}
           footer={
             connBuf.current.points.length >= 2 ? (
               <div className="mt-2">
@@ -428,29 +428,29 @@ export function Dashboard() {
           label={t('dashboard.totalUsers')}
           raw={totalUsers}
           value="—"
-          hint={totalUsers !== null ? 'opendiscord_users_total' : undefined}
-          missing={totalUsers === null ? 'opendiscord_users_total（未接入 /users 全量计数）' : undefined}
+          hint={totalUsers !== null ? 'ufot_users_total' : undefined}
+          missing={totalUsers === null ? 'ufot_users_total（未接入 /users 全量计数）' : undefined}
         />
         <StatCard
           index={2}
           label={t('dashboard.newUsersToday')}
           raw={newUsersToday}
           value="—"
-          hint={newUsersToday !== null ? 'opendiscord_users_created_today_total' : undefined}
-          missing={newUsersToday === null ? 'opendiscord_users_created_today_total' : undefined}
+          hint={newUsersToday !== null ? 'ufot_users_created_today_total' : undefined}
+          missing={newUsersToday === null ? 'ufot_users_created_today_total' : undefined}
         />
         <StatCard
           index={3}
           label={t('dashboard.messagesToday')}
           raw={messagesToday}
           value="—"
-          hint={messagesToday !== null ? `opendiscord_messages_today_total · ${formatRate(bridgeRate ?? undefined)}` : undefined}
-          missing={messagesToday === null ? 'opendiscord_messages_today_total' : undefined}
+          hint={messagesToday !== null ? `ufot_messages_today_total · ${formatRate(bridgeRate ?? undefined)}` : undefined}
+          missing={messagesToday === null ? 'ufot_messages_today_total' : undefined}
           footer={
             bridgeBuf.current.points.length >= 2 ? (
               <div className="mt-2">
                 <div className="text-caption text-text-tertiary">
-                  {t('dashboard.injectionRate')} <span className="nums">{formatRate(bridgeRate)}</span>（opendiscord_admin_bridge_requests_total）
+                  {t('dashboard.injectionRate')} <span className="nums">{formatRate(bridgeRate)}</span>（ufot_admin_bridge_requests_total）
                 </div>
                 <Sparkline points={bridgeBuf.current.points} stroke="rgb(var(--oc-success-500))" ariaLabel={t('dashboard.injectionTrend')} />
               </div>
@@ -496,7 +496,7 @@ export function Dashboard() {
           label={t('dashboard.loginFailures')}
           raw={loginFail}
           value={loginFail !== null ? formatNumber(loginFail) : '—'}
-          hint="opendiscord_admin_login_failures_total"
+          hint="ufot_admin_login_failures_total"
           tone={loginFail !== null && loginFail > 100 ? 'warning' : 'default'}
         />
       </div>

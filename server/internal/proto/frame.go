@@ -7,7 +7,7 @@ package proto
 import (
 	"time"
 
-	chatpb "github.com/yingo-server/OpenDiscord/server/internal/proto/gen/chatpb"
+	chatpb "github.com/yingo-server/UFOT/server/internal/proto/gen/chatpb"
 )
 
 // Frame 是全流水线唯一流通货币（定义在本包，FrameRW 产出，Egress 消费）。

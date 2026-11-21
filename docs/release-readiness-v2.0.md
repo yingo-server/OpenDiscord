@@ -9,7 +9,7 @@
 |---|---|---|
 | 版本 | v2.0.0（正式版，非 prerelease，非 draft） | GitHub Release API |
 | Tag | `v2.0.0`，创建于 2026-11-21 07:28:49Z，target: main | GitHub Release API |
-| Release URL | https://github.com/yingo-server/OpenDiscord/releases/tag/v2.0.0 | GitHub Release API |
+| Release URL | https://github.com/yingo-server/UFOT/releases/tag/v2.0.0 | GitHub Release API |
 | CI | HEAD `ad5c7712` 的 CI run conclusion = **success**（含 `-race` 全绿） | GitHub Actions API |
 | Stress run | HEAD 前一提交 `cc200b53` 的 Stress run = **success** | GitHub Actions API |
 
@@ -24,14 +24,14 @@
 
 ## 3. 发布资产（9 产物，与 Release API 一致）
 
-1. opendiscord-v2.0.0-linux-386.tar.gz
-2. opendiscord-v2.0.0-linux-amd64.tar.gz
-3. opendiscord-v2.0.0-linux-arm.tar.gz
-4. opendiscord-v2.0.0-linux-arm64.tar.gz
-5. opendiscord-v2.0.0-linux-riscv64.tar.gz
-6. opendiscord-v2.0.0-windows-386.zip
-7. opendiscord-v2.0.0-windows-amd64.zip
-8. opendiscord-v2.0.0-src.tar.gz
+1. ufot-v2.0.0-linux-386.tar.gz
+2. ufot-v2.0.0-linux-amd64.tar.gz
+3. ufot-v2.0.0-linux-arm.tar.gz
+4. ufot-v2.0.0-linux-arm64.tar.gz
+5. ufot-v2.0.0-linux-riscv64.tar.gz
+6. ufot-v2.0.0-windows-386.zip
+7. ufot-v2.0.0-windows-amd64.zip
+8. ufot-v2.0.0-src.tar.gz
 9. SHA256SUMS
 
 ## 4. 已知边界（诚实陈述，不夸大）

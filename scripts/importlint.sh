@@ -17,16 +17,16 @@
 #      transport + proto. cmd/ is the assembly layer and is exempt.
 #   C: "os/signal" may be imported only by internal/pkg/signalset and
 #      internal/bridge/supervisor.
-#   D: cmd/ binaries (other than chatd/adminctl/opendiscordctl) may import only
+#   D: cmd/ binaries (other than chatd/adminctl/ufotctl) may import only
 #      app-layer assembly entry points, not component implementation
 #      packages. cmd/chatd IS the assembly layer (exempt); adminctl and
-#      opendiscordctl are CLIs that talk HTTP/files only (exempt per task).
+#      ufotctl are CLIs that talk HTTP/files only (exempt per task).
 #
 # Tests (_test.go) obey rules A/B/C/D the same as production files.
 
 set -u
 cd "$(dirname "$0")/.."
-mod=$(go list -m 2>/dev/null || echo github.com/yingo-server/OpenDiscord)
+mod=$(go list -m 2>/dev/null || echo github.com/yingo-server/UFOT)
 server=$(pwd)/server
 violations=0
 
@@ -100,7 +100,7 @@ for f in $go_files; do
 
         # ---- Rule D ----
         case "$pkgdir" in
-            cmd/chatd|cmd/adminctl|cmd/opendiscordctl) ;; # assembly / CLIs: exempt
+            cmd/chatd|cmd/adminctl|cmd/ufotctl) ;; # assembly / CLIs: exempt
             cmd/*)
                 case "$tail" in
                     bridge/framerw|bridge/verifier|bridge/router|bridge/egress|\

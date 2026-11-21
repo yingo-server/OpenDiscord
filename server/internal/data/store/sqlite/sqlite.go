@@ -19,9 +19,9 @@ import (
 
 	"github.com/mattn/go-sqlite3"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/data/store"
-	"github.com/yingo-server/OpenDiscord/server/internal/data/store/migrate"
-	"github.com/yingo-server/OpenDiscord/server/store/migrations"
+	"github.com/yingo-server/UFOT/server/internal/data/store"
+	"github.com/yingo-server/UFOT/server/internal/data/store/migrate"
+	"github.com/yingo-server/UFOT/server/store/migrations"
 )
 
 // DB is the hot store: one *sql.DB over a SQLite file, embedding the

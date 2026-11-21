@@ -15,8 +15,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/pkg/featureflags"
-	"github.com/yingo-server/OpenDiscord/server/internal/proto/kinds"
+	"github.com/yingo-server/UFOT/server/internal/pkg/featureflags"
+	"github.com/yingo-server/UFOT/server/internal/proto/kinds"
 )
 
 // TestPullCapUniversalSplit 普遍拉取开启后的能力分流。

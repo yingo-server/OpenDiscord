@@ -20,9 +20,9 @@ set -euo pipefail
 SCRIPT_DIR=$(cd -- "$(dirname -- "$0")" && pwd)
 REPO_DIR=$(cd -- "$SCRIPT_DIR/.." && pwd)
 
-PREFIX="${OPENDISCORD_PREFIX:-/opt/opendiscord}"
-ETC="${OPENDISCORD_ETC:-/etc/opendiscord}"
-STATE="${OPENDISCORD_STATE:-/var/lib/opendiscord}"
+PREFIX="${UFOT_PREFIX:-/opt/ufot}"
+ETC="${UFOT_ETC:-/etc/ufot}"
+STATE="${UFOT_STATE:-/var/lib/ufot}"
 SCRIPT_DIR=$(cd -- "$(dirname -- "$0")" && pwd)
 MODE="embedded"
 START=1
@@ -40,8 +40,8 @@ t() {
   local zh=0
   [ "${LANG_SEL:-}" = "zh" ] && zh=1
   case "$key:$zh" in
-    title:1)        printf 'OpenDiscord 交互式安装向导' ;;
-    title:0)        printf 'OpenDiscord interactive installer' ;;
+    title:1)        printf 'UFOT 交互式安装向导' ;;
+    title:0)        printf 'UFOT interactive installer' ;;
     lang_q:1)       printf '请选择语言 / Language: [1] 简体中文  [2] English' ;;
     lang_q:0)       printf 'Language / 请选择语言: [1] 简体中文  [2] English' ;;
     domain_q:1)     printf '公网来源/域名（回车 = http://localhost:8080；生产必须 https）' ;;

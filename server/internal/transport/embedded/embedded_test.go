@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/proto"
+	"github.com/yingo-server/UFOT/server/internal/proto"
 )
 
 // mockLayer 模拟一个层。

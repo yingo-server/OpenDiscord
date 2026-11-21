@@ -21,10 +21,10 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/data/pipe/wire"
-	"github.com/yingo-server/OpenDiscord/server/internal/proto/gen/chatpb"
-	"github.com/yingo-server/OpenDiscord/server/internal/proto/kinds"
-	"github.com/yingo-server/OpenDiscord/server/internal/user/net/frame"
+	"github.com/yingo-server/UFOT/server/internal/data/pipe/wire"
+	"github.com/yingo-server/UFOT/server/internal/proto/gen/chatpb"
+	"github.com/yingo-server/UFOT/server/internal/proto/kinds"
+	"github.com/yingo-server/UFOT/server/internal/user/net/frame"
 )
 
 // writeJSONEnv sends one envelope with a JSON payload (the browser wire form).

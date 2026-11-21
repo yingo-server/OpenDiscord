@@ -6,10 +6,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/admin"
-	"github.com/yingo-server/OpenDiscord/server/internal/admin/bridgeproxy"
-	"github.com/yingo-server/OpenDiscord/server/internal/pkg/log"
-	"github.com/yingo-server/OpenDiscord/server/internal/proto/kinds"
+	"github.com/yingo-server/UFOT/server/internal/admin"
+	"github.com/yingo-server/UFOT/server/internal/admin/bridgeproxy"
+	"github.com/yingo-server/UFOT/server/internal/pkg/log"
+	"github.com/yingo-server/UFOT/server/internal/proto/kinds"
 )
 
 // banRecorder decorates the dispatcher so that every ACCEPTED 960 SECURITY

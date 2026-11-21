@@ -74,12 +74,12 @@ func cmdBackup(ctx context.Context, e *environment, g globals, args []string) er
 	}
 	dir := *to
 	if dir == "" {
-		dir = e.getenv("OPENDISCORD_BACKUP_DIR")
+		dir = e.getenv("UFOT_BACKUP_DIR")
 	}
 	if dir == "" {
-		dir = "/var/lib/opendiscord/backup"
+		dir = "/var/lib/ufot/backup"
 	}
-	dst := filepath.Join(dir, "opendiscord-"+e.now().UTC().Format("20060102T150405Z")+".db")
+	dst := filepath.Join(dir, "ufot-"+e.now().UTC().Format("20060102T150405Z")+".db")
 	rep.DB, rep.Target, rep.SizeBytes = path, dst, fi.Size()
 	rep.Encryption = "建议加密后异地存放：age -r <recipient> -o " + dst + ".age " + dst +
 		" | openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -in " + dst + " -out " + dst + ".enc"
@@ -120,10 +120,10 @@ func findBackupScript(e *environment, explicit string) (string, error) {
 		return explicit, nil
 	}
 	for _, c := range []string{
-		e.getenv("OPENDISCORD_BACKUP_SCRIPT"),
+		e.getenv("UFOT_BACKUP_SCRIPT"),
 		"deploy/backup.sh",
-		"/usr/local/lib/opendiscord/backup.sh",
-		"/usr/share/opendiscord/backup.sh",
+		"/usr/local/lib/ufot/backup.sh",
+		"/usr/share/ufot/backup.sh",
 	} {
 		if c == "" {
 			continue

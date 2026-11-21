@@ -20,9 +20,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/data/pipe/wire"
-	"github.com/yingo-server/OpenDiscord/server/internal/pkg/featureflags"
-	"github.com/yingo-server/OpenDiscord/server/internal/proto/kinds"
+	"github.com/yingo-server/UFOT/server/internal/data/pipe/wire"
+	"github.com/yingo-server/UFOT/server/internal/pkg/featureflags"
+	"github.com/yingo-server/UFOT/server/internal/proto/kinds"
 )
 
 // upRig is a pullRig with the CORE-2 flag store preinstalled.

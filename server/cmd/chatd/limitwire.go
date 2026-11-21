@@ -35,9 +35,9 @@ package main
 // user-level budget, without ever weakening the connection-level baseline.
 
 import (
-	"github.com/yingo-server/OpenDiscord/server/internal/data/policy"
-	"github.com/yingo-server/OpenDiscord/server/internal/proto/kinds"
-	"github.com/yingo-server/OpenDiscord/server/internal/user/net/limit"
+	"github.com/yingo-server/UFOT/server/internal/data/policy"
+	"github.com/yingo-server/UFOT/server/internal/proto/kinds"
+	"github.com/yingo-server/UFOT/server/internal/user/net/limit"
 )
 
 // limitFromPolicy returns cur with the MSG_SEND rule converged onto the

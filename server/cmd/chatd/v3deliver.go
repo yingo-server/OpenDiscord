@@ -29,7 +29,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/bus/delivery"
+	"github.com/yingo-server/UFOT/server/internal/bus/delivery"
 )
 
 // deliverPollInterval 是 PAUSED / 追平态的轮询间隔。机制项（非策略）：

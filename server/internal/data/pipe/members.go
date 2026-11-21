@@ -16,8 +16,8 @@ import (
 	"context"
 	"sync"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/data/cache"
-	"github.com/yingo-server/OpenDiscord/server/internal/data/store"
+	"github.com/yingo-server/UFOT/server/internal/data/cache"
+	"github.com/yingo-server/UFOT/server/internal/data/store"
 )
 
 // memberListCap is the entry budget of the member-list cache. 512

@@ -5,10 +5,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/pipedef"
-	"github.com/yingo-server/OpenDiscord/server/internal/proto"
-	chatpb "github.com/yingo-server/OpenDiscord/server/internal/proto/gen/chatpb"
-	"github.com/yingo-server/OpenDiscord/server/internal/proto/kinds"
+	"github.com/yingo-server/UFOT/server/internal/pipedef"
+	"github.com/yingo-server/UFOT/server/internal/proto"
+	chatpb "github.com/yingo-server/UFOT/server/internal/proto/gen/chatpb"
+	"github.com/yingo-server/UFOT/server/internal/proto/kinds"
 )
 
 func target() pipedef.Target { return pipedef.Target{Layer: "data", Topic: "data.101"} }

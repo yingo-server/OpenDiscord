@@ -22,8 +22,8 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/proto/gen/chatpb"
-	"github.com/yingo-server/OpenDiscord/server/internal/proto/kinds"
+	"github.com/yingo-server/UFOT/server/internal/proto/gen/chatpb"
+	"github.com/yingo-server/UFOT/server/internal/proto/kinds"
 )
 
 // jsonEnvelope is the browser wire shape: snake_case, payload base64.

@@ -36,9 +36,9 @@ import (
 
 	"database/sql"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/data/store"
-	"github.com/yingo-server/OpenDiscord/server/internal/pkg/log"
-	"github.com/yingo-server/OpenDiscord/server/internal/user/core/authn"
+	"github.com/yingo-server/UFOT/server/internal/data/store"
+	"github.com/yingo-server/UFOT/server/internal/pkg/log"
+	"github.com/yingo-server/UFOT/server/internal/user/core/authn"
 )
 
 // mtype numbers mirror chatpb.Media semantics: 1 image, 2 audio, 3 video,

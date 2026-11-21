@@ -22,7 +22,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/bus/mailbox"
+	"github.com/yingo-server/UFOT/server/internal/bus/mailbox"
 )
 
 // 默认值对应 §6 flag 表：delivery_credit=512、slow_consumer_close_s=60。

@@ -1,4 +1,4 @@
-# OpenDiscord 路线图
+# UFOT 路线图
 
 > 状态以代码与 `docs/lts-checklist.md` / `CHANGELOG.md` 为准。本文件只列方向与判据，不承诺日期。
 
@@ -22,13 +22,13 @@
   500 人群下行帧需求 ~1M/s → ~2k/s；202 快照 `members_omitted` 防 64KB 帧上限
 - 两轮性能负优化（假合批 / LAGGING 降级 / 无锁扇出）压测证伪并全部回滚，
   教训制度化（`docs/perf-postmortem-v1.2-draft.md`）
-- 项目更名 OpenDiscord；v3 总线 P0~P3d-1 代码落盘（默认关闭零行为影响）
+- 项目更名 UFOT；v3 总线 P0~P3d-1 代码落盘（默认关闭零行为影响）
 
 ### v1.4（LTS，进行中）— 普遍拉取 + 自适应 + v3 总线
 按 `docs/lts-1.4-plan.md` §5 的 12 条决策执行，全部 flag-off 待 S-1~S-7 验收：
 - 机制在位：普遍拉取分流、AIMD 自适应控制器、v3 hub/plane/双写旁路、
   106/109/@/453 消息域、PWA+Web Push 前端、供应商 webhook 适配器、
-  `chatd-pg` 变体、`opendiscordctl upgrade`、TURN 自检、会话列表虚拟滚动
+  `chatd-pg` 变体、`ufotctl upgrade`、TURN 自检、会话列表虚拟滚动
 - 未完成（发布前必须闭环）：CORE-3 接线四项（钩子注册 / 灰度关旧直投 /
   kind 15 上行 / 背压上报）、自适应控制循环接线、Web Push 服务端、
   全量灰度与默认值调整（群上限 100 → 1000 待压测达标）
@@ -45,7 +45,7 @@
 **怎么做**：把 pgx 驱动注册进装配（`server/cmd/chatd`），冷库不可用时按
 `require_audit_store` 显式拒启（已有开关，只是驱动没接）。
 
-**判据**：配好 `cold_dsn` 后 `opendiscordctl doctor` 的 `audit_store` 为 OK；
+**判据**：配好 `cold_dsn` 后 `ufotctl doctor` 的 `audit_store` 为 OK；
 撤回/成员变更/通话的审计事件能在冷库 `sys.audit_log` 里按 since_id 翻到；
 `GET /api/v1/audit` 返回真实数据而非降级日志。
 

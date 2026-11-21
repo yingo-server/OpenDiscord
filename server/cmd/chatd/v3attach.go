@@ -22,9 +22,9 @@ package main
 import (
 	"context"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/user/app"
-	"github.com/yingo-server/OpenDiscord/server/internal/user/core/session"
-	"github.com/yingo-server/OpenDiscord/server/internal/user/net/ws"
+	"github.com/yingo-server/UFOT/server/internal/user/app"
+	"github.com/yingo-server/UFOT/server/internal/user/core/session"
+	"github.com/yingo-server/UFOT/server/internal/user/net/ws"
 )
 
 // AttachV3Deliver 把 v3 投递循环真正接进 assembly（P3d-2a 占位函数的真实现）：

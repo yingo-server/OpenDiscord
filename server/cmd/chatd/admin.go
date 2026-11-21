@@ -32,7 +32,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/pkg/log"
+	"github.com/yingo-server/UFOT/server/internal/pkg/log"
 )
 
 type adminPlane struct {

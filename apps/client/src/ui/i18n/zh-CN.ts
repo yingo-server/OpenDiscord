@@ -4,7 +4,7 @@
  * 术语以 docs/terminology-dictionary.md 为准：会话 / 消息 / 送达 / 已读 / 举报 / 水位线。
  */
 export const zhCN = {
-  'app.name': 'OpenDiscord',
+  'app.name': 'UFOT',
   'app.tagline': '简单、可靠、离线可用',
 
   'common.cancel': '取消此操作',
@@ -64,7 +64,7 @@ export const zhCN = {
   'auth.guestHint': '游客可浏览与发送文字消息，注册后可发送媒体、保留数据。',
   'auth.guestEnter': '以游客身份进入',
   'auth.nicknamePlaceholder': '昵称（可选）',
-  'auth.mockHint': '演示模式：手机验证码 123456，密码 opendiscord',
+  'auth.mockHint': '演示模式：手机验证码 123456，密码 ufot',
   'auth.terms': '登录即表示同意《服务条款》与《隐私政策》',
   'auth.error.INVALID_PHONE': '手机号格式不正确：请输入 11 位数字手机号，再点“获取验证码”。',
   'auth.error.INVALID_EMAIL': '邮箱格式不正确：请输入包含 @ 的完整邮箱地址，再点“发送登录链接”。',
@@ -216,7 +216,7 @@ export const zhCN = {
   'settings.cleared': '本机缓存已清除',
   'settings.version': '版本',
   'settings.about': '关于',
-  'settings.aboutText': 'OpenDiscord 用户端 · 离线优先 · IndexedDB 单一事实源',
+  'settings.aboutText': 'UFOT 用户端 · 离线优先 · IndexedDB 单一事实源',
 
   'banned.title': '账号已被封禁',
   'banned.reason': '封禁原因：{reason}',
@@ -274,7 +274,7 @@ export const zhCN = {
 
   // PWA / Web Push（FE-2）
   'push.subscribeFailed': '推送订阅登记失败，服务端未开放该功能；已跳过，不影响聊天。',
-  'push.notification.title': 'OpenDiscord',
+  'push.notification.title': 'UFOT',
 } as const;
 
 export type I18nKey = keyof typeof zhCN;

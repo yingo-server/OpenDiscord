@@ -1,4 +1,4 @@
-# OpenDiscord v1.4.0 发布说明（LTS · 知情发布）
+# UFOT v1.4.0 发布说明（LTS · 知情发布）
 
 发布日期：2026-11-18
 Tag：`v1.4.0`（commit `095ef48`）

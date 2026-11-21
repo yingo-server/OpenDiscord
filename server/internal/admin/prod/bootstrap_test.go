@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/admin"
-	"github.com/yingo-server/OpenDiscord/server/internal/admin/identity"
-	adminstore "github.com/yingo-server/OpenDiscord/server/internal/admin/store"
-	"github.com/yingo-server/OpenDiscord/server/internal/user/core/authn"
+	"github.com/yingo-server/UFOT/server/internal/admin"
+	"github.com/yingo-server/UFOT/server/internal/admin/identity"
+	adminstore "github.com/yingo-server/UFOT/server/internal/admin/store"
+	"github.com/yingo-server/UFOT/server/internal/user/core/authn"
 )
 
 func adminDB(t *testing.T) *adminstore.DB {
@@ -111,7 +111,7 @@ func TestBootstrapCreatesSuperAdmin(t *testing.T) {
 	if err != nil || len(raw) != 20 {
 		t.Fatalf("totp secret decode: len=%d err=%v", len(raw), err)
 	}
-	if uri := otpauthURI("root", acc.TOTPSecret); !strings.HasPrefix(uri, "otpauth://totp/OpenDiscord:root?secret=") {
+	if uri := otpauthURI("root", acc.TOTPSecret); !strings.HasPrefix(uri, "otpauth://totp/UFOT:root?secret=") {
 		t.Fatalf("otpauth uri = %q", uri)
 	}
 

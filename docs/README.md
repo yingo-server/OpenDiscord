@@ -1,6 +1,6 @@
-# OpenDiscord 文档导航（v2.0.0）
+# UFOT 文档导航（v2.0.0）
 
-OpenDiscord 采用分层 socket 架构：总线层为骨架，桥接层为枢纽，用户层/管理层/数据层经桥接通信。除管理层到桥接使用 HTTP API 外，所有层间通信均为内部 socket 长连接；前端到用户层使用 WebSocket。
+UFOT 采用分层 socket 架构：总线层为骨架，桥接层为枢纽，用户层/管理层/数据层经桥接通信。除管理层到桥接使用 HTTP API 外，所有层间通信均为内部 socket 长连接；前端到用户层使用 WebSocket。
 
 本索引按 Diátaxis 四象限归类（**教程 / How-to / 参考 / 解释**），每篇标注读者对象：**新用户 / 部署者 / 开发者**。链接集合与 `docs/` 实际文件一一对应。
 
@@ -28,7 +28,7 @@ OpenDiscord 采用分层 socket 架构：总线层为骨架，桥接层为枢纽
 | 文档 | 一句话 | 读者 |
 |---|---|---|
 | [API 参考](api-reference.md) | 全部 HTTP 端点（方法/路径/鉴权/入参/出参/错误码），未实现端点如实标注 | 开发者 |
-| [CLI 参考](cli-reference.md) | `adminctl` / `opendiscordctl` 完整子命令、flag、退出码与已知限制 | 部署者 |
+| [CLI 参考](cli-reference.md) | `adminctl` / `ufotctl` 完整子命令、flag、退出码与已知限制 | 部署者 |
 | [WS 协议](ws-protocol.md) | WebSocket 帧格式、kind 号段总表、payload 结构、限流与错误语义 | 开发者 |
 | [已知问题](known-issues.md) | 逐条列明已修/保持/延后的已知缺陷、容量缺口与规划中功能 | 全部 |
 | [容量契约](capacity-contract.md) | `policy.capacity` 配置、准入限流语义、热改与超限行为 | 部署者 |

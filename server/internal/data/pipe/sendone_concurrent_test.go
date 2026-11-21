@@ -4,7 +4,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/pkg/log"
+	"github.com/yingo-server/UFOT/server/internal/pkg/log"
 )
 
 // 扇出路径去全局锁（perf-spec 补充模块 B）后的并发安全压测：

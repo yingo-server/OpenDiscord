@@ -1,6 +1,6 @@
 # 架构总纲
 
-OpenDiscord 由四个服务层级与一个桥接枢纽组成。所有层间通信走内部 socket（UDS/TCP），唯独管理层到桥接使用 HTTP API；前端到用户层使用 WebSocket。
+UFOT 由四个服务层级与一个桥接枢纽组成。所有层间通信走内部 socket（UDS/TCP），唯独管理层到桥接使用 HTTP API；前端到用户层使用 WebSocket。
 
 ## 总体架构
 
@@ -90,13 +90,13 @@ adminctl users ban 123 / 后台按钮 ─HTTPS─► admin: authn→rbac→csrf�
 ## 总目录结构（Monorepo）
 
 ```
-/OpenDiscord
+/UFOT
 ├─ proto/                          # 唯一契约源(所有kind定义+Envelope)
 ├─ server/
 │  ├─ cmd/
 │  │  ├─ chatd/          # embedded 单进程装配(只装配、零业务规则)
 │  │  ├─ chatd-bridge/ chatd-user/ chatd-data/ chatd-admin/   # split 多进程 —— 见下方 ⚠️(v1.0 未实现)
-│  │  └─ opendiscordctl/ adminctl/          # 两件CLI(opendiscordctl=系统级运维, adminctl=管理面API; 均API客户端,非旁路)
+│  │  └─ ufotctl/ adminctl/          # 两件CLI(ufotctl=系统级运维, adminctl=管理面API; 均API客户端,非旁路)
 │  ├─ internal/
 │  │  ├─ proto/ pipedef/            # Frame契约 + Stage接口
 │  │  ├─ transport/remote|embedded/ # 层间socket双形态(同代码两部署)
@@ -114,7 +114,7 @@ adminctl users ban 123 / 后台按钮 ─HTTPS─► admin: authn→rbac→csrf�
 └─ deploy/systemd/ Caddyfile release.sh backup.sh
 ```
 
-> ⚠️ 未实现（v1.0）：`chatd` 仅 embedded 模式——`server/cmd` 实际只有 `chatd`、`opendiscordctl`、`adminctl` 三个二进制，`server/cmd/chatd/main.go` 对非 embedded 的 `[mode]` 直接报错（this build is embedded-only），不存在 `chatd-bridge/chatd-user/chatd-data/chatd-admin`。`deploy/systemd/opendiscord-{bridge,user,data,admin}.service` 的 `ExecStart` 指向不存在的 `bin/chatd-*`，split 的 4 个 systemd unit 为 1.1 预留，**启用会启动失败** — 计划 v1.1（P1-5/P1-6）。
+> ⚠️ 未实现（v1.0）：`chatd` 仅 embedded 模式——`server/cmd` 实际只有 `chatd`、`ufotctl`、`adminctl` 三个二进制，`server/cmd/chatd/main.go` 对非 embedded 的 `[mode]` 直接报错（this build is embedded-only），不存在 `chatd-bridge/chatd-user/chatd-data/chatd-admin`。`deploy/systemd/ufot-{bridge,user,data,admin}.service` 的 `ExecStart` 指向不存在的 `bin/chatd-*`，split 的 4 个 systemd unit 为 1.1 预留，**启用会启动失败** — 计划 v1.1（P1-5/P1-6）。
 
 ## 贯穿全系统的设计律（CI 强制）
 
@@ -138,5 +138,5 @@ adminctl users ban 123 / 后台按钮 ─HTTPS─► admin: authn→rbac→csrf�
 2. data 层写管道+读路由（SQLite）+ 用户身份/登录链路
 3. usergw + 前端 sync 引擎（消息闭环）
 4. 媒体直传 + admin 层 + 审计
-5. 归档/备份 job + 冷库 + CLI 两件套（`opendiscordctl` + `adminctl`）
-6. 压测（`opendiscordctl bench`，v1.0 未实现 P3-4）→ 2C2G 调优（GOMEMLIMIT、journald 限速、SQLite cache）
+5. 归档/备份 job + 冷库 + CLI 两件套（`ufotctl` + `adminctl`）
+6. 压测（`ufotctl bench`，v1.0 未实现 P3-4）→ 2C2G 调优（GOMEMLIMIT、journald 限速、SQLite cache）

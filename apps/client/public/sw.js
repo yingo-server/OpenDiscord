@@ -1,5 +1,5 @@
 /**
- * OpenDiscord Service Worker（PWA 壳 + Web Push）。
+ * UFOT Service Worker（PWA 壳 + Web Push）。
  *
  * 策略（与 src/net/push/sw-strategy.ts 镜像，二者需人工保持一致）：
  * - /api/ 与 /ws 一律 bypass，绝不缓存；
@@ -110,7 +110,7 @@ self.addEventListener('push', (event) => {
   } catch (e) {
     payload = { body: event.data ? event.data.text() : '' };
   }
-  const title = payload.title || 'OpenDiscord';
+  const title = payload.title || 'UFOT';
   const body = payload.body || '';
   event.waitUntil(
     self.registration.showNotification(title, {

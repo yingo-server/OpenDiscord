@@ -1,12 +1,12 @@
-# OpenDiscord 供应商适配器示例配置（OPS-2，lts-1.4-plan §5 第 2/7 行）
+# UFOT 供应商适配器示例配置（OPS-2，lts-1.4-plan §5 第 2/7 行）
 #
 # 用途：给 authsvc 的短信 / 邮件魔法链接 / 图形验证码三个通道接上「通用 HTTP
 # webhook」实现。机制只有一条：POST JSON 到配置的 URL，超时 3 秒，非 2xx
 # 一律视为失败。阿里云 / 腾讯云等官方 SDK 不内置——请自建一个轻量 relay
 # （函数计算 / Cloudflare Worker / 小型 Go 服务均可），把云厂商鉴权放在
-# relay 侧，OpenDiscord 只见到这一个 webhook。
+# relay 侧，UFOT 只见到这一个 webhook。
 #
-# 部署：复制到 /etc/opendiscord/providers.toml（mode 0640 root:opendiscord），
+# 部署：复制到 /etc/ufot/providers.toml（mode 0640 root:ufot），
 # 并在 chatd 配置中指向它（见 providers_path）。文件缺失或某通道 url 为空
 # 时，该通道保持 fail-closed：不发送、不 panic（短信/邮件验证码照常签发但
 # 不投递；验证码校验按未配置拒绝）。

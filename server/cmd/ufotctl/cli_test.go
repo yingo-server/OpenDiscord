@@ -55,8 +55,8 @@ func newTestEnv(t *testing.T, fs *fakeSystem) (*environment, *bytes.Buffer, *byt
 	e.stdout, e.stderr = out, errb
 	// Isolate the credential lookup: the default env reads the real HOME, so a
 	// developer machine (or a parallel test) with a leftover
-	// ~/.config/opendiscord/adminctl.json silently changes the expected outcome.
-	t.Setenv("OPENDISCORD_ADMIN_CREDENTIALS", filepath.Join(t.TempDir(), "adminctl.json"))
+	// ~/.config/ufot/adminctl.json silently changes the expected outcome.
+	t.Setenv("UFOT_ADMIN_CREDENTIALS", filepath.Join(t.TempDir(), "adminctl.json"))
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	e.runCmd = func(_ context.Context, name string, args ...string) ([]byte, error) {
 		key := name + " " + strings.Join(args, " ")
@@ -213,9 +213,9 @@ func TestStatusSendsUSR1AndReadsJournal(t *testing.T) {
 	hot := makeHotDB(t, 3)
 	fs := &fakeSystem{
 		resp: []cmdResp{
-			{prefix: "systemctl is-active opendiscord", out: "active\n"},
-			{prefix: "systemctl show -p MainPID --value opendiscord", out: "4242\n"},
-			{prefix: "journalctl -u opendiscord ", out: "boot ok\n{\"component\":\"bridge\",\"msg\":\"dump\",\"egress\":{\"q\":0}}\n"},
+			{prefix: "systemctl is-active ufot", out: "active\n"},
+			{prefix: "systemctl show -p MainPID --value ufot", out: "4242\n"},
+			{prefix: "journalctl -u ufot ", out: "boot ok\n{\"component\":\"bridge\",\"msg\":\"dump\",\"egress\":{\"q\":0}}\n"},
 		},
 	}
 	e, out, _ := newTestEnv(t, fs)
@@ -249,7 +249,7 @@ func TestStatusSendsUSR1AndReadsJournal(t *testing.T) {
 func TestStatusSignalNoneAndInactive(t *testing.T) {
 	hot := makeHotDB(t, 0)
 	fs := &fakeSystem{resp: []cmdResp{
-		{prefix: "systemctl is-active opendiscord", out: "inactive\n", err: errors.New("exit status 3")},
+		{prefix: "systemctl is-active ufot", out: "inactive\n", err: errors.New("exit status 3")},
 	}}
 	e, out, _ := newTestEnv(t, fs)
 	if code := run([]string{"--json", "status", "--hot-db", hot, "--signal", "none", "--no-journal"}, e); code != exitOK {
@@ -278,7 +278,7 @@ func TestStatusInvalidSignalIsUsage(t *testing.T) {
 
 func TestBackupBuiltinDryRun(t *testing.T) {
 	hot := makeHotDB(t, 1)
-	fs := &fakeSystem{env: map[string]string{"OPENDISCORD_BACKUP_DIR": "/tmp/backups"}}
+	fs := &fakeSystem{env: map[string]string{"UFOT_BACKUP_DIR": "/tmp/backups"}}
 	e, out, _ := newTestEnv(t, fs)
 	// Neutralise script discovery: run from a temp dir without deploy/backup.sh.
 	chdir(t, t.TempDir())
@@ -294,7 +294,7 @@ func TestBackupBuiltinDryRun(t *testing.T) {
 	if env.Data.Mode != "builtin" || !env.Data.DryRun || env.Data.DB != hot {
 		t.Fatalf("report = %+v", env.Data)
 	}
-	if !strings.HasPrefix(env.Data.Target, "/tmp/backups/opendiscord-") {
+	if !strings.HasPrefix(env.Data.Target, "/tmp/backups/ufot-") {
 		t.Fatalf("target = %q", env.Data.Target)
 	}
 	if !strings.Contains(env.Data.Encryption, "age") {

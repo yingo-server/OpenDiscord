@@ -70,13 +70,13 @@ func run(args []string, e *environment) int {
 	return exitOK
 }
 
-// Usage: opendiscordctl [global options] <command> [args] <required> [optional]
-// Run 'opendiscordctl <command> --help' for command-specific flags.
+// Usage: ufotctl [global options] <command> [args] <required> [optional]
+// Run 'ufotctl <command> --help' for command-specific flags.
 // 机器可读输出：--json 信封 {ok, command, data}（错误仍写 stderr）。
-const usageText = `opendiscordctl — OpenDiscord system-level operations CLI (local systemd/signals/hot SQLite; no new network port)
+const usageText = `ufotctl — UFOT system-level operations CLI (local systemd/signals/hot SQLite; no new network port)
 
 用法:
-  opendiscordctl [全局选项] <命令> [参数]
+  ufotctl [全局选项] <命令> [参数]
 
 命令:
   status    [--unit NAME] [--hot-db PATH] [--signal usr1|usr2|none] [--no-journal]
@@ -102,16 +102,16 @@ const usageText = `opendiscordctl — OpenDiscord system-level operations CLI (l
 
 全局选项:
   --json                    统一 JSON 输出（ok/command/data 信封）
-  --admin-url URL           管理 API 地址（env OPENDISCORD_ADMIN_URL）
-  --token TOKEN             管理令牌（env OPENDISCORD_ADMIN_TOKEN）
-  --csrf-token TOKEN        CSRF 令牌（env OPENDISCORD_ADMIN_CSRF）
+  --admin-url URL           管理 API 地址（env UFOT_ADMIN_URL）
+  --token TOKEN             管理令牌（env UFOT_ADMIN_TOKEN）
+  --csrf-token TOKEN        CSRF 令牌（env UFOT_ADMIN_CSRF）
   --timeout DURATION        总超时（默认 20s）
 
 环境变量:
-  OPENDISCORD_HOT_DB           热库路径（默认 /var/lib/opendiscord/hot.db）
-  OPENDISCORD_COLD_DSN         冷库 DSN（doctor 只做 TCP 连通检查）
-  OPENDISCORD_BACKUP_SCRIPT    自定义备份脚本
-  OPENDISCORD_ADMIN_CREDENTIALS adminctl 凭据文件路径（默认 ~/.config/opendiscord/adminctl.json）
+  UFOT_HOT_DB           热库路径（默认 /var/lib/ufot/hot.db）
+  UFOT_COLD_DSN         冷库 DSN（doctor 只做 TCP 连通检查）
+  UFOT_BACKUP_SCRIPT    自定义备份脚本
+  UFOT_ADMIN_CREDENTIALS adminctl 凭据文件路径（默认 ~/.config/ufot/adminctl.json）
 
 退出码: 0 成功 / 1 错误（doctor 有 FAIL）/ 64 语法 / 65 目标不存在 / 77 未授权或未登录
 未配置管理令牌时：先运行 adminctl login。

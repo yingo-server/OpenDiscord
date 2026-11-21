@@ -38,9 +38,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/data/store"
-	"github.com/yingo-server/OpenDiscord/server/internal/pkg/log"
-	"github.com/yingo-server/OpenDiscord/server/internal/user/core/authn"
+	"github.com/yingo-server/UFOT/server/internal/data/store"
+	"github.com/yingo-server/UFOT/server/internal/pkg/log"
+	"github.com/yingo-server/UFOT/server/internal/user/core/authn"
 )
 
 // Identity types written into identity_identities.id_type.

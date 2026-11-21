@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/data/store"
+	"github.com/yingo-server/UFOT/server/internal/data/store"
 )
 
 // HotScanner is the store-wide old-row scan the archiver needs. MsgReader

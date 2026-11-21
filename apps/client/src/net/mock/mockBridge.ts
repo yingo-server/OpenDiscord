@@ -13,7 +13,7 @@
  *  - PING → PONG 心跳；
  *  - simulateOffline()/simulateOnline() 演示断网队列与重连补拉。
  *
- * 演示控制台：window.__opendiscordMock.goOffline() / goOnline()。
+ * 演示控制台：window.__ufotMock.goOffline() / goOnline()。
  */
 import { createEnvelope, type Envelope } from '../proto/codec';
 import {
@@ -46,7 +46,7 @@ import { mtypeToMediaType, registerMockMediaUrl, type UploadResult } from '../me
 import type { ConnState, ConnStateMeta, NetClient, ResumeTicket, StateListener } from '../transport/types';
 
 export const MOCK_SELF_ID = 1001;
-const STORE_KEY = 'opendiscord.mock.v1';
+const STORE_KEY = 'ufot.mock.v1';
 
 interface MockConv {
   convId: number;
@@ -856,7 +856,7 @@ export function createMockAuthApi(): AuthApi {
           if (count >= 5 && !String(input.captcha ?? '').trim()) {
             throw new AuthError('请输入图形验证码', 'CAPTCHA_REQUIRED');
           }
-          if (password !== 'opendiscord' && count < 5) {
+          if (password !== 'ufot' && count < 5) {
             failures.set(account, count + 1);
             throw new AuthError('账号或密码错误', 'BAD_CREDENTIALS');
           }

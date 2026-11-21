@@ -152,7 +152,7 @@ export function firstMetric(
 /** HTTP 错误率：5xx / 全部请求；无数据返回 null（显示 "—" 而不是 0）。 */
 export function httpErrorRate(families: MetricFamily[]): number | null {
   const fam =
-    families.find((f) => f.name === 'opendiscord_http_requests_total') ??
+    families.find((f) => f.name === 'ufot_http_requests_total') ??
     families.find((f) => f.name === 'gateway_requests_total');
   if (!fam || fam.samples.length === 0) return null;
   let total = 0;

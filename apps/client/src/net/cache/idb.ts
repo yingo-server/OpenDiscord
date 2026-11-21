@@ -31,7 +31,7 @@ export interface SyncCache {
   clear(): Promise<void>;
 }
 
-const DB_NAME = 'opendiscord';
+const DB_NAME = 'ufot';
 const DB_VERSION = 1;
 const STORE_MESSAGES = 'messages';
 const STORE_CONVS = 'convs';

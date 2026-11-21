@@ -8,15 +8,15 @@
 //
 // §9 中间态铁律：v3_bus_enabled 默认 false，此时 hub.Offer 为 no-op、
 // plane 无人订阅——旧路径行为逐字节不变。fanout 瘦身与背压传播留待 P3c。
-package opendiscord
+package ufot
 
 import (
 	"context"
 	"database/sql"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/bus/delivery"
-	"github.com/yingo-server/OpenDiscord/server/internal/bus/mailbox"
-	"github.com/yingo-server/OpenDiscord/server/internal/pkg/featureflags"
+	"github.com/yingo-server/UFOT/server/internal/bus/delivery"
+	"github.com/yingo-server/UFOT/server/internal/bus/mailbox"
+	"github.com/yingo-server/UFOT/server/internal/pkg/featureflags"
 )
 
 // WireV3 是 v3 总线在装配层的句柄集合。P3b 只构造不接线：

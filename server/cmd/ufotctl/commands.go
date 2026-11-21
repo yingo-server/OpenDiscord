@@ -29,7 +29,7 @@ func cmdVersion(_ context.Context, e *environment, g globals, args []string) err
 	if g.JSON {
 		return emitJSON(e, "version", info)
 	}
-	e.printf("opendiscordctl %s (commit %s, built %s)\n", version, commit, date)
+	e.printf("ufotctl %s (commit %s, built %s)\n", version, commit, date)
 	e.printf("%s %s/%s\n", runtime.Version(), runtime.GOOS, runtime.GOARCH)
 	return nil
 }

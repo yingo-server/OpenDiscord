@@ -8,7 +8,7 @@
   },
   "backup": {
     "cron": "30 5 * * *",
-    "dir": "/var/lib/opendiscord/backup",
+    "dir": "/var/lib/ufot/backup",
     "keep_days": 14
   },
   "trim": [

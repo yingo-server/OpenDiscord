@@ -1,5 +1,5 @@
 #!/bin/sh
-# acceptance.sh —— OpenDiscord 1.4 LTS 验收编排（S-1~S-7）
+# acceptance.sh —— UFOT 1.4 LTS 验收编排（S-1~S-7）
 #
 # 依据：docs/lts-1.4-acceptance.md §C「验收编排（文档 + workflow，不改业务代码）」
 #       docs/lts-1.4-plan.md §6 发布门槛 / §9 验收记录表
@@ -463,7 +463,7 @@ BLOCK_N=0
 RUNIDS=""
 PROFILE_VERDICTS=""   # 逐档汇总，写「转生产判定」行
 
-echo "== OpenDiscord 1.4 验收编排 (§E 双规格：$HW_PROFILES × S-1~S-7) =="
+echo "== UFOT 1.4 验收编排 (§E 双规格：$HW_PROFILES × S-1~S-7) =="
 echo "repo=$REPO workflow=$WORKFLOW results=$RESULTS_DIR"
 
 for HW in $HW_PROFILES; do

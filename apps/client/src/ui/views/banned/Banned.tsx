@@ -26,7 +26,7 @@ export function Banned() {
       <p className="mt-3 text-body-sm text-ink-tertiary">{t('banned.hint')}</p>
 
       <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-        <a href="mailto:support@opendiscord.example" className="inline-flex">
+        <a href="mailto:support@ufot.example" className="inline-flex">
           <Button>{t('banned.contact')}</Button>
         </a>
         <Button variant="secondary" onClick={() => getAppServices().logout()}>

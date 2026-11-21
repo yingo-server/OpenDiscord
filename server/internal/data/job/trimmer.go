@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/data/policy"
-	"github.com/yingo-server/OpenDiscord/server/internal/data/store"
+	"github.com/yingo-server/UFOT/server/internal/data/policy"
+	"github.com/yingo-server/UFOT/server/internal/data/store"
 )
 
 // TrimRuleSource is the policy seam: it yields the trim rules to execute.

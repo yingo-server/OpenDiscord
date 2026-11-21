@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/pkg/i18n"
+	"github.com/yingo-server/UFOT/server/internal/pkg/i18n"
 )
 
 // Check statuses (doctor vocabulary).
@@ -240,12 +240,12 @@ func countLines(b []byte) int {
 // CLI deliberately links no postgres driver: reachability is what an operator
 // can verify without credentials.
 func checkCold(e *environment) check {
-	dsn := strings.TrimSpace(e.getenv("OPENDISCORD_COLD_DSN"))
+	dsn := strings.TrimSpace(e.getenv("UFOT_COLD_DSN"))
 	if dsn == "" {
 		return check{
 			Name:   "cold_db",
 			Status: checkSkip,
-			Detail: "未配置 OPENDISCORD_COLD_DSN（降级模式：audit/archive 读端口不可用）",
+			Detail: "未配置 UFOT_COLD_DSN（降级模式：audit/archive 读端口不可用）",
 		}
 	}
 	addr, network, ok := parsePGAddr(dsn)
@@ -262,20 +262,20 @@ func checkCold(e *environment) check {
 
 // checkAuditStore verifies the audit journal has a durable backing store. The
 // audit store lives in the cold DB (PostgreSQL); without it audit events are
-// not persisted. Empty OPENDISCORD_COLD_DSN ⇒ degraded (WARN): the process runs
+// not persisted. Empty UFOT_COLD_DSN ⇒ degraded (WARN): the process runs
 // but audits are lost. A configured DSN is probed for TCP reachability.
 func checkAuditStore(e *environment) check {
-	dsn := strings.TrimSpace(e.getenv("OPENDISCORD_COLD_DSN"))
+	dsn := strings.TrimSpace(e.getenv("UFOT_COLD_DSN"))
 	if dsn == "" {
 		return check{
 			Name:   "audit_store",
 			Status: checkWarn,
-			Detail: "degraded: 未配置 OPENDISCORD_COLD_DSN，audit 事件不会持久化",
+			Detail: "degraded: 未配置 UFOT_COLD_DSN，audit 事件不会持久化",
 		}
 	}
 	addr, network, ok := parsePGAddr(dsn)
 	if !ok {
-		return check{Name: "audit_store", Status: checkWarn, Detail: "degraded: 无法从 OPENDISCORD_COLD_DSN 解析 host:port"}
+		return check{Name: "audit_store", Status: checkWarn, Detail: "degraded: 无法从 UFOT_COLD_DSN 解析 host:port"}
 	}
 	conn, err := e.dial(network, addr, 2*time.Second)
 	if err != nil {
@@ -293,8 +293,8 @@ func checkAuditStore(e *environment) check {
 //
 //	postgres://user:pass@host:5432/db?sslmode=disable
 //	postgresql://host/db
-//	host=127.0.0.1 port=5432 user=opendiscord dbname=opendiscord
-//	host=/var/run/postgresql dbname=opendiscord      (unix socket)
+//	host=127.0.0.1 port=5432 user=ufot dbname=ufot
+//	host=/var/run/postgresql dbname=ufot      (unix socket)
 func parsePGAddr(dsn string) (addr, network string, ok bool) {
 	dsn = strings.TrimSpace(dsn)
 	if dsn == "" {

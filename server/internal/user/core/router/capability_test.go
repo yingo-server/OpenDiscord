@@ -11,8 +11,8 @@ package router
 import (
 	"testing"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/proto/gen/chatpb"
-	"github.com/yingo-server/OpenDiscord/server/internal/proto/kinds"
+	"github.com/yingo-server/UFOT/server/internal/proto/gen/chatpb"
+	"github.com/yingo-server/UFOT/server/internal/proto/kinds"
 )
 
 func TestCapabilityReporting(t *testing.T) {

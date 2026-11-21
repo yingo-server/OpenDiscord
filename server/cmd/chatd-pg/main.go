@@ -35,8 +35,8 @@ import (
 
 	_ "github.com/jackc/pgx/v5/stdlib" // registers database/sql driver "postgres"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/data/store"
-	"github.com/yingo-server/OpenDiscord/server/internal/data/store/pg"
+	"github.com/yingo-server/UFOT/server/internal/data/store"
+	"github.com/yingo-server/UFOT/server/internal/data/store/pg"
 )
 
 // config is the minimal chatd.toml subset this entry needs. It deliberately

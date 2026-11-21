@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/data/store"
+	"github.com/yingo-server/UFOT/server/internal/data/store"
 )
 
 // FakeMsgStore implements store.MsgWriter + store.MsgReader with counters.

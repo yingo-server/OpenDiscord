@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/data/store"
+	"github.com/yingo-server/UFOT/server/internal/data/store"
 )
 
 // msgReader implements store.MsgReader (hot read path: readrouter + archiver).

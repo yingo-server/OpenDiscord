@@ -1,19 +1,19 @@
 package pipe
 
 import (
-	"github.com/yingo-server/OpenDiscord/server/internal/data/domain/identity"
+	"github.com/yingo-server/UFOT/server/internal/data/domain/identity"
 
 	"context"
 	"sync"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/data/cache"
-	"github.com/yingo-server/OpenDiscord/server/internal/data/pipe/wire"
-	"github.com/yingo-server/OpenDiscord/server/internal/data/store"
-	"github.com/yingo-server/OpenDiscord/server/internal/data/store/sqlite"
-	"github.com/yingo-server/OpenDiscord/server/internal/pkg/featureflags"
-	"github.com/yingo-server/OpenDiscord/server/internal/pkg/log"
-	"github.com/yingo-server/OpenDiscord/server/internal/proto/kinds"
-	"github.com/yingo-server/OpenDiscord/server/internal/transport"
+	"github.com/yingo-server/UFOT/server/internal/data/cache"
+	"github.com/yingo-server/UFOT/server/internal/data/pipe/wire"
+	"github.com/yingo-server/UFOT/server/internal/data/store"
+	"github.com/yingo-server/UFOT/server/internal/data/store/sqlite"
+	"github.com/yingo-server/UFOT/server/internal/pkg/featureflags"
+	"github.com/yingo-server/UFOT/server/internal/pkg/log"
+	"github.com/yingo-server/UFOT/server/internal/proto/kinds"
+	"github.com/yingo-server/UFOT/server/internal/transport"
 )
 
 // ColdDeps bundles the optional cold-store dependencies of the pipe. Any nil

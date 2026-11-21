@@ -6,7 +6,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/admin/service"
+	"github.com/yingo-server/UFOT/server/internal/admin/service"
 )
 
 func seedMessage(t *testing.T, db *sql.DB, msgID, cid, seq, sender int64, clientID string, content string) {

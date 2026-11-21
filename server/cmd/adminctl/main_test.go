@@ -68,7 +68,7 @@ func TestExitCodeMapping(t *testing.T) {
 
 func TestLoginSavesCredentialsAndPrintsToken(t *testing.T) {
 	credFile := filepath.Join(t.TempDir(), "adminctl.json")
-	t.Setenv("OPENDISCORD_ADMIN_CREDENTIALS", credFile)
+	t.Setenv("UFOT_ADMIN_CREDENTIALS", credFile)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/v1/login" || r.Method != http.MethodPost {
@@ -167,7 +167,7 @@ func TestSubcommandHelpExitsZero(t *testing.T) {
 
 func TestLogoutRemovesCredentials(t *testing.T) {
 	credFile := filepath.Join(t.TempDir(), "adminctl.json")
-	t.Setenv("OPENDISCORD_ADMIN_CREDENTIALS", credFile)
+	t.Setenv("UFOT_ADMIN_CREDENTIALS", credFile)
 	if err := os.WriteFile(credFile, []byte(`{"server":"http://x","token":"tok"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -202,7 +202,7 @@ func TestMetricsRawAndJSON(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "text/plain")
-		_, _ = w.Write([]byte("# HELP opendiscord_up\nexample_metric 1\n"))
+		_, _ = w.Write([]byte("# HELP ufot_up\nexample_metric 1\n"))
 	}))
 	defer srv.Close()
 
@@ -232,7 +232,7 @@ func TestMetricsRawAndJSON(t *testing.T) {
 
 func TestLogoutUnauthorizedMapsTo77(t *testing.T) {
 	credFile := filepath.Join(t.TempDir(), "adminctl.json")
-	t.Setenv("OPENDISCORD_ADMIN_CREDENTIALS", credFile)
+	t.Setenv("UFOT_ADMIN_CREDENTIALS", credFile)
 	if err := os.WriteFile(credFile, []byte(`{"server":"http://x","token":"stale"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}

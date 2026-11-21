@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# release-check.sh —— OpenDiscord 1.0 发布前一键自检。
+# release-check.sh —— UFOT 1.0 发布前一键自检。
 # 用法：bash scripts/release-check.sh   （也可 sh scripts/release-check.sh；在仓库根目录执行）
 #
 # 设计约束：本脚本按 POSIX sh 编写（不用数组等 bash 扩展），因此 `bash -n`
@@ -75,7 +75,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-echo "######## OpenDiscord release-check（$(date -u +%FT%TZ)）########"
+echo "######## UFOT release-check（$(date -u +%FT%TZ)）########"
 
 # ---- Go 构建 / 静态检查 -----------------------------------------------------
 step "go build ./..." go build ./...

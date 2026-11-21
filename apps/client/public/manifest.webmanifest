@@ -1,7 +1,7 @@
 {
-  "name": "OpenDiscord",
-  "short_name": "OpenDiscord",
-  "description": "OpenDiscord 即时通讯",
+  "name": "UFOT",
+  "short_name": "UFOT",
+  "description": "UFOT 即时通讯",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"testing"
 
-	chatpb "github.com/yingo-server/OpenDiscord/server/internal/proto/gen/chatpb"
-	"github.com/yingo-server/OpenDiscord/server/internal/proto/kinds"
+	chatpb "github.com/yingo-server/UFOT/server/internal/proto/gen/chatpb"
+	"github.com/yingo-server/UFOT/server/internal/proto/kinds"
 )
 
 func env(kind uint32, cid, uid uint64) *chatpb.Envelope {

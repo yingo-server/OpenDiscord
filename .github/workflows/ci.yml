@@ -169,13 +169,13 @@ jobs:
           cp README.md LICENSE stage/
           cp docs/deploy.md docs/user-guide.md docs/admin-guide.md docs/known-issues.md stage/docs/ 2>/dev/null || true
           if [ "$GOOS" != windows ]; then
-            cp -R deploy/systemd deploy/journald deploy/keygen deploy/install.sh deploy/backup.sh deploy/release.sh deploy/Caddyfile deploy/opendiscord.toml deploy/policy.json stage/deploy/ 2>/dev/null || true
+            cp -R deploy/systemd deploy/journald deploy/keygen deploy/install.sh deploy/backup.sh deploy/release.sh deploy/Caddyfile deploy/ufot.toml deploy/policy.json stage/deploy/ 2>/dev/null || true
           fi
           # tr -c would also turn the trailing newline into '-', producing
-          # 'v1.1.0-' and therefore 'opendiscord-v1.1.0--linux-amd64.tar.gz'.
+          # 'v1.1.0-' and therefore 'ufot-v1.1.0--linux-amd64.tar.gz'.
           # Strip the newline first.
           VER="$(git describe --tags --always 2>/dev/null | tr -d '\n' | tr -c 'A-Za-z0-9._-' '-')"
-          NAME="opendiscord-$VER-$GOOS-$GOARCH.$PKG"
+          NAME="ufot-$VER-$GOOS-$GOARCH.$PKG"
           mkdir -p dist
           if [ "$PKG" = zip ]; then (cd stage && zip -qr "../dist/$NAME" .); else tar -czf "dist/$NAME" -C stage .; fi
           ls -lh dist/
@@ -199,11 +199,11 @@ jobs:
       - name: Source tarball
         run: |
           # tr -c would also turn the trailing newline into '-', producing
-          # 'v1.1.0-' and therefore 'opendiscord-v1.1.0--linux-amd64.tar.gz'.
+          # 'v1.1.0-' and therefore 'ufot-v1.1.0--linux-amd64.tar.gz'.
           # Strip the newline first.
           VER="$(git describe --tags --always 2>/dev/null | tr -d '\n' | tr -c 'A-Za-z0-9._-' '-')"
           mkdir -p dist
-          git archive --format=tar.gz --prefix="opendiscord-$VER-src/" HEAD > "dist/opendiscord-$VER-src.tar.gz"
+          git archive --format=tar.gz --prefix="ufot-$VER-src/" HEAD > "dist/ufot-$VER-src.tar.gz"
           ls -lh dist/
       - uses: actions/upload-artifact@v4
         with:
@@ -249,7 +249,7 @@ jobs:
           # *.zip pattern may legitimately match nothing — anchor on the
           # package prefix and do not fail the release over a skipped target.
           files: |
-            dist/opendiscord-*
+            dist/ufot-*
             dist/SHA256SUMS
           generate_release_notes: true
           fail_on_unmatched_files: false

@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/bus/mailbox"
-	"github.com/yingo-server/OpenDiscord/server/internal/pkg/featureflags"
+	"github.com/yingo-server/UFOT/server/internal/bus/mailbox"
+	"github.com/yingo-server/UFOT/server/internal/pkg/featureflags"
 )
 
 // ---- fake MailReader ----

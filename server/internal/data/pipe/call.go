@@ -29,8 +29,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/data/pipe/wire"
-	"github.com/yingo-server/OpenDiscord/server/internal/proto/kinds"
+	"github.com/yingo-server/UFOT/server/internal/data/pipe/wire"
+	"github.com/yingo-server/UFOT/server/internal/proto/kinds"
 )
 
 const (

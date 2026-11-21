@@ -7,12 +7,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/data/pipe/wire"
-	"github.com/yingo-server/OpenDiscord/server/internal/data/policy"
-	"github.com/yingo-server/OpenDiscord/server/internal/data/store"
-	"github.com/yingo-server/OpenDiscord/server/internal/pkg/featureflags"
-	"github.com/yingo-server/OpenDiscord/server/internal/pkg/log"
-	"github.com/yingo-server/OpenDiscord/server/internal/proto/kinds"
+	"github.com/yingo-server/UFOT/server/internal/data/pipe/wire"
+	"github.com/yingo-server/UFOT/server/internal/data/policy"
+	"github.com/yingo-server/UFOT/server/internal/data/store"
+	"github.com/yingo-server/UFOT/server/internal/pkg/featureflags"
+	"github.com/yingo-server/UFOT/server/internal/pkg/log"
+	"github.com/yingo-server/UFOT/server/internal/proto/kinds"
 )
 
 const (
@@ -322,7 +322,7 @@ func (f *flusher) fanoutNew(m store.PendingMsg, mediaIdx map[string]*store.Media
 	// 未装配（nil）或无订阅/无 VAPID 时 pushsvc 内部 no-op，不影响投递热路径。
 	if f.pushNotify != nil && len(uids) > 0 {
 		np, _ := json.Marshal(map[string]any{
-			"title":  "OpenDiscord",
+			"title":  "UFOT",
 			"body":   "你有一条新消息",
 			"convId": m.Cid,
 		})

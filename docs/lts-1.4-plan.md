@@ -1,4 +1,4 @@
-# OpenDiscord 1.4 LTS 规划
+# UFOT 1.4 LTS 规划
 
 > 状态：规划稿 · 目标：处理全部已知问题，重点性能。
 > 三个核心：**普遍拉取模式（Universal Pull）**、**参数自适应（Adaptive Control）**、**v3 消息总线启用**。
@@ -88,8 +88,8 @@ v3 的 P0~P3d-2b-1 已全部落盘但**默认关闭、零行为影响**：
 | 9 | 编辑/转发/@提及 服务端未实现 | **修**：106 编辑、转发元数据、@ 提及广播 | FE-1 |
 | 10 | 举报 kind 453 无 handler | **修**：453 → sys_reports 入库 + 审计 | FE-1 |
 | 10b | 会话列表未虚拟滚动 | **修**：复用消息列表虚拟滚动方案 | FE-1 |
-| 11 | auto_vacuum 需手工转换 | **自动化**：启动时检测 `auto_vacuum=0` 自动生成一次性迁移计划，`opendiscordctl upgrade` 执行 | OPS-1 |
-| 12 | 旧 thumb_data 需手工迁移 | **自动化**：并入 `opendiscordctl upgrade`，dry-run 默认 | OPS-1 |
+| 11 | auto_vacuum 需手工转换 | **自动化**：启动时检测 `auto_vacuum=0` 自动生成一次性迁移计划，`ufotctl upgrade` 执行 | OPS-1 |
+| 12 | 旧 thumb_data 需手工迁移 | **自动化**：并入 `ufotctl upgrade`，dry-run 默认 | OPS-1 |
 | 容量 | 扇出写放大 | **由三核心根治**，验收门槛见 §6 | CORE |
 
 ## 6. 验收门槛（1.4 发布守门）
@@ -114,7 +114,7 @@ v3 的 P0~P3d-2b-1 已全部落盘但**默认关闭、零行为影响**：
 | **CORE-3** | v3 P3d-2b-2 接线 + 灰度切换（一次性，含双投递保护） | cmd/chatd/ + user/app/ |
 | **FE-1** | 编辑/转发/@/举报/会话列表虚拟滚动 | apps/client + pipe |
 | **FE-2** | PWA + Web Push | apps/client |
-| **OPS-1** | PG 变体 / 删除死 units / upgrade 自动化 | deploy + cmd/opendiscordctl |
+| **OPS-1** | PG 变体 / 删除死 units / upgrade 自动化 | deploy + cmd/ufotctl |
 | **OPS-2** | 供应商适配器 + TURN 自检 | authsvc + admin |
 | **DOC** | known-issues 清零、CHANGELOG 1.4.0、容量表刷新、明确不做清单 | docs/ |
 | **REL** | S-1~S-7 全量压测 → 打 v1.4.0 tag → 全矩阵发布 | CI |
@@ -123,7 +123,7 @@ v3 的 P0~P3d-2b-1 已全部落盘但**默认关闭、零行为影响**：
 
 - **§A 规范代理**：读本文件 §2/§3/§6 + `docs/pull-mode-spec-v1.2.md` + `docs/v3-bus-design.md`，产出 `docs/universal-pull-spec.md`。必须含：水位线协议在普遍模式下的字段/频率、自适应 AIMD 的伪代码与边界、与 v1.2 客户端的兼容矩阵、S-6/S-7 的可测试断言、回滚开关清单。**只写规范，不改代码**。
 - **§B 功能代理（FE-1）**：读 §5 第 9/10/10b 行，实现 106 编辑、转发元数据、@ 广播、453 举报入库、会话列表虚拟滚动。只碰 `server/internal/data/pipe/` 与 `apps/client/src/ui/views/conv-list/`。
-- **§C 运维代理（OPS-1）**：读 §5 第 1/4/11/12 行，实现 `chatd-pg` 构建变体、删除死 units、`opendiscordctl upgrade` 自动化。只碰 `deploy/` 与 `server/cmd/opendiscordctl/`。
+- **§C 运维代理（OPS-1）**：读 §5 第 1/4/11/12 行，实现 `chatd-pg` 构建变体、删除死 units、`ufotctl upgrade` 自动化。只碰 `deploy/` 与 `server/cmd/ufotctl/`。
 
 三批文件域无交集，可并行。全部 60 分钟预算，回来按时/规模判定。
 

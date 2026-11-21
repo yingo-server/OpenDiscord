@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/pkg/signalset"
+	"github.com/yingo-server/UFOT/server/internal/pkg/signalset"
 )
 
 // DrainTimeout SIGTERM 优雅排空上限。

@@ -1,6 +1,6 @@
 package main
 
-// wire.go encodes/decodes the OpenDiscord WS JSON wire form used by browser
+// wire.go encodes/decodes the UFOT WS JSON wire form used by browser
 // clients (apps/client codec.ts). The stress tool speaks this format directly,
 // so it exercises the exact production path instead of a private binary variant.
 //

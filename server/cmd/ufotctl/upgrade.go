@@ -6,7 +6,7 @@ import (
 	"flag"
 	"fmt"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/pkg/i18n"
+	"github.com/yingo-server/UFOT/server/internal/pkg/i18n"
 )
 
 // `upgrade` — one-shot maintenance plan for an existing deployment (LTS 1.4).
@@ -45,7 +45,7 @@ func cmdUpgrade(ctx context.Context, e *environment, g globals, args []string) e
 	run := fs.Bool("run", false, "执行计划（默认 dry-run，只读不改库）")
 	force := fs.Bool("force", false, "跳过「服务必须已停止」检查（危险：仅离线维护窗口使用）")
 	dbPath := fs.String("hot-db", "", "热库路径")
-	mediaDir := fs.String("media-dir", "", "媒体目录（默认 OPENDISCORD_MEDIA_DIR / ./data/media）")
+	mediaDir := fs.String("media-dir", "", "媒体目录（默认 UFOT_MEDIA_DIR / ./data/media）")
 	batch := fs.Int("batch", 500, "thumbs 每批处理的行数")
 	unit := fs.String("unit", defaultUnit, "systemd 单元名（停服检查用）")
 	if err := parseFlags(fs, e, "upgrade", args, true); err != nil {

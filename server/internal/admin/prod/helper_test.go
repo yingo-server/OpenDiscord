@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/admin/bridgeproxy"
-	"github.com/yingo-server/OpenDiscord/server/internal/data/store/sqlite"
-	"github.com/yingo-server/OpenDiscord/server/internal/pkg/log"
+	"github.com/yingo-server/UFOT/server/internal/admin/bridgeproxy"
+	"github.com/yingo-server/UFOT/server/internal/data/store/sqlite"
+	"github.com/yingo-server/UFOT/server/internal/pkg/log"
 )
 
 // hotDB opens a real, migrated hot SQLite database in a temp dir. The adapters

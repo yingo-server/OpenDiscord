@@ -1,4 +1,4 @@
-# OpenDiscord LTS 发布前置问题清单
+# UFOT LTS 发布前置问题清单
 
 > 来源：三轮独立审查（协议贯通 / 性能资源 / 安全合规）+ 逐项实测复验。
 > 状态：✅ 已修并验证 · 🚧 进行中 · ⬜ 待办 · ⏭️ 明确不做（有理由）
@@ -11,7 +11,7 @@
 | A2 | presence 401/402 可客户端上行 → 伪造他人在线状态 | ✅ 已修（网关拒绝 + 数据层校验 subject==actor） |
 | A3 | rate_limit_enabled=false 无生产护栏 | ✅ 已修（生产环境拒启） |
 | A4 | thumb_data 只校验长度，可存 SVG/HTML data URI | ✅ 已修（校验 base64 + magic bytes） |
-| A5 | install.sh --domain 解析后未落地；--admin-pass-file 无人读取 | ✅ 已修（写入 opendiscord.toml；bootstrap 读密码文件，0600/拒符号链接） |
+| A5 | install.sh --domain 解析后未落地；--admin-pass-file 无人读取 | ✅ 已修（写入 ufot.toml；bootstrap 读密码文件，0600/拒符号链接） |
 | A6 ✓ | 撤回/成员变更/通话不落审计 | ⬜ 待办 |
 | A7 | WS upgrade 限流在 Caddyfile 中整段注释 | ⬜ 待办（应用层已实现，需开 Caddy 侧） |
 | A8 | 上传无病毒扫描 | ⏭️ 明确不做（v1.2，需 ClamAV 常驻内存，2C2G 不划算） |

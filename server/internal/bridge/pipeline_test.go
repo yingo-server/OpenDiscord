@@ -5,11 +5,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/bridge/router"
-	"github.com/yingo-server/OpenDiscord/server/internal/proto"
-	chatpb "github.com/yingo-server/OpenDiscord/server/internal/proto/gen/chatpb"
-	"github.com/yingo-server/OpenDiscord/server/internal/proto/kinds"
-	"github.com/yingo-server/OpenDiscord/server/internal/transport/embedded"
+	"github.com/yingo-server/UFOT/server/internal/bridge/router"
+	"github.com/yingo-server/UFOT/server/internal/proto"
+	chatpb "github.com/yingo-server/UFOT/server/internal/proto/gen/chatpb"
+	"github.com/yingo-server/UFOT/server/internal/proto/kinds"
+	"github.com/yingo-server/UFOT/server/internal/transport/embedded"
 )
 
 // stubLayer 最小 echo 层（后续批次被真实层替换）：

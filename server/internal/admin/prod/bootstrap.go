@@ -11,25 +11,25 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/admin"
-	"github.com/yingo-server/OpenDiscord/server/internal/admin/identity"
-	"github.com/yingo-server/OpenDiscord/server/internal/pkg/log"
-	"github.com/yingo-server/OpenDiscord/server/internal/user/core/authn"
+	"github.com/yingo-server/UFOT/server/internal/admin"
+	"github.com/yingo-server/UFOT/server/internal/admin/identity"
+	"github.com/yingo-server/UFOT/server/internal/pkg/log"
+	"github.com/yingo-server/UFOT/server/internal/user/core/authn"
 )
 
 // Bootstrap environment variables. They are read ONCE, on the first start of
 // an admin.db that has no administrator, and never stored anywhere.
 const (
 	// EnvAdminUser is the bootstrap super-admin username.
-	EnvAdminUser = "OPENDISCORD_ADMIN_USER"
+	EnvAdminUser = "UFOT_ADMIN_USER"
 	// EnvAdminPassword is the bootstrap password (>= PasswordMinLen chars).
 	// Legacy path: the password lives in the process environment. It is kept
 	// for compatibility but prints a warning.
-	EnvAdminPassword = "OPENDISCORD_ADMIN_PASSWORD"
+	EnvAdminPassword = "UFOT_ADMIN_PASSWORD"
 	// EnvAdminPasswordFile points at a file holding the bootstrap password.
 	// Preferred: the secret never appears in the environment or in `ps` output.
 	// The file must be a regular file, owned by the running user, mode 0600.
-	EnvAdminPasswordFile = "OPENDISCORD_ADMIN_PASS_FILE"
+	EnvAdminPasswordFile = "UFOT_ADMIN_PASS_FILE"
 )
 
 // bootstrapTimeout bounds the whole first-run provisioning.
@@ -39,7 +39,7 @@ const bootstrapTimeout = 30 * time.Second
 // empty (first start of a fresh admin.db).
 //
 // Contract (docs/security-spec.md §3.3):
-//   - credentials come from OPENDISCORD_ADMIN_USER / OPENDISCORD_ADMIN_PASSWORD;
+//   - credentials come from UFOT_ADMIN_USER / UFOT_ADMIN_PASSWORD;
 //   - the password is stored as argon2id (authn.Hasher), never in clear;
 //   - a TOTP secret is generated and printed exactly once — TOTP is mandatory
 //     at login, so the account is unusable until the operator enrolls it;
@@ -173,6 +173,6 @@ func newTOTPSecret() (string, error) {
 
 // otpauthURI builds the provisioning URI an authenticator app scans.
 func otpauthURI(user, secret string) string {
-	return "otpauth://totp/OpenDiscord:" + user +
-		"?secret=" + secret + "&issuer=OpenDiscord&algorithm=SHA1&digits=6&period=30"
+	return "otpauth://totp/UFOT:" + user +
+		"?secret=" + secret + "&issuer=UFOT&algorithm=SHA1&digits=6&period=30"
 }

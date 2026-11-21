@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/data/store"
+	"github.com/yingo-server/UFOT/server/internal/data/store"
 )
 
 // benchRows is the batch size used by BenchmarkAppendMessages (1000 rows).

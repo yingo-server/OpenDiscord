@@ -1,9 +1,9 @@
 package main
 
 import (
-	"github.com/yingo-server/OpenDiscord/server/internal/proto/gen/chatpb"
-	"github.com/yingo-server/OpenDiscord/server/internal/user/net/frame"
-	"github.com/yingo-server/OpenDiscord/server/internal/user/net/ws"
+	"github.com/yingo-server/UFOT/server/internal/proto/gen/chatpb"
+	"github.com/yingo-server/UFOT/server/internal/user/net/frame"
+	"github.com/yingo-server/UFOT/server/internal/user/net/ws"
 )
 
 // mailbox.go —— v3 总线 P3d-2 接线的第二半（任务书 §1 CORE-3）。

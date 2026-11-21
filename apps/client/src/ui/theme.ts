@@ -7,8 +7,8 @@
 export type ThemePref = 'system' | 'light' | 'dark';
 export type FontScale = 'standard' | 'large' | 'xlarge';
 
-const THEME_KEY = 'opendiscord.theme';
-const SCALE_KEY = 'opendiscord.fontScale';
+const THEME_KEY = 'ufot.theme';
+const SCALE_KEY = 'ufot.fontScale';
 
 export function getThemePref(): ThemePref {
   try {

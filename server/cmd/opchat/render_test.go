@@ -166,8 +166,8 @@ func TestBellUrgentThreeShort(t *testing.T) {
 
 func TestCredPathSharedWithAdminctl(t *testing.T) {
 	dir := t.TempDir()
-	os.Setenv("OPENDISCORD_ADMIN_CREDENTIALS", filepath.Join(dir, "adminctl.json"))
-	defer os.Unsetenv("OPENDISCORD_ADMIN_CREDENTIALS")
+	os.Setenv("UFOT_ADMIN_CREDENTIALS", filepath.Join(dir, "adminctl.json"))
+	defer os.Unsetenv("UFOT_ADMIN_CREDENTIALS")
 	if err := saveCredentials(credentials{Server: "http://x", Token: "t", CSRF: "c"}); err != nil {
 		t.Fatal(err)
 	}
@@ -178,8 +178,8 @@ func TestCredPathSharedWithAdminctl(t *testing.T) {
 }
 
 func TestParseMetrics(t *testing.T) {
-	m := parseMetrics("# c\nopendiscord_online_connections 1234\njunk\nopendiscord_users_total 5000\n")
-	if m["opendiscord_online_connections"] != 1234 || m["opendiscord_users_total"] != 5000 {
+	m := parseMetrics("# c\nufot_online_connections 1234\njunk\nufot_users_total 5000\n")
+	if m["ufot_online_connections"] != 1234 || m["ufot_users_total"] != 5000 {
 		t.Fatalf("parse wrong: %v", m)
 	}
 }

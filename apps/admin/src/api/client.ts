@@ -179,7 +179,7 @@ async function rawRequest(path: string, opts: RequestOptions = {}): Promise<Resp
   const url = `${API_BASE}${path}${qs(opts.query ?? {})}`;
   const headers: Record<string, string> = {
     Accept: 'application/json',
-    'X-Client': 'opendiscord-admin/0.1.0',
+    'X-Client': 'ufot-admin/0.1.0',
   };
   if (opts.body !== undefined) headers['Content-Type'] = 'application/json';
   if (accessToken) headers.Authorization = `Bearer ${accessToken}`;

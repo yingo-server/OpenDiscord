@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/pkg/exitcodes"
-	"github.com/yingo-server/OpenDiscord/server/internal/pkg/i18n"
+	"github.com/yingo-server/UFOT/server/internal/pkg/exitcodes"
+	"github.com/yingo-server/UFOT/server/internal/pkg/i18n"
 )
 
 // TestCLIModeWhenNotTTY: chatd run via pipes/CI must reject --tui gracefully

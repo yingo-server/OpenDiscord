@@ -8,7 +8,7 @@
 //
 // 用临时真 SQLite 库；DDL 内嵌同形于 store/migrations/hot/mailbox/0001
 // （与 internal/bus/mailbox/hub_test.go 的做法一致：测试不 import migrate/embed FS）。
-package opendiscord
+package ufot
 
 import (
 	"context"
@@ -19,9 +19,9 @@ import (
 
 	_ "github.com/mattn/go-sqlite3"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/bus/delivery"
-	"github.com/yingo-server/OpenDiscord/server/internal/bus/mailbox"
-	"github.com/yingo-server/OpenDiscord/server/internal/pkg/featureflags"
+	"github.com/yingo-server/UFOT/server/internal/bus/delivery"
+	"github.com/yingo-server/UFOT/server/internal/bus/mailbox"
+	"github.com/yingo-server/UFOT/server/internal/pkg/featureflags"
 )
 
 // testMigrationSQL 与 store/migrations/hot/mailbox/0001_mailbox_init.sql 同形。

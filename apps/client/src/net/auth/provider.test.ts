@@ -98,7 +98,7 @@ describe('mockBridge 登录应答（与 authsvc 同形）', () => {
     const api = createMockAuthApi();
     const raw = (await api.post<Record<string, unknown>>('/api/auth/password', {
       account: 'a@b.c',
-      password: 'opendiscord',
+      password: 'ufot',
     })) as Record<string, unknown>;
     expect(raw.user_id).toBeDefined();
     expect(raw.session_id).toBe(raw.device_id);

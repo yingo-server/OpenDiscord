@@ -23,12 +23,12 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/data/job"
-	"github.com/yingo-server/OpenDiscord/server/internal/data/policy"
-	"github.com/yingo-server/OpenDiscord/server/internal/data/store/pg"
-	"github.com/yingo-server/OpenDiscord/server/internal/data/store/sqlite"
-	"github.com/yingo-server/OpenDiscord/server/internal/pkg/log"
-	"github.com/yingo-server/OpenDiscord/server/internal/proto/kinds"
+	"github.com/yingo-server/UFOT/server/internal/data/job"
+	"github.com/yingo-server/UFOT/server/internal/data/policy"
+	"github.com/yingo-server/UFOT/server/internal/data/store/pg"
+	"github.com/yingo-server/UFOT/server/internal/data/store/sqlite"
+	"github.com/yingo-server/UFOT/server/internal/pkg/log"
+	"github.com/yingo-server/UFOT/server/internal/proto/kinds"
 )
 
 // jobPlane bundles the scheduler and its units.

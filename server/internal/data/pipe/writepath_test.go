@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/data/policy"
-	"github.com/yingo-server/OpenDiscord/server/internal/data/store"
+	"github.com/yingo-server/UFOT/server/internal/data/policy"
+	"github.com/yingo-server/UFOT/server/internal/data/store"
 )
 
 // TestFlusherApplyWritePolicy: the group-commit batch size and flush interval

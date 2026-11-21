@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/data/pipe/pipefakes"
-	"github.com/yingo-server/OpenDiscord/server/internal/data/store"
+	"github.com/yingo-server/UFOT/server/internal/data/pipe/pipefakes"
+	"github.com/yingo-server/UFOT/server/internal/data/store"
 )
 
 // fakeLedger records run bookkeeping.

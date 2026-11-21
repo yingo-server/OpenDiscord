@@ -7,10 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/admin/auditshim"
-	"github.com/yingo-server/OpenDiscord/server/internal/admin/identity"
-	"github.com/yingo-server/OpenDiscord/server/internal/admin/middleware"
-	"github.com/yingo-server/OpenDiscord/server/internal/admin/service"
+	"github.com/yingo-server/UFOT/server/internal/admin/auditshim"
+	"github.com/yingo-server/UFOT/server/internal/admin/identity"
+	"github.com/yingo-server/UFOT/server/internal/admin/middleware"
+	"github.com/yingo-server/UFOT/server/internal/admin/service"
 )
 
 type adminView struct {

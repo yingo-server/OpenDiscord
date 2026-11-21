@@ -36,16 +36,16 @@ type credentials struct {
 }
 
 // credPath matches adminctl's client.go credPath exactly so both tools share
-// ~/.config/opendiscord/adminctl.json.
+// ~/.config/ufot/adminctl.json.
 func credPath() string {
-	if p := os.Getenv("OPENDISCORD_ADMIN_CREDENTIALS"); p != "" {
+	if p := os.Getenv("UFOT_ADMIN_CREDENTIALS"); p != "" {
 		return p
 	}
 	dir, err := os.UserConfigDir()
 	if err != nil || dir == "" {
 		dir = filepath.Join(os.Getenv("HOME"), ".config")
 	}
-	return filepath.Join(dir, "opendiscord", "adminctl.json")
+	return filepath.Join(dir, "ufot", "adminctl.json")
 }
 
 func loadCredentials() (credentials, error) {
@@ -247,11 +247,11 @@ func fetchOverview(c *client) (overview, error) {
 	if err == nil {
 		ov.Raw = parseMetrics(string(mb))
 		ov.Online = metricAny(ov.Raw,
-			"opendiscord_online_connections", "opendiscord_ws_connections",
-			"opendiscord_active_connections", "opendiscord_online_users")
-		ov.Users = metricAny(ov.Raw, "opendiscord_users_total", "opendiscord_user_total")
-		ov.MsgToday = metricAny(ov.Raw, "opendiscord_messages_today_total",
-			"opendiscord_messages_total_today", "opendiscord_message_send_total")
+			"ufot_online_connections", "ufot_ws_connections",
+			"ufot_active_connections", "ufot_online_users")
+		ov.Users = metricAny(ov.Raw, "ufot_users_total", "ufot_user_total")
+		ov.MsgToday = metricAny(ov.Raw, "ufot_messages_today_total",
+			"ufot_messages_total_today", "ufot_message_send_total")
 	}
 	if ab, err := c.get("/api/v1/archive/status"); err == nil {
 		ov.Archive = compactJSON(ab)

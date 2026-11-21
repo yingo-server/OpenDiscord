@@ -1,6 +1,6 @@
 # 术语字典（界面 / 文档 / API 协议 / CLI 共同基线）
 
-本字典是 OpenDiscord 的用词真相源：一个概念只用一个名称。新增用户可见名词前先更新本表。
+本字典是 UFOT 的用词真相源：一个概念只用一个名称。新增用户可见名词前先更新本表。
 来源：sota-ux-writing "Name things once" 纪律（v1.5.0-beta.1）。
 
 | 术语 | 界面用词 | 文档用词 | API / 协议字段名 | 定义 |
@@ -29,7 +29,7 @@
 | Ban | 封禁 | 封禁 | `ban` / `level` / `until` | 撤销账号登录凭证并断开连接。 |
 | Unban | 解封 | 解封 | `unban` | 恢复被封禁账号的登录能力。 |
 | Kick | 踢出 | 强制下线 | `kick` | 断开账号当前全部连接，不撤销凭证。 |
-| User | 用户 | 用户 | `user_id` / `uid` | 使用 OpenDiscord 的账号。 |
+| User | 用户 | 用户 | `user_id` / `uid` | 使用 UFOT 的账号。 |
 | Feature flag | 功能开关 | 特性开关 | `flags` / `key` / `value` / `FEATURE_FLAGS`(911) | 可即时下发的策略开关。 |
 | Capability negotiation | 能力协商 | 能力协商 | `CLIENT_CAPS`(18) | 客户端上报支持能力以确定可用协议分支。 |
 | Pull capability | 拉取能力 | 普遍拉取能力 | `pull_capable` | 客户端可使用水位线进行补拉的能力。 |
@@ -37,7 +37,7 @@
 | Audit chain | 审计链 | 哈希链审计 | `audit_chain` / `audit_chain_broken` | 审计记录的防篡改链式校验。 |
 | Archive | 归档 | 归档 | `archive` | 将热库旧数据搬运到冷库。 |
 | Archive run | 归档运行 | 归档运行记录 | `archive_runs` | 一次归档作业的执行账本。 |
-| Hot database | 热库 | 热库 | `hot.db` / `OPENDISCORD_HOT_DB` | 本机 SQLite，保存近期数据。 |
+| Hot database | 热库 | 热库 | `hot.db` / `UFOT_HOT_DB` | 本机 SQLite，保存近期数据。 |
 | Cold database | 冷库 | 冷库 | `cold_dsn` | 外部 PostgreSQL，保存归档数据。 |
 | Push subscription | 推送订阅 | 推送订阅 | `POST /api/push/subscribe` / `subscription` | 浏览器 Web Push 的订阅登记。 |
 | Web Push notification | 系统通知 | 系统通知 | `Notify` / `WATERMARK` 触发 | 发往设备的操作系统级提醒。 |

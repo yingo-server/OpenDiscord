@@ -4,8 +4,8 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/admin/identity"
-	"github.com/yingo-server/OpenDiscord/server/internal/pkg/log"
+	"github.com/yingo-server/UFOT/server/internal/admin/identity"
+	"github.com/yingo-server/UFOT/server/internal/pkg/log"
 )
 
 // AdminIdentity is the principal injected into a request context.

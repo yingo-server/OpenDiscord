@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/proto/kinds"
+	"github.com/yingo-server/UFOT/server/internal/proto/kinds"
 )
 
 func near(a, b float64) bool { return math.Abs(a-b) < 1e-9 }

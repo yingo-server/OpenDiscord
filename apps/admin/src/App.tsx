@@ -77,7 +77,7 @@ export function App() {
   const [path, navigate] = useHashRoute();
 
   useEffect(() => {
-    document.title = `${findNav(path).label} · OpenDiscord 管理后台`;
+    document.title = `${findNav(path).label} · UFOT 管理后台`;
   }, [path]);
 
   if (status === 'loading') return <Splash />;

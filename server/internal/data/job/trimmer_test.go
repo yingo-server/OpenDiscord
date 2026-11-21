@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/data/pipe/pipefakes"
-	"github.com/yingo-server/OpenDiscord/server/internal/data/policy"
-	"github.com/yingo-server/OpenDiscord/server/internal/data/store"
+	"github.com/yingo-server/UFOT/server/internal/data/pipe/pipefakes"
+	"github.com/yingo-server/UFOT/server/internal/data/policy"
+	"github.com/yingo-server/UFOT/server/internal/data/store"
 )
 
 // ---------------------------------------------------------------- archiver e2e

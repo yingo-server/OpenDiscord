@@ -50,7 +50,7 @@ func runRestartStorm(base string, conns, convMembers, secs int, interval time.Du
 	if secs <= 0 {
 		secs = 10
 	}
-	fmt.Printf("== OpenDiscord stress S-5 restart-storm: base=%s conns=%d members/conv=%d rate_limit=%s ==\n",
+	fmt.Printf("== UFOT stress S-5 restart-storm: base=%s conns=%d members/conv=%d rate_limit=%s ==\n",
 		base, conns, convMembers, rlLabel(rateLimit))
 
 	// identity + convs (storm only needs a member set, no send load)

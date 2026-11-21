@@ -7,11 +7,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/admin/handler"
-	"github.com/yingo-server/OpenDiscord/server/internal/admin/identity"
-	"github.com/yingo-server/OpenDiscord/server/internal/admin/middleware"
-	"github.com/yingo-server/OpenDiscord/server/internal/admin/totp"
-	"github.com/yingo-server/OpenDiscord/server/internal/proto/kinds"
+	"github.com/yingo-server/UFOT/server/internal/admin/handler"
+	"github.com/yingo-server/UFOT/server/internal/admin/identity"
+	"github.com/yingo-server/UFOT/server/internal/admin/middleware"
+	"github.com/yingo-server/UFOT/server/internal/admin/totp"
+	"github.com/yingo-server/UFOT/server/internal/proto/kinds"
 )
 
 func pathOf(pattern string) string {

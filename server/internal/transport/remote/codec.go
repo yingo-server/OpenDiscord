@@ -22,9 +22,9 @@ import (
 	"sync"
 	"time"
 
-	chatpb "github.com/yingo-server/OpenDiscord/server/internal/proto/gen/chatpb"
+	chatpb "github.com/yingo-server/UFOT/server/internal/proto/gen/chatpb"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/proto"
+	"github.com/yingo-server/UFOT/server/internal/proto"
 )
 
 // 线路常量。

@@ -52,8 +52,8 @@ func TestParsePGAddr(t *testing.T) {
 		network string
 		ok      bool
 	}{
-		{"postgres://u:p@db.internal:5433/opendiscord?sslmode=disable", "db.internal:5433", "tcp", true},
-		{"postgresql://db.internal/opendiscord", "db.internal:5432", "tcp", true},
+		{"postgres://u:p@db.internal:5433/ufot?sslmode=disable", "db.internal:5433", "tcp", true},
+		{"postgresql://db.internal/ufot", "db.internal:5432", "tcp", true},
 		{"host=10.0.0.5 port=6543 user=oc dbname=oc", "10.0.0.5:6543", "tcp", true},
 		{"host=10.0.0.5 dbname=oc", "10.0.0.5:5432", "tcp", true},
 		{"host=/var/run/postgresql dbname=oc", "/var/run/postgresql", "unix", true},
@@ -83,7 +83,7 @@ func TestDoctorAllGreen(t *testing.T) {
 	hot := makeHotDB(t, 2)
 	fs := &fakeSystem{resp: []cmdResp{{prefix: "journalctl", out: ""}}}
 	e, out, _ := newTestEnv(t, fs)
-	code := run([]string{"--json", "doctor", "--hot-db", hot, "--unit", "opendiscord"}, e)
+	code := run([]string{"--json", "doctor", "--hot-db", hot, "--unit", "ufot"}, e)
 	if code != exitOK {
 		t.Fatalf("exit = %d stderr=%s stdout=%s", code, e.stderr, out.String())
 	}
@@ -104,7 +104,7 @@ func TestDoctorAllGreen(t *testing.T) {
 	if byName["logs.error"].Status != checkOK {
 		t.Fatalf("logs = %+v", byName["logs.error"])
 	}
-	// No OPENDISCORD_COLD_DSN ⇒ explicit degraded SKIP, never a failure.
+	// No UFOT_COLD_DSN ⇒ explicit degraded SKIP, never a failure.
 	if byName["cold_db"].Status != checkSkip {
 		t.Fatalf("cold = %+v", byName["cold_db"])
 	}
@@ -144,7 +144,7 @@ func TestDoctorWarnOnLogs(t *testing.T) {
 func TestDoctorColdConnectivity(t *testing.T) {
 	hot := makeHotDB(t, 1)
 	fs := &fakeSystem{
-		env:     map[string]string{"OPENDISCORD_COLD_DSN": "postgres://u:p@127.0.0.1:5432/oc"},
+		env:     map[string]string{"UFOT_COLD_DSN": "postgres://u:p@127.0.0.1:5432/oc"},
 		dialErr: errors.New("connection refused"),
 	}
 	e, out, _ := newTestEnv(t, fs)
@@ -194,7 +194,7 @@ func decodeDoctor(t *testing.T, raw string) doctorReport {
 func TestDoctorAuditStore(t *testing.T) {
 	hot := makeHotDB(t, 1)
 
-	// Empty OPENDISCORD_COLD_DSN ⇒ audit store degraded (WARN, not fail).
+	// Empty UFOT_COLD_DSN ⇒ audit store degraded (WARN, not fail).
 	fs := &fakeSystem{resp: []cmdResp{{prefix: "journalctl", out: ""}}}
 	e, out, _ := newTestEnv(t, fs)
 	if code := run([]string{"--json", "doctor", "--hot-db", hot}, e); code != exitOK {
@@ -217,7 +217,7 @@ func TestDoctorAuditStore(t *testing.T) {
 	// Configured but unreachable ⇒ FAIL.
 	fs2 := &fakeSystem{
 		resp:    []cmdResp{{prefix: "journalctl", out: ""}},
-		env:     map[string]string{"OPENDISCORD_COLD_DSN": "postgres://u:p@127.0.0.1:5432/oc"},
+		env:     map[string]string{"UFOT_COLD_DSN": "postgres://u:p@127.0.0.1:5432/oc"},
 		dialErr: errors.New("connection refused"),
 	}
 	e2, out2, _ := newTestEnv(t, fs2)

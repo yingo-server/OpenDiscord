@@ -1,21 +1,26 @@
-# OpenDiscord v2.0.0 版权与声明合规审计（legal-and-claims-audit）
+# UFOT v2.0.0 版权与声明合规审计（legal-and-claims-audit）
+
+> **状态更新（2026-11-22）**：项目已由 OpenDiscord 更名为 **UFOT（Unfettered Freedom Of Thought）**。
+> 下文第 1 节「商标风险」针对的是**更名前**的 OpenDiscord 名称；更名后项目名不再包含
+> "Discord" 字样，该商标近似风险已消除，README 中的旧免责声明已相应移除。
+> 第 2 节（第三方许可证）与第 3 节（声明可证实性）结论仍有效。
 
 - 审计角色：发布前 copyright/claims accuracy/legal 层（sota-copywriting rules/04 重点、rules/01 声明段）
 - 审计对象：README.md、docs/release-notes-v1.4.0/v1.5.0/v2.0.0.md、LICENSE、deploy/release.sh、go.mod、apps/client 与 apps/admin 的 package.json
 - 方法：只读审计；证据来自本仓库文件、`docs/lts-1.4-plan.md §9`、`docs/v2.0-roadmap.md`、`.github/workflows/`。未跑 build/test，未 commit/push/tag。
 - 说明：本报告为工程合规自查，非法律意见；标注"需核实"的结论须由法务/许可证原文确认。
 
-## 1. 商标风险：项目名 "OpenDiscord" 与 Discord
+## 1. 商标风险：项目名 "UFOT" 与 Discord
 
 **事实陈述（可证实部分）**
 - 仓库中不存在任何 "Discord" 商标授权、关联声明或共同品牌文件（`rg -i discord` 除项目名外无命中；无 logo/品牌素材、无第三方署名文件）。
 - LICENSE 第 6 条明确：本许可证不授予使用 Licensor 的商号/商标/产品名称的权利；Apache-2.0 本身不解决与第三方（Discord）的商标冲突。
-- README 通篇未声明 "OpenDiscord 与 Discord 无关"、"非官方/未授权"，存在被误认为 Discord 关联/开源版本的混淆风险（商标淡化/搭便车风险，**需核实**法务意见）。
+- README 通篇未声明 "UFOT 与 Discord 无关"、"非官方/未授权"，存在被误认为 Discord 关联/开源版本的混淆风险（商标淡化/搭便车风险，**需核实**法务意见）。
 
-**结论（一句话）**：`OpenDiscord` 与 `Discord` 高度近似且无授权证据，发布前应在 README 显要位置加入"非 Discord 关联、未获商标授权"的免责声明，由法务确认是否需更名（本次审计不改任何原文）。
+**结论（一句话）**：`UFOT` 与 `Discord` 高度近似且无授权证据，发布前应在 README 显要位置加入"非 Discord 关联、未获商标授权"的免责声明，由法务确认是否需更名（本次审计不改任何原文）。
 
 **建议加入 README 的免责声明文本（仅建议，不改文件）**：
-> 商标声明：OpenDiscord 是一个独立开发的自托管即时通讯项目，与 Discord Inc. 及 Discord 品牌**没有任何关联、背书或授权关系**。"Discord" 及 Discord 标识是其各自权利人的商标；本项目名称中的 "Discord" 字样仅用于描述性目的（指代类似的使用场景），不主张任何商标权利。如权利人提出异议，我们将配合调整项目名称。
+> 商标声明：UFOT 是一个独立开发的自托管即时通讯项目，与 Discord Inc. 及 Discord 品牌**没有任何关联、背书或授权关系**。"Discord" 及 Discord 标识是其各自权利人的商标；本项目名称中的 "Discord" 字样仅用于描述性目的（指代类似的使用场景），不主张任何商标权利。如权利人提出异议，我们将配合调整项目名称。
 
 ## 2. 第三方许可证清单（直接依赖，Apache-2.0 兼容性）
 
@@ -82,7 +87,7 @@
 **建议做（非阻断）**
 3. README "不经过任何第三方" "全部装进一个二进制" "五分钟装好" "不可篡改" 按 §3.3 改写，避免绝对化误导。
 4. 性能数字补 CI run 链接（lts-1.4-plan §9 / v2.0-roadmap 的 run id），将 v1.5 基线 579/s 标注为"历史记录值，证据已清理"。
-5. 法务确认 `OpenDiscord` 名称是否需规避 Discord 商标（可能涉及更名）。
+5. 法务确认 `UFOT` 名称是否需规避 Discord 商标（可能涉及更名）。
 6. 核实 go-sqlite3 许可证原文（MIT 与 ISC 双许可）。
 
 **无需做**

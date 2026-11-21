@@ -33,13 +33,13 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/admin/totp"
-	"github.com/yingo-server/OpenDiscord/server/internal/data/pipe/wire"
-	"github.com/yingo-server/OpenDiscord/server/internal/pkg/log"
-	"github.com/yingo-server/OpenDiscord/server/internal/proto/gen/chatpb"
-	"github.com/yingo-server/OpenDiscord/server/internal/proto/kinds"
-	"github.com/yingo-server/OpenDiscord/server/internal/user/core/authn"
-	"github.com/yingo-server/OpenDiscord/server/internal/user/net/frame"
+	"github.com/yingo-server/UFOT/server/internal/admin/totp"
+	"github.com/yingo-server/UFOT/server/internal/data/pipe/wire"
+	"github.com/yingo-server/UFOT/server/internal/pkg/log"
+	"github.com/yingo-server/UFOT/server/internal/proto/gen/chatpb"
+	"github.com/yingo-server/UFOT/server/internal/proto/kinds"
+	"github.com/yingo-server/UFOT/server/internal/user/core/authn"
+	"github.com/yingo-server/UFOT/server/internal/user/net/frame"
 )
 
 // ---------------------------------------------------------------- assembly
@@ -51,8 +51,8 @@ import (
 func startContractAssembly(t *testing.T) *assembly {
 	t.Helper()
 	t.Setenv("APP_ENV", "dev")
-	t.Setenv("OPENDISCORD_ADMIN_USER", "rootadmin")
-	t.Setenv("OPENDISCORD_ADMIN_PASSWORD", "root-admin-pass-1234567")
+	t.Setenv("UFOT_ADMIN_USER", "rootadmin")
+	t.Setenv("UFOT_ADMIN_PASSWORD", "root-admin-pass-1234567")
 
 	log.SetLevel(log.ErrorLevel)
 	if os.Getenv("CHATD_TEST_LOG") == "debug" {
@@ -539,7 +539,7 @@ func contractAdmin(s *suite, u contractUsers) {
 	get("/api/v1/archive/status")
 	{
 		code, body := super.do(http.MethodGet, "/api/v1/metrics", nil, "")
-		if code == http.StatusOK && strings.Contains(string(body), "opendiscord_admin_build_info") {
+		if code == http.StatusOK && strings.Contains(string(body), "ufot_admin_build_info") {
 			s.add(http.MethodGet, "/api/v1/metrics", code, "200", "PASS", "")
 		} else {
 			s.add(http.MethodGet, "/api/v1/metrics", code, "200", "FAIL", snippet(body))

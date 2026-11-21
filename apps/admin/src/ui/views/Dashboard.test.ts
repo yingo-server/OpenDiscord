@@ -6,33 +6,33 @@ import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 
 const SAMPLE_METRICS = [
-  '# HELP opendiscord_admin_build_info build',
-  '# TYPE opendiscord_admin_build_info gauge',
-  'opendiscord_admin_build_info{version="dev"} 1',
+  '# HELP ufot_admin_build_info build',
+  '# TYPE ufot_admin_build_info gauge',
+  'ufot_admin_build_info{version="dev"} 1',
   '# TYPE go_goroutines gauge',
   'go_goroutines 27',
   '# TYPE process_resident_memory_bytes gauge',
   'process_resident_memory_bytes 104857600',
-  '# TYPE opendiscord_admin_uptime_seconds gauge',
-  'opendiscord_admin_uptime_seconds 7200',
-  '# TYPE opendiscord_admin_audit_append_failures_total counter',
-  'opendiscord_admin_audit_append_failures_total 0',
-  '# TYPE opendiscord_admin_bridge_requests_total counter',
-  'opendiscord_admin_bridge_requests_total 100',
-  '# TYPE opendiscord_admin_bridge_failures_total counter',
-  'opendiscord_admin_bridge_failures_total 2',
-  '# TYPE opendiscord_admin_bridge_circuit_open gauge',
-  'opendiscord_admin_bridge_circuit_open 0',
-  '# TYPE opendiscord_admin_login_failures_total counter',
-  'opendiscord_admin_login_failures_total 5',
-  '# TYPE opendiscord_ws_connections_active gauge',
-  'opendiscord_ws_connections_active 42',
-  '# TYPE opendiscord_users_total counter',
-  'opendiscord_users_total 900',
-  '# TYPE opendiscord_users_created_today_total counter',
-  'opendiscord_users_created_today_total 7',
-  '# TYPE opendiscord_messages_today_total counter',
-  'opendiscord_messages_today_total 3100',
+  '# TYPE ufot_admin_uptime_seconds gauge',
+  'ufot_admin_uptime_seconds 7200',
+  '# TYPE ufot_admin_audit_append_failures_total counter',
+  'ufot_admin_audit_append_failures_total 0',
+  '# TYPE ufot_admin_bridge_requests_total counter',
+  'ufot_admin_bridge_requests_total 100',
+  '# TYPE ufot_admin_bridge_failures_total counter',
+  'ufot_admin_bridge_failures_total 2',
+  '# TYPE ufot_admin_bridge_circuit_open gauge',
+  'ufot_admin_bridge_circuit_open 0',
+  '# TYPE ufot_admin_login_failures_total counter',
+  'ufot_admin_login_failures_total 5',
+  '# TYPE ufot_ws_connections_active gauge',
+  'ufot_ws_connections_active 42',
+  '# TYPE ufot_users_total counter',
+  'ufot_users_total 900',
+  '# TYPE ufot_users_created_today_total counter',
+  'ufot_users_created_today_total 7',
+  '# TYPE ufot_messages_today_total counter',
+  'ufot_messages_today_total 3100',
 ].join('\n');
 
 const SAMPLE_ARCHIVE = {
@@ -107,7 +107,7 @@ test('Dashboard 冒烟：SSR 渲染出指标卡与健康矩阵', async () => {
   assert.ok(html.includes('健康矩阵'));
   assert.ok(html.includes('实时事件流'));
   // 健康矩阵：DB integrity 诚实标注
-  assert.ok(html.includes('opendiscord_db_integrity_ok'), 'DB integrity 缺失指标标注');
+  assert.ok(html.includes('ufot_db_integrity_ok'), 'DB integrity 缺失指标标注');
 });
 
 test('Sparkline：点数不足显示采样提示，有数据时输出 polyline', async () => {
@@ -127,9 +127,9 @@ test('Sparkline：点数不足显示采样提示，有数据时输出 polyline',
 test('指标解析接线：样例 metrics 的关键字段可被卡片读到', async () => {
   const { parseMetrics, sumMetric, firstMetric } = await import('../../api/metrics');
   const fams = parseMetrics(SAMPLE_METRICS);
-  assert.equal(firstMetric(fams, ['opendiscord_ws_connections_active'])!.value, 42);
-  assert.equal(sumMetric(fams, 'opendiscord_users_total'), 900);
-  assert.equal(sumMetric(fams, 'opendiscord_users_created_today_total'), 7);
-  assert.equal(sumMetric(fams, 'opendiscord_messages_today_total'), 3100);
-  assert.equal(sumMetric(fams, 'opendiscord_admin_audit_append_failures_total'), 0);
+  assert.equal(firstMetric(fams, ['ufot_ws_connections_active'])!.value, 42);
+  assert.equal(sumMetric(fams, 'ufot_users_total'), 900);
+  assert.equal(sumMetric(fams, 'ufot_users_created_today_total'), 7);
+  assert.equal(sumMetric(fams, 'ufot_messages_today_total'), 3100);
+  assert.equal(sumMetric(fams, 'ufot_admin_audit_append_failures_total'), 0);
 });

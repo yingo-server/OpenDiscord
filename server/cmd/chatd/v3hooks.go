@@ -18,9 +18,9 @@ import (
 	"context"
 	"errors"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/bus/delivery"
-	"github.com/yingo-server/OpenDiscord/server/internal/user/app"
-	"github.com/yingo-server/OpenDiscord/server/internal/user/net/ws"
+	"github.com/yingo-server/UFOT/server/internal/bus/delivery"
+	"github.com/yingo-server/UFOT/server/internal/user/app"
+	"github.com/yingo-server/UFOT/server/internal/user/net/ws"
 )
 
 // errV3ConnWrite 是 send 适配器把 c.Write 的 false 转成 error 的哨兵值：

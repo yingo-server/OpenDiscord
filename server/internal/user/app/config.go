@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/pkg/featureflags"
-	"github.com/yingo-server/OpenDiscord/server/internal/user/core/policy"
-	"github.com/yingo-server/OpenDiscord/server/internal/user/net/limit"
+	"github.com/yingo-server/UFOT/server/internal/pkg/featureflags"
+	"github.com/yingo-server/UFOT/server/internal/user/core/policy"
+	"github.com/yingo-server/UFOT/server/internal/user/net/limit"
 )
 
 func limitRule(rate, burst, capacity float64, maxPayload int, silent bool) limit.Rule {

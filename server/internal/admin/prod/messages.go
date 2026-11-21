@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/admin/service"
-	"github.com/yingo-server/OpenDiscord/server/internal/data/store/pg"
+	"github.com/yingo-server/UFOT/server/internal/admin/service"
+	"github.com/yingo-server/UFOT/server/internal/data/store/pg"
 )
 
 // Messages implements service.MessageRepository over the hot msg_messages_hot

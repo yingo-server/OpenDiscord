@@ -10,10 +10,10 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/proto/gen/chatpb"
-	"github.com/yingo-server/OpenDiscord/server/internal/proto/kinds"
-	"github.com/yingo-server/OpenDiscord/server/internal/user/core/authn"
-	"github.com/yingo-server/OpenDiscord/server/internal/user/net/ws"
+	"github.com/yingo-server/UFOT/server/internal/proto/gen/chatpb"
+	"github.com/yingo-server/UFOT/server/internal/proto/kinds"
+	"github.com/yingo-server/UFOT/server/internal/user/core/authn"
+	"github.com/yingo-server/UFOT/server/internal/user/net/ws"
 )
 
 // countingLifecycle 是 ConnLifecycle 的假实现：只数 Connected / cleanup

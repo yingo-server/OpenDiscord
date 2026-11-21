@@ -10,7 +10,7 @@ import (
 
 	"github.com/mattn/go-sqlite3"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/data/store"
+	"github.com/yingo-server/UFOT/server/internal/data/store"
 )
 
 // msgWriter implements store.MsgWriter (hot write path: flusher + seqalloc).

@@ -3,7 +3,7 @@ package pipe
 import (
 	"sync"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/data/store"
+	"github.com/yingo-server/UFOT/server/internal/data/store"
 )
 
 // Dedup is the client_msg_id idempotency guard: an in-memory LRU of

@@ -30,7 +30,7 @@ export function SideNav({
         </span>
         {!collapsed && (
           <div className="min-w-0">
-            <div className="truncate text-table font-semibold text-text-primary">OpenDiscord</div>
+            <div className="truncate text-table font-semibold text-text-primary">UFOT</div>
             <div className="text-caption text-text-tertiary">管理后台</div>
           </div>
         )}

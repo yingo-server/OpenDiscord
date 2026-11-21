@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"sort"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/admin/middleware"
-	"github.com/yingo-server/OpenDiscord/server/internal/admin/service"
+	"github.com/yingo-server/UFOT/server/internal/admin/middleware"
+	"github.com/yingo-server/UFOT/server/internal/admin/service"
 )
 
 func (a *API) handleFlagList(w http.ResponseWriter, r *http.Request) {

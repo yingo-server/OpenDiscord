@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/admin/identity"
+	"github.com/yingo-server/UFOT/server/internal/admin/identity"
 )
 
 type ctxKey int

@@ -83,7 +83,7 @@ export function Login() {
             OC
           </span>
           <div>
-            <h1 className="text-title text-text-primary">OpenDiscord 管理后台</h1>
+            <h1 className="text-title text-text-primary">UFOT 管理后台</h1>
             <p className="text-body-sm text-text-tertiary">{t('login.subtitle')}</p>
           </div>
         </div>

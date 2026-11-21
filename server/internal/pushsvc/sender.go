@@ -25,7 +25,7 @@ import (
 
 	"golang.org/x/crypto/hkdf"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/pkg/log"
+	"github.com/yingo-server/UFOT/server/internal/pkg/log"
 )
 
 // StatusError carries the push service HTTP status so the service can drop

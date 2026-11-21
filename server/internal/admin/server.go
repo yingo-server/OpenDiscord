@@ -17,15 +17,15 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/admin/auditshim"
-	"github.com/yingo-server/OpenDiscord/server/internal/admin/bridgeproxy"
-	"github.com/yingo-server/OpenDiscord/server/internal/admin/handler"
-	"github.com/yingo-server/OpenDiscord/server/internal/admin/middleware"
-	"github.com/yingo-server/OpenDiscord/server/internal/admin/service"
-	adminstore "github.com/yingo-server/OpenDiscord/server/internal/admin/store"
-	"github.com/yingo-server/OpenDiscord/server/internal/data/store"
-	"github.com/yingo-server/OpenDiscord/server/internal/pkg/log"
-	"github.com/yingo-server/OpenDiscord/server/internal/user/core/authn"
+	"github.com/yingo-server/UFOT/server/internal/admin/auditshim"
+	"github.com/yingo-server/UFOT/server/internal/admin/bridgeproxy"
+	"github.com/yingo-server/UFOT/server/internal/admin/handler"
+	"github.com/yingo-server/UFOT/server/internal/admin/middleware"
+	"github.com/yingo-server/UFOT/server/internal/admin/service"
+	adminstore "github.com/yingo-server/UFOT/server/internal/admin/store"
+	"github.com/yingo-server/UFOT/server/internal/data/store"
+	"github.com/yingo-server/UFOT/server/internal/pkg/log"
+	"github.com/yingo-server/UFOT/server/internal/user/core/authn"
 )
 
 // Config is the admin server's operational configuration. Every tunable that

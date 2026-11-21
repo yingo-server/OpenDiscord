@@ -1,8 +1,8 @@
 {
-  "name": "@opendiscord/admin",
+  "name": "@ufot/admin",
   "private": true,
   "version": "0.1.0",
-  "description": "OpenDiscord 管理后台 (ops console)",
+  "description": "UFOT 管理后台 (ops console)",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",

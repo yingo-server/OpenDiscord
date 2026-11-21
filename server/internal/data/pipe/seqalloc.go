@@ -3,7 +3,7 @@ package pipe
 import (
 	"context"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/data/store"
+	"github.com/yingo-server/UFOT/server/internal/data/store"
 )
 
 // seqAlloc batches per-conversation seq allocation: messages entering the

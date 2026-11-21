@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ---------------------------------------------------------------------------
-# OpenDiscord 单机安装 / 升级引导脚本（幂等，可反复执行）
+# UFOT 单机安装 / 升级引导脚本（幂等，可反复执行）
 #
 #   sudo ./deploy/install.sh                 # embedded 单进程（1.4 起 embedded-only）
 #   sudo ./deploy/install.sh --no-start      # 只装文件，不 enable/start（CI/镜像构建）
@@ -17,9 +17,9 @@ set -euo pipefail
 SCRIPT_DIR=$(cd -- "$(dirname -- "$0")" && pwd)
 REPO_DIR=$(cd -- "$SCRIPT_DIR/.." && pwd)
 
-PREFIX="${OPENDISCORD_PREFIX:-/opt/opendiscord}"
-ETC="${OPENDISCORD_ETC:-/etc/opendiscord}"
-STATE="${OPENDISCORD_STATE:-/var/lib/opendiscord}"
+PREFIX="${UFOT_PREFIX:-/opt/ufot}"
+ETC="${UFOT_ETC:-/etc/ufot}"
+STATE="${UFOT_STATE:-/var/lib/ufot}"
 
 MODE="embedded"
 START=1
@@ -47,11 +47,11 @@ usage() {
 
   --no-start       不执行 systemctl enable --now（仅落盘）
   --skip-keys      跳过密钥生成（密钥由 KMS/配置管理下发时使用）
-  --prefix DIR     安装前缀（默认 /opt/opendiscord）
-  --etc DIR        配置目录（默认 /etc/opendiscord）
-  --state DIR      数据目录（默认 /var/lib/opendiscord）
-  --domain URL     公网来源，写进 opendiscord.toml 的 public_origin 注释头
-  --admin-user U   首启管理员用户名（写入 /etc/opendiscord/env，0600）
+  --prefix DIR     安装前缀（默认 /opt/ufot）
+  --etc DIR        配置目录（默认 /etc/ufot）
+  --state DIR      数据目录（默认 /var/lib/ufot）
+  --domain URL     公网来源，写进 ufot.toml 的 public_origin 注释头
+  --admin-user U   首启管理员用户名（写入 /etc/ufot/env，0600）
   --admin-pass-file PATH
                    管理员密码文件（首启引导，写入 env，0600）。
                    绝不接受命令行明文密码——只收文件，或在 TTY 下用
@@ -81,7 +81,7 @@ t_msg() {
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --split)     die "--split 已移除：split 多进程部署未实现，OpenDiscord 为 embedded-only（lts-1.4-plan §5 #4）" ;;
+    --split)     die "--split 已移除：split 多进程部署未实现，UFOT 为 embedded-only（lts-1.4-plan §5 #4）" ;;
     --no-start)  START=0 ;;
     --skip-keys) SKIP_KEYS=1 ;;
     --domain)    DOMAIN="${2:?--domain 需要参数}"; shift ;;
@@ -113,9 +113,9 @@ need getent
 # ---------------------------------------------------------------------------
 log "创建系统用户与组（embedded-only）"
 
-if ! getent group opendiscord >/dev/null 2>&1; then
-  groupadd --system opendiscord
-  log "  创建组 opendiscord"
+if ! getent group ufot >/dev/null 2>&1; then
+  groupadd --system ufot
+  log "  创建组 ufot"
 fi
 
 make_user() {
@@ -123,33 +123,33 @@ make_user() {
   if getent passwd "$_u" >/dev/null 2>&1; then
     log "  用户 $_u 已存在"
   else
-    useradd --system --gid opendiscord --home-dir "$STATE" \
+    useradd --system --gid ufot --home-dir "$STATE" \
       --shell "$(command -v nologin || echo /usr/sbin/nologin)" \
-      --comment "OpenDiscord service ($_u)" "$_u"
+      --comment "UFOT service ($_u)" "$_u"
     log "  创建用户 $_u"
   fi
 }
 
-make_user opendiscord
+make_user ufot
 
 # ---------------------------------------------------------------------------
 # 2. 目录与权限（security-spec §6.2）
 # ---------------------------------------------------------------------------
 log "创建目录并校正权限"
 
-# /etc/opendiscord 0750 root:opendiscord —— 配置根
-install -d -m 0750 -o root -g opendiscord "$ETC"
+# /etc/ufot 0750 root:ufot —— 配置根
+install -d -m 0750 -o root -g ufot "$ETC"
 # 密钥目录 0750，密钥文件 0640（单密钥单文件）
-install -d -m 0750 -o root -g opendiscord "$ETC/keys"
+install -d -m 0750 -o root -g ufot "$ETC/keys"
 # 兼容当前 chatd 骨架（从工作目录读 config/chatd.toml）
-install -d -m 0750 -o root -g opendiscord "$ETC/config"
+install -d -m 0750 -o root -g ufot "$ETC/config"
 
 # 运行数据 0700；媒体 0750（经 LUKS 卷）；备份 0700
-install -d -m 0700 -o opendiscord -g opendiscord "$STATE"
-install -d -m 0750 -o opendiscord -g opendiscord "$STATE/media"
-install -d -m 0700 -o opendiscord -g opendiscord "$STATE/backup"
+install -d -m 0700 -o ufot -g ufot "$STATE"
+install -d -m 0750 -o ufot -g ufot "$STATE/media"
+install -d -m 0700 -o ufot -g ufot "$STATE/backup"
 
-# 二进制目录：/opt/opendiscord 0755 root:root，运行用户不可写
+# 二进制目录：/opt/ufot 0755 root:root，运行用户不可写
 install -d -m 0755 -o root -g root "$PREFIX"
 install -d -m 0755 -o root -g root "$PREFIX/releases"
 install -d -m 0755 -o root -g root "$PREFIX/releases/bootstrap"
@@ -157,7 +157,7 @@ install -d -m 0755 -o root -g root "$PREFIX/releases/bootstrap/bin"
 install -d -m 0755 -o root -g root "$PREFIX/releases/bootstrap/web"
 
 # ---------------------------------------------------------------------------
-# 3. 环境变量文件（0600 root:opendiscord，systemd 以 root 读取后再降权）
+# 3. 环境变量文件（0600 root:ufot，systemd 以 root 读取后再降权）
 # ---------------------------------------------------------------------------
 log "写入环境变量文件"
 
@@ -167,18 +167,18 @@ write_env() {
     log "  $_path 已存在，保持不变"
   else
     cat > "$_path" <<EOF
-# OpenDiscord 环境变量（KEY=VALUE）。mode 0600，禁止提交版本库。
-# 修改后：systemctl restart opendiscord（或对应层）
-# 只放运行时参数；策略类配置放 /etc/opendiscord/policy.json
+# UFOT 环境变量（KEY=VALUE）。mode 0600，禁止提交版本库。
+# 修改后：systemctl restart ufot（或对应层）
+# 只放运行时参数；策略类配置放 /etc/ufot/policy.json
 TZ=UTC
 RUST_BACKTRACE=0
 GOMEMLIMIT=1280MiB
-OPENDISCORD_CONFIG=$ETC/opendiscord.toml
+UFOT_CONFIG=$ETC/ufot.toml
 ${_extra}
 EOF
     log "  创建 $_path"
   fi
-  chown root:opendiscord "$_path"
+  chown root:ufot "$_path"
   chmod 0600 "$_path"
 }
 
@@ -186,22 +186,22 @@ EOF
 # 只收 0600 密码文件；写入 env（0600），由 chatd 首启消费。
 admin_env_extra=""
 if [ -n "$ADMIN_USER" ]; then
-  admin_env_extra+="OPENDISCORD_ADMIN_USER=$ADMIN_USER"$'\n'
+  admin_env_extra+="UFOT_ADMIN_USER=$ADMIN_USER"$'\n'
 fi
 if [ -n "$ADMIN_PASS_FILE" ]; then
   if [ ! -f "$ADMIN_PASS_FILE" ]; then
     die "admin pass file 不存在: $ADMIN_PASS_FILE（退出码 78）"
   fi
-  admin_env_extra+="OPENDISCORD_ADMIN_PASS_FILE=$ADMIN_PASS_FILE"$'\n'
+  admin_env_extra+="UFOT_ADMIN_PASS_FILE=$ADMIN_PASS_FILE"$'\n'
   ok "$(t_msg admin_env_written)"
 fi
-[ -n "$COLD_DSN" ] && admin_env_extra+="OPENDISCORD_COLD_DSN=$COLD_DSN"$'\n'
+[ -n "$COLD_DSN" ] && admin_env_extra+="UFOT_COLD_DSN=$COLD_DSN"$'\n'
 if [ -n "$TURN_SERVER" ]; then
   # TURN 服务器写进配置注释（未配置凭据前不生效）
   admin_env_extra+="# TURN server: $TURN_SERVER (see deploy/coturn)"$'\n'
 fi
 
-write_env "$ETC/env" "OPENDISCORD_LAYER=embedded"$'\n'"$admin_env_extra"
+write_env "$ETC/env" "UFOT_LAYER=embedded"$'\n'"$admin_env_extra"
 # ---------------------------------------------------------------------------
 # 4. 密钥（security-spec §6.4.1 清单）
 #    Ed25519 用 openssl genpkey（OpenSSL ≥1.1.1）；
@@ -236,10 +236,10 @@ if [ "$SKIP_KEYS" -eq 0 ]; then
     ( cd "$REPO_DIR" && go run ./deploy/keygen -dir "$ETC/keys" )
   fi
 
-  # 密钥文件按矩阵：私钥 0640 root:opendiscord；对称密钥与备份口令 0600
-  chown root:opendiscord "$ETC"/keys/*.pem 2>/dev/null || true
+  # 密钥文件按矩阵：私钥 0640 root:ufot；对称密钥与备份口令 0600
+  chown root:ufot "$ETC"/keys/*.pem 2>/dev/null || true
   chmod 0640 "$ETC"/keys/*.pem 2>/dev/null || true
-  chown root:opendiscord "$ETC/keys"/* 2>/dev/null || true
+  chown root:ufot "$ETC/keys"/* 2>/dev/null || true
   chmod 0600 "$ETC/keys/ipc_key" "$ETC/keys/hmac_key" "$ETC/keys/pii_key" \
              "$ETC/keys/phone_lookup_key" "$ETC/keys/download_key" \
              "$ETC/keys/upload_secret" "$ETC/keys/audit_chain_key" "$ETC/keys/backup.key" 2>/dev/null || true
@@ -249,7 +249,7 @@ if [ "$SKIP_KEYS" -eq 0 ]; then
     [ -n "${fp:-}" ] && log "  jwt_sign_key 指纹: $fp"
   fi
 
-  # 备份脚本的文档化接口：/etc/opendiscord/backup.key → keys/backup.key（同一份密钥）
+  # 备份脚本的文档化接口：/etc/ufot/backup.key → keys/backup.key（同一份密钥）
   ln -sfn keys/backup.key "$ETC/backup.key"
   chown -h root:root "$ETC/backup.key"
 else
@@ -266,12 +266,12 @@ install_cfg() {
   if [ -f "$_dst" ]; then
     log "  $_dst 已存在，保持不变（升级请手工 merge）"
   else
-    install -m "$_mode" -o root -g opendiscord "$_src" "$_dst"
+    install -m "$_mode" -o root -g ufot "$_src" "$_dst"
     log "  安装 $_dst"
   fi
 }
 
-install_cfg "$SCRIPT_DIR/opendiscord.toml" "$ETC/opendiscord.toml" 0640
+install_cfg "$SCRIPT_DIR/ufot.toml" "$ETC/ufot.toml" 0640
 
 # --domain actually lands in public_origin: the previous version only printed
 # "recorded" and left the config untouched, so a public deployment silently ran
@@ -283,22 +283,22 @@ if [ -n "$DOMAIN" ]; then
     http://*) warn "public_origin 使用 http://，生产请用 https://" ;;
     *) die "--domain 需要带 scheme 的 URL（例如 https://chat.example.com）" ;;
   esac
-  if [ -f "$ETC/opendiscord.toml" ]; then
-    if grep -q '^[[:space:]]*public_origin[[:space:]]*=' "$ETC/opendiscord.toml"; then
-      sed -i "s|^[[:space:]]*public_origin[[:space:]]*=.*|public_origin = \"$DOMAIN\"|" "$ETC/opendiscord.toml"
+  if [ -f "$ETC/ufot.toml" ]; then
+    if grep -q '^[[:space:]]*public_origin[[:space:]]*=' "$ETC/ufot.toml"; then
+      sed -i "s|^[[:space:]]*public_origin[[:space:]]*=.*|public_origin = \"$DOMAIN\"|" "$ETC/ufot.toml"
       ok "  public_origin = $DOMAIN"
     else
-      printf '\npublic_origin = "%s"\n' "$DOMAIN" >> "$ETC/opendiscord.toml"
+      printf '\npublic_origin = "%s"\n' "$DOMAIN" >> "$ETC/ufot.toml"
       ok "  public_origin = $DOMAIN"
     fi
   fi
 fi
 install_cfg "$SCRIPT_DIR/policy.json"   "$ETC/policy.json"   0640
-install -m 0640 -o root -g opendiscord "$SCRIPT_DIR/Caddyfile" "$ETC/Caddyfile.reference"
+install -m 0640 -o root -g ufot "$SCRIPT_DIR/Caddyfile" "$ETC/Caddyfile.reference"
 
 # 当前 chatd 骨架从工作目录读 config/chatd.toml；用相对符号链接指向正式配置。
-# WorkingDirectory=/etc/opendiscord，因此 config/chatd.toml → ../opendiscord.toml。
-ln -sfn ../opendiscord.toml "$ETC/config/chatd.toml"
+# WorkingDirectory=/etc/ufot，因此 config/chatd.toml → ../ufot.toml。
+ln -sfn ../ufot.toml "$ETC/config/chatd.toml"
 
 # ---------------------------------------------------------------------------
 # 6. 二进制与前端产物（release layout: releases/<ver> + current 符号链接）
@@ -345,11 +345,11 @@ log "安装 systemd unit"
 
 UNIT_DIR="/etc/systemd/system"
 install -d -m 0755 -o root -g root "$UNIT_DIR"
-install -m 0644 -o root -g root "$SCRIPT_DIR/systemd/opendiscord.service" "$UNIT_DIR/opendiscord.service"
-log "  opendiscord.service"
+install -m 0644 -o root -g root "$SCRIPT_DIR/systemd/ufot.service" "$UNIT_DIR/ufot.service"
+log "  ufot.service"
 
 install -d -m 0755 -o root -g root /etc/systemd/journald.conf.d
-install -m 0644 -o root -g root "$SCRIPT_DIR/journald/opendiscord.conf" /etc/systemd/journald.
+install -m 0644 -o root -g root "$SCRIPT_DIR/journald/ufot.conf" /etc/systemd/journald.
 # ---------------------------------------------------------------------------
 # 8. 生效
 # ---------------------------------------------------------------------------
@@ -359,9 +359,9 @@ elif [ "$START" -eq 1 ]; then
   log "daemon-reload + enable --now"
   systemctl daemon-reload
   systemctl try-restart systemd-journald >/dev/null 2>&1 || true
-  systemctl enable --now opendiscord.service
+  systemctl enable --now ufot.service
   sleep 1
-  systemctl --no-pager --lines=0 status opendiscord.service 2>/dev/null | head -5 || true
+  systemctl --no-pager --lines=0 status ufot.service 2>/dev/null | head -5 || true
 else
   log "已跳过启动（--no-start）"
   systemctl daemon-reload 2>/dev/null || true
@@ -385,18 +385,18 @@ cat <<EOF
 安装完成（embedded-only）
 
 下一步：
-  1. 编辑 $ETC/opendiscord.toml
+  1. 编辑 $ETC/ufot.toml
        - public_origin = https://你的域名
        - cold_dsn      = postgres://...（冷库）
        - listen/admin_listen 保持仅监听 127.0.0.1
   2. 编辑 $ETC/policy.json（保留天数/归档 cron/备份 cron/限流），改完：
-       systemctl reload opendiscord
+       systemctl reload ufot
   3. 配置 Caddy（参考 $ETC/Caddyfile.reference）：
-       OPENDISCORD_DOMAIN=chat.example.com
+       UFOT_DOMAIN=chat.example.com
        把 /api/admin/* 的 remote_ip 白名单改成你的运维出口 IP
   4. 防火墙只放行 22 / 80 / 443（security-spec §6.3 红线）
   5. 首次登录管理后台后立即：开启 TOTP、核对 IP 白名单、确认审计链校验任务
-  6. 自检：opendiscordctl status && journalctl -u opendiscord -n 50 --no-pager
+  6. 自检：ufotctl status && journalctl -u ufot -n 50 --no-pager
 
 升级与回滚：deploy/release.sh（保留 current/last 两个 release 目录）
 备份：deploy/backup.sh（默认 05:30，由 policy.json 的 backup.cron 调度）

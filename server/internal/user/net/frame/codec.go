@@ -12,7 +12,7 @@ import (
 	"errors"
 	"fmt"
 
-	chatpb "github.com/yingo-server/OpenDiscord/server/internal/proto/gen/chatpb"
+	chatpb "github.com/yingo-server/UFOT/server/internal/proto/gen/chatpb"
 )
 
 const (

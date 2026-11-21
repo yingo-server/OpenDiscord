@@ -1,4 +1,4 @@
-# OpenDiscord v2.0.0 发布说明
+# UFOT v2.0.0 发布说明
 
 发布日期：2026-11-21
 Tag：`v2.0.0`（正式版，非 prerelease）

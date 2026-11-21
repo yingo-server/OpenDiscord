@@ -14,7 +14,7 @@ import (
 	"strings"
 )
 
-// credentials mirrors adminctl's credentials file ($XDG_CONFIG_HOME/opendiscord/
+// credentials mirrors adminctl's credentials file ($XDG_CONFIG_HOME/ufot/
 // adminctl.json). Sharing it means `adminctl login` once is enough for both
 // CLIs — and guarantees the exact same auth/CSRF path (no side channel).
 type credentials struct {
@@ -63,7 +63,7 @@ type apiClient struct {
 
 func newAPIClient(e *environment, g globals) (*apiClient, error) {
 	if strings.TrimSpace(g.Token) == "" {
-		return nil, deniedf("未配置管理令牌：请先运行 adminctl login（或设置 OPENDISCORD_ADMIN_TOKEN / --token）")
+		return nil, deniedf("未配置管理令牌：请先运行 adminctl login（或设置 UFOT_ADMIN_TOKEN / --token）")
 	}
 	base := strings.TrimRight(strings.TrimSpace(g.AdminURL), "/")
 	u, err := url.Parse(base)
@@ -152,7 +152,7 @@ func jsonMarshalIndent(v any) ([]byte, error) { return json.MarshalIndent(v, "",
 func newUUID() string {
 	var b [16]byte
 	if _, err := rand.Read(b[:]); err != nil {
-		return fmt.Sprintf("opendiscordctl-%d", len(b))
+		return fmt.Sprintf("ufotctl-%d", len(b))
 	}
 	b[6] = (b[6] & 0x0f) | 0x40
 	b[8] = (b[8] & 0x3f) | 0x80

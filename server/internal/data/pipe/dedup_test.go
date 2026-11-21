@@ -3,7 +3,7 @@ package pipe
 import (
 	"testing"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/data/store"
+	"github.com/yingo-server/UFOT/server/internal/data/store"
 )
 
 // Dedup unit tests: memory LRU + conflict translation.

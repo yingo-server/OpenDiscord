@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/data/store"
+	"github.com/yingo-server/UFOT/server/internal/data/store"
 )
 
 // actionLoginFail is the cumulative counter action for login failures

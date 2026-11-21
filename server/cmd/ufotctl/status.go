@@ -9,7 +9,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/pkg/i18n"
+	"github.com/yingo-server/UFOT/server/internal/pkg/i18n"
 )
 
 // statusReport is the `status` payload. Field names double as the JSON keys.

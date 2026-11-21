@@ -8,7 +8,7 @@ package verifier
 import (
 	"context"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/proto"
+	"github.com/yingo-server/UFOT/server/internal/proto"
 )
 
 // Reject code 常量（连接级降级，proto.Reject.Code）。

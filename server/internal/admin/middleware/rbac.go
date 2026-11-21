@@ -7,9 +7,9 @@ import (
 	"sort"
 	"time"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/admin/identity"
-	"github.com/yingo-server/OpenDiscord/server/internal/data/store"
-	"github.com/yingo-server/OpenDiscord/server/internal/pkg/log"
+	"github.com/yingo-server/UFOT/server/internal/admin/identity"
+	"github.com/yingo-server/UFOT/server/internal/data/store"
+	"github.com/yingo-server/UFOT/server/internal/pkg/log"
 )
 
 // Permission is one admin capability. Route definitions reference these; the

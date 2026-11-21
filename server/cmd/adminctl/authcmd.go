@@ -10,7 +10,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/pkg/i18n"
+	"github.com/yingo-server/UFOT/server/internal/pkg/i18n"
 )
 
 func cmdLogin(g globals, args []string, in io.Reader, out, errw io.Writer) error {

@@ -20,8 +20,8 @@ import (
 	"hash/fnv"
 	"sync/atomic"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/proto/gen/chatpb"
-	"github.com/yingo-server/OpenDiscord/server/internal/proto/kinds"
+	"github.com/yingo-server/UFOT/server/internal/proto/gen/chatpb"
+	"github.com/yingo-server/UFOT/server/internal/proto/kinds"
 )
 
 // V3Frame 是投递展开后、写入 mailbox 的 canonical 下行帧（§2.1）。

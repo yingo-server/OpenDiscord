@@ -65,7 +65,7 @@ VITE_VAPID_PUBLIC_KEY=<第 1 步得到的公钥（base64url，无 padding）>
 示例（docker/systemd 环境）：
 
 ```bash
-export VAPID_PRIVATE_KEY="$(cat /etc/opendiscord/vapid.pem)"
+export VAPID_PRIVATE_KEY="$(cat /etc/ufot/vapid.pem)"
 export VAPID_SUBJECT="mailto:admin@example.com"
 ```
 

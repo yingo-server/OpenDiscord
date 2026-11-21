@@ -1,4 +1,4 @@
-# OpenDiscord 构建骨架。目标说明见 docs/architecture.md 实施顺序节与 docs/deploy.md。
+# UFOT 构建骨架。目标说明见 docs/architecture.md 实施顺序节与 docs/deploy.md。
 SHELL := /bin/bash
 
 PROTO_DIR     := proto
@@ -35,7 +35,7 @@ proto:
 		protoc \
 			--go_out=server/internal/proto/gen \
 			--go_opt=paths=source_relative \
-			--go_opt=M$(PROTO_DIR)/chat.proto=github.com/yingo-server/OpenDiscord/$(GEN_DIR) \
+			--go_opt=M$(PROTO_DIR)/chat.proto=github.com/yingo-server/UFOT/$(GEN_DIR) \
 			$(PROTO_DIR)/chat.proto; \
 	fi
 
@@ -109,15 +109,15 @@ release-all: release
 	mkdir -p "$$stage/dist" "$$stage/deploy" "$$stage/docs"; \
 	install -m 0755 "$(DIST_DIR)/$(BIN)" "$$stage/dist/$(BIN)"; \
 	cp -R deploy/systemd deploy/journald deploy/keygen "$$stage/deploy/"; \
-	for f in install.sh release.sh backup.sh opendiscord.toml policy.json Caddyfile logrotate.conf; do \
+	for f in install.sh release.sh backup.sh ufot.toml policy.json Caddyfile logrotate.conf; do \
 		cp "deploy/$$f" "$$stage/deploy/$$f"; \
 	done; \
 	chmod 0755 "$$stage/deploy/install.sh" "$$stage/deploy/release.sh" "$$stage/deploy/backup.sh"; \
 	cp docs/deploy.md "$$stage/docs/deploy.md"; \
 	cp README.md LICENSE "$$stage/"; \
-	tar -czf "$(DIST_DIR)/opendiscord-$$ver-linux-$(ARCH).tar.gz" -C "$$stage" .; \
-	( cd "$(DIST_DIR)" && sha256sum "opendiscord-$$ver-linux-$(ARCH).tar.gz" > SHA256SUMS ); \
-	echo "release artifact: $(DIST_DIR)/opendiscord-$$ver-linux-$(ARCH).tar.gz"; \
+	tar -czf "$(DIST_DIR)/ufot-$$ver-linux-$(ARCH).tar.gz" -C "$$stage" .; \
+	( cd "$(DIST_DIR)" && sha256sum "ufot-$$ver-linux-$(ARCH).tar.gz" > SHA256SUMS ); \
+	echo "release artifact: $(DIST_DIR)/ufot-$$ver-linux-$(ARCH).tar.gz"; \
 	cat "$(DIST_DIR)/SHA256SUMS"
 
 clean:

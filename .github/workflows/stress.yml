@@ -147,7 +147,7 @@ jobs:
               -out ladder.json 2>&1 | tee -a stress.log
 
             {
-              echo '## OpenDiscord capacity ladder'
+              echo '## UFOT capacity ladder'
               echo ''
               echo "- **rate limiting:** $RL_STATE"
               echo "- **conv members / fanout width:** $CONV_MEMBERS"
@@ -373,8 +373,8 @@ jobs:
           mkdir -p bench
           cp ladder.json "bench/ladder-$TS.json"
           cp stress.log  "bench/ladder-$TS.log"
-          git config user.name  "opendiscord-bench"
-          git config user.email "bench@opendiscord.local"
+          git config user.name  "ufot-bench"
+          git config user.email "bench@ufot.local"
           git checkout -q -B bench
           git add bench
           git commit -q -m "bench: ladder $TS (run ${{ github.run_id }})"

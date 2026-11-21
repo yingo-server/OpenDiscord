@@ -60,13 +60,13 @@
 ### P1-5 CLI 三件套名称与职责划分不符
 
 - **文档出处**：architecture.md 总目录结构 + admin-data-design.md §7：`chatd-ctl / datactl / adminctl`。
-- **代码证据**：`ls server/cmd` = `adminctl, chatd, opendiscordctl`。`opendiscordctl`（usage 自述「系统级运维 CLI」）承担了文档中 chatd-ctl 与 datactl 的全部职责（status/doctor/backup/archive/flags/ban），且 `datactl migrate status` 不存在（迁移只有启动自动 up，`server/internal/data/store/migrate/`）。
-- **建议**：改文档（合并为 `opendiscordctl` + `adminctl` 两件套是更少二进制的合理选择），`migrate status` 可作为 P3 功能缺漏补进 opendiscordctl doctor。
+- **代码证据**：`ls server/cmd` = `adminctl, chatd, ufotctl`。`ufotctl`（usage 自述「系统级运维 CLI」）承担了文档中 chatd-ctl 与 datactl 的全部职责（status/doctor/backup/archive/flags/ban），且 `datactl migrate status` 不存在（迁移只有启动自动 up，`server/internal/data/store/migrate/`）。
+- **建议**：改文档（合并为 `ufotctl` + `adminctl` 两件套是更少二进制的合理选择），`migrate status` 可作为 P3 功能缺漏补进 ufotctl doctor。
 
 ### P1-6 split 部署形态：systemd units 引用不存在的二进制
 
 - **文档出处**：architecture.md「部署形态」（split：同代码编译出 5 个二进制）；bridge-design §4（`cmd/chatd-bridge/main.go` 等）。
-- **代码证据**：`deploy/systemd/opendiscord-{bridge,user,data,admin}.service` 的 ExecStart 指向 `bin/chatd-bridge` 等，但 `server/cmd` 下只有 `chatd`，且 `server/cmd/chatd/main.go:71` 明确拒绝非 embedded mode（「this build is embedded-only」）。units 一旦启用即启动失败。
+- **代码证据**：`deploy/systemd/ufot-{bridge,user,data,admin}.service` 的 ExecStart 指向 `bin/chatd-bridge` 等，但 `server/cmd` 下只有 `chatd`，且 `server/cmd/chatd/main.go:71` 明确拒绝非 embedded mode（「this build is embedded-only」）。units 一旦启用即启动失败。
 - **建议**：短期改文档（标注 split 为 1.1 计划、units 为预留），长期补 `cmd/chatd-{bridge,user,data,admin}`。至少应在 units 加注释，避免运维误启。
 
 ### P1-7 cmd/chatd 装配远超「<200 行」
@@ -91,7 +91,7 @@
 ### P1-10 backup 不走 job.Unit / archive_runs 账本
 
 - **文档出处**：admin-data-design.md §5（三种触发共享 job.Unit 与账本；backup 是 job 之一）、§1.1（backuper：VACUUM INTO）。
-- **代码证据**：`server/internal/data/job/` 只有 `archiver.go + jobber.go`；`server/cmd/chatd/jobs.go` 只注册 archiver。备份由 `opendiscordctl backup` 调 `deploy/backup.sh` 外部脚本实现（`opendiscordctl/backup.go`）。`config/policy.json` 的 `backup` 与 `trim` 段定义了但无消费者（`rg -n "Trim|Backup" server/internal/data/job` 零命中）。
+- **代码证据**：`server/internal/data/job/` 只有 `archiver.go + jobber.go`；`server/cmd/chatd/jobs.go` 只注册 archiver。备份由 `ufotctl backup` 调 `deploy/backup.sh` 外部脚本实现（`ufotctl/backup.go`）。`config/policy.json` 的 `backup` 与 `trim` 段定义了但无消费者（`rg -n "Trim|Backup" server/internal/data/job` 零命中）。
 - **建议**：改代码（补 backup/trim job.Unit）或改文档把 backup 明确为「部署层脚本 + CLI 触发」的 v1.0 形态、trim 为预留。当前 policy.json 里两段死配置会误导运维。
 
 ### P1-11 store 包外 SQL：admin/prod 整包是 SQL
@@ -156,10 +156,10 @@
 - **判定**：均为「policy 缺失时的安全兜底」而非策略主导，注释明确指向 policy.Default()，不违反 §4 判定标准（判定标准针对的是「策略值出现在机制代码里当唯一来源」）。但 `rg -n "86400"` 的两个命中（mediasvc.go:282 Cache-Control、admin/handler/auth.go:122 cookie maxAge 上限）是 HTTP 机制参数，非运营策略，合规。
 - **建议**：无需改代码；可在 admin-data §4 补一句「机制代码允许携带与 policy.Default() 一致的兜底值」。
 
-### P2-8 opendiscordctl 缺退出码 65
+### P2-8 ufotctl 缺退出码 65
 
 - **文档出处**：admin-data §7「目标不存在 65」。
-- **代码证据**：`opendiscordctl/cli.go:42-43` 只有 `exitUsage=64 / exitDenied=77` + 兜底 1；adminctl 有 `exitNotFound=65`（`client.go:26`）。
+- **代码证据**：`ufotctl/cli.go:42-43` 只有 `exitUsage=64 / exitDenied=77` + 兜底 1；adminctl 有 `exitNotFound=65`（`client.go:26`）。
 - **建议**：小改代码补齐，或文档注明 65 仅 adminctl。
 
 ---
@@ -174,7 +174,7 @@
 | P3-4 | **诊断环回压测 990-999**（chatd-ctl bench） | architecture 号段表 / bridge-design §7 | kinds.go 只定义 `KindDiagLoopback=990`；router.go:63 `kind >= 910 && kind < 990`——990 落 NO_ROUTE，无 handler | 真缺 |
 | P3-5 | **INFO 日志按 kind 采样（消息 10%）** | bridge-design §6 | `log.go:143` 注释「采样由调用方负责」，`rg -n "sample|采样"` 无实现 | 真缺（journald RateLimitBurst 部分兜底） |
 | P3-6 | **SIGHUP 白名单含「路由表」热更** | bridge-design §5 | `router.Set()` 存在（router.go:74）但 `assemble.go reload()` 只重载 policy+flags，未调 Set | 半缺：机制在、未接线 |
-| P3-7 | **datactl migrate status / policy show / doctor 的 migrate 部分** | admin-data §7 | opendiscordctl doctor 覆盖热库/磁盘/冷库连通，无 migrate status 子命令 | 真缺（小） |
+| P3-7 | **datactl migrate status / policy show / doctor 的 migrate 部分** | admin-data §7 | ufotctl doctor 覆盖热库/磁盘/冷库连通，无 migrate status 子命令 | 真缺（小） |
 | P3-8 | **SIGUSR2 handler** | bridge-design §5（stdout 摘要） | signalset 定义 Custom 语义，chatd watch 不处理（见 P1-13） | 预留 |
 | P3-9 | **exit 70 在 embedded 模式的可达性** | bridge-design §5 | supervisor.go:26 定义 `ExitInvariant=70`（AckTracker panic→Recover 转换），但 embedded 下 supervisor 信号通道为 `neverFires()`（assemble.go:563），chatd 自身只返回 0/1/2/75——AckTracker panic 在 embedded 进程是否映射为 70 **待确认**（panic 未被 chatd main 捕获时应崩进程退出码 2，而非 70） | 待确认，建议补一条 e2e 验证 |
 
@@ -205,7 +205,7 @@
    - 时序图：`911 ack` → `103 MSG_ACK`（P1-1）。
    - 架构图：usergw 加 `/api/auth/*`、`/api/media/*` HTTP 面（P2-1）。
    - 号段表：300-304 加「v1.0 未启用」注记；补 ≥1_000_000 合成 kind 行（P2-2/3）。
-   - 目录结构：`chatd-ctl/datactl` → `opendiscordctl`；`<200 行` 改定性（P1-5/7）；标注 split 二进制与对应 systemd units 为预留（P1-6）。
+   - 目录结构：`chatd-ctl/datactl` → `ufotctl`；`<200 行` 改定性（P1-5/7）；标注 split 二进制与对应 systemd units 为预留（P1-6）。
 2. **bridge-design.md**
    - §2.2/§4.1：import-lint 从「CI 强制（现状）」改为「计划中的 CI 步骤」，或推动补 lint 后保留（P0-1）。
    - §3：/healthz 行改写为「v1.0 保留 HTTP healthz，HEARTBEAT 帧为 split 形态方案」（P2-4）。
@@ -214,7 +214,7 @@
    - §3.1：表名改 `{域}_{实体}` 前缀制；reports 移到热库（P1-2/3）。
    - §4：限流策略段标注「v1.0 未接线」（若不修代码，见 P0-2）；补机制兜底值说明（P2-7）、cron 方言限制（P2-5）。
    - §5：backup 标注 v1.0 为脚本+CLI 形态（P1-10）。
-   - §7：CLI 名称改 opendiscordctl/adminctl；migrate status 标缺（P1-5/P3-7）。
+   - §7：CLI 名称改 ufotctl/adminctl；migrate status 标缺（P1-5/P3-7）。
    - §8：动词子资源白名单扩容（P1-4）。
    - §9：整节 systemd/信号基线与 bridge-design §5 对齐，删除矛盾参数（P1-12/13）。
    - §10 红线 1：「store 包外无 SQL」改为「store 适配包（data/store、admin/store、admin/prod）外无 SQL」（P1-11）。

@@ -13,10 +13,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/admin"
-	"github.com/yingo-server/OpenDiscord/server/internal/admin/bridgeproxy"
-	"github.com/yingo-server/OpenDiscord/server/internal/admin/identity"
-	"github.com/yingo-server/OpenDiscord/server/internal/proto/kinds"
+	"github.com/yingo-server/UFOT/server/internal/admin"
+	"github.com/yingo-server/UFOT/server/internal/admin/bridgeproxy"
+	"github.com/yingo-server/UFOT/server/internal/admin/identity"
+	"github.com/yingo-server/UFOT/server/internal/proto/kinds"
 )
 
 // seedSession writes an admin row + session row directly, returning the bearer

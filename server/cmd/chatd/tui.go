@@ -20,7 +20,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/pkg/i18n"
+	"github.com/yingo-server/UFOT/server/internal/pkg/i18n"
 )
 
 const tuiRefreshInterval = 2 * time.Second
@@ -48,7 +48,7 @@ type tuiSnapshot struct {
 func renderTUI(w io.Writer, snap tuiSnapshot) {
 	var b strings.Builder
 	b.WriteString("\033[2J\033[H") // clear screen, cursor home
-	b.WriteString("═══ OpenDiscord chatd ════════════════════════════════════════\n")
+	b.WriteString("═══ UFOT chatd ════════════════════════════════════════\n")
 	fmt.Fprintf(&b, " %s: %s   %s: %s   %s: %s\n",
 		i18n.T("chatd.tui.version"), snap.Version,
 		i18n.T("chatd.tui.uptime"), snap.Uptime,

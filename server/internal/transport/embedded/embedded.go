@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/proto"
-	"github.com/yingo-server/OpenDiscord/server/internal/transport"
+	"github.com/yingo-server/UFOT/server/internal/proto"
+	"github.com/yingo-server/UFOT/server/internal/transport"
 )
 
 var _ = transport.Peer(nil) // 接口契约锚点

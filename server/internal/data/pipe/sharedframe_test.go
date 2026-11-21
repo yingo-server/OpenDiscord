@@ -19,7 +19,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	chatpb "github.com/yingo-server/OpenDiscord/server/internal/proto/gen/chatpb"
+	chatpb "github.com/yingo-server/UFOT/server/internal/proto/gen/chatpb"
 )
 
 // countingEncode wraps an encodeFunc and counts invocations. This is the

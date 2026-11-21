@@ -57,18 +57,18 @@ export function Metrics() {
   const families = useMemo(() => (text ? parseMetrics(text) : []), [text]);
 
   const connections = firstMetric(families, [
-    'opendiscord_ws_connections_active',
+    'ufot_ws_connections_active',
     'ws_connections_active',
     'gateway_connections_active',
-    'opendiscord_connections_active',
+    'ufot_connections_active',
   ]);
-  const queue = firstMetric(families, ['writech_queue_depth', 'opendiscord_writech_queue_depth'], 'max');
+  const queue = firstMetric(families, ['writech_queue_depth', 'ufot_writech_queue_depth'], 'max');
   const errorRate = httpErrorRate(families);
-  const chainBroken = firstMetric(families, ['audit_chain_broken', 'opendiscord_audit_chain_broken'], 'max');
-  const goroutines = firstMetric(families, ['go_goroutines', 'opendiscord_goroutines'], 'max');
-  const rss = firstMetric(families, ['process_resident_memory_bytes', 'opendiscord_resident_memory_bytes'], 'max');
-  const rateLimited = firstMetric(families, ['gateway_ratelimit_dropped_total', 'opendiscord_ratelimit_dropped_total']);
-  const busy = firstMetric(families, ['writech_busy_total', 'opendiscord_writech_busy_total']);
+  const chainBroken = firstMetric(families, ['audit_chain_broken', 'ufot_audit_chain_broken'], 'max');
+  const goroutines = firstMetric(families, ['go_goroutines', 'ufot_goroutines'], 'max');
+  const rss = firstMetric(families, ['process_resident_memory_bytes', 'ufot_resident_memory_bytes'], 'max');
+  const rateLimited = firstMetric(families, ['gateway_ratelimit_dropped_total', 'ufot_ratelimit_dropped_total']);
+  const busy = firstMetric(families, ['writech_busy_total', 'ufot_writech_busy_total']);
 
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase();

@@ -1,10 +1,10 @@
-# OpenDiscord 部署手册（单机 embedded）
+# UFOT 部署手册（单机 embedded）
 
 > 适用：单机 2C2G 起步的 embedded 部署（bridge/user/data/admin 同进程）。
 > 权威来源：安全基线见 [security-spec.md](security-spec.md) §6；数据与 API 设计见
 > [admin-data-design.md](admin-data-design.md)。本文只写「怎么装、怎么改、怎么救」。
 >
-> 约定：`$` = 普通用户，`#` = root；`/opt/opendiscord/current` 永远指向当前 release 目录。
+> 约定：`$` = 普通用户，`#` = root；`/opt/ufot/current` 永远指向当前 release 目录。
 > 假设发行包（`.tar.gz` + `SHA256SUMS`）已上传到 `/root` 并解压。
 
 ---
@@ -14,22 +14,22 @@
 ```bash
 # 0) 校验并解包（在存放 tar.gz 与 SHA256SUMS 的目录执行）
 cd /root
-sha256sum -c SHA256SUMS && tar -xzf opendiscord-<version>-linux-amd64.tar.gz
-cd opendiscord-<version>
+sha256sum -c SHA256SUMS && tar -xzf ufot-<version>-linux-amd64.tar.gz
+cd ufot-<version>
 
 # 1) 装系统（建用户/目录/密钥/unit，幂等）
 sudo ./deploy/install.sh
 
 # 2) 改三个值：域名、冷库 DSN；监听地址保持 127.0.0.1
-sudoedit /etc/opendiscord/opendiscord.toml
+sudoedit /etc/ufot/ufot.toml
 
 # 3) 起服务（骨架阶段先按附录 A.1 把 Type=notify 改为 Type=exec）
-sudo systemctl enable --now opendiscord
-systemctl is-active opendiscord && ss -lntp | grep -E ':(8080|7780|9090)'
+sudo systemctl enable --now ufot
+systemctl is-active ufot && ss -lntp | grep -E ':(8080|7780|9090)'
 
 # 4) 边缘：Caddy 自动 HTTPS
-sudo cp /etc/opendiscord/Caddyfile.reference /etc/caddy/Caddyfile
-sudoedit /etc/caddy/Caddyfile          # OPENDISCORD_DOMAIN / remote_ip 白名单
+sudo cp /etc/ufot/Caddyfile.reference /etc/caddy/Caddyfile
+sudoedit /etc/caddy/Caddyfile          # UFOT_DOMAIN / remote_ip 白名单
 sudo caddy validate --config /etc/caddy/Caddyfile && sudo systemctl restart caddy
 
 # 5) 首登：先在本机/跳板完成首个账号注册（自动成为管理员）→ /admin/ 开 TOTP
@@ -44,7 +44,7 @@ curl -s  https://chat.example.com/admin/ | grep -o '<title>[^<]*'
 | 项 | 最低 | 说明 |
 |---|---|---|
 | 操作系统 | Linux + systemd 249+ | Debian 12 / Ubuntu 22.04 / Rocky 9 验证；x86_64 或 aarch64 |
-| CPU / 内存 | 2 vCPU / 2 GB | `GOMEMLIMIT=1280MiB` 已写入 `/etc/opendiscord/env` |
+| CPU / 内存 | 2 vCPU / 2 GB | `GOMEMLIMIT=1280MiB` 已写入 `/etc/ufot/env` |
 | 磁盘 | 40 GB SSD | 媒体目录建议独立 LUKS 卷；备份目录与数据盘分开 |
 | 冷库 | PostgreSQL 14+（外部） | `sslmode=require` 为底线；本机不装 PG 也能先跑（归档会失败告警） |
 | 运行时依赖 | `bash` `coreutils` `openssl` `sqlite3` `curl` `tar` | `install.sh` 需要 `useradd/groupadd/getent/install`；`backup.sh` 需要 `sqlite3` |
@@ -70,8 +70,8 @@ curl -s  https://chat.example.com/admin/ | grep -o '<title>[^<]*'
 ```bash
 cd /root
 sha256sum -c SHA256SUMS
-tar -xzf opendiscord-<version>-linux-amd64.tar.gz
-cd opendiscord-<version>
+tar -xzf ufot-<version>-linux-amd64.tar.gz
+cd ufot-<version>
 ls -l dist/chatd deploy/install.sh docs/deploy.md
 sha256sum dist/chatd          # 与发布页 SHA256SUMS 对照
 ```
@@ -79,9 +79,9 @@ sha256sum dist/chatd          # 与发布页 SHA256SUMS 对照
 包内布局（`make release-all` 与 `release.sh` 产物一致）：
 
 ```
-opendiscord-<version>/
+ufot-<version>/
 ├── dist/chatd                 # 单二进制（内含 client + admin 前端）
-├── deploy/{install.sh,release.sh,backup.sh,opendiscord.toml,policy.json,Caddyfile,
+├── deploy/{install.sh,release.sh,backup.sh,ufot.toml,policy.json,Caddyfile,
 │           systemd/,journald/,keygen/,logrotate.conf}
 ├── docs/deploy.md
 ├── README.md
@@ -90,7 +90,7 @@ opendiscord-<version>/
 
 > 前端已 `go:embed` 进 `chatd`，发布包**不再**带 `web/` 目录，目标机无需 Node。
 > `install.sh` 兼容旧布局：若存在 `apps/{client,admin}/dist` 会额外复制到
-> `/opt/opendiscord/releases/bootstrap/web/`，只作静态回退，不参与内嵌。
+> `/opt/ufot/releases/bootstrap/web/`，只作静态回退，不参与内嵌。
 
 ### 2.2 执行
 
@@ -98,16 +98,16 @@ opendiscord-<version>/
 sudo ./deploy/install.sh                 # embedded 单进程（1.4 起 embedded-only）
 sudo ./deploy/install.sh --no-start      # 只落盘，不 enable/start（打镜像）
 sudo ./deploy/install.sh --skip-keys     # 密钥由 KMS 下发时
-sudo ./deploy/install.sh --prefix /opt/opendiscord --etc /etc/opendiscord --state /var/lib/opendiscord
+sudo ./deploy/install.sh --prefix /opt/ufot --etc /etc/ufot --state /var/lib/ufot
 ```
 
 | 参数 | 默认 | 作用 |
 |---|---|---|
 | `--no-start` | off | 只 `daemon-reload`，不 `enable --now` |
 | `--skip-keys` | off | 跳过密钥生成（要求已由外部下发） |
-| `--prefix` | `/opt/opendiscord` | 二进制 release 根 |
-| `--etc` | `/etc/opendiscord` | 配置根 |
-| `--state` | `/var/lib/opendiscord` | 数据根 |
+| `--prefix` | `/opt/ufot` | 二进制 release 根 |
+| `--etc` | `/etc/ufot` | 配置根 |
+| `--state` | `/var/lib/ufot` | 数据根 |
 
 退出码：`0` 成功 / `64` 用法错误 / `77` 非 root / `78` 缺少依赖（如 openssl 与 go 都没有）。
 
@@ -115,30 +115,30 @@ sudo ./deploy/install.sh --prefix /opt/opendiscord --etc /etc/opendiscord --stat
 
 | # | 动作 | 产物 | 现场校验 |
 |---|---|---|---|
-| 1 | 建组 `opendiscord` 与系统用户（`opendiscord`，shell=nologin，home=`/var/lib/opendiscord`；embedded-only） | `/etc/group`、`/etc/passwd` | `getent passwd opendiscord` |
-| 2 | 建目录并按 §6 矩阵 chmod/chown | 见 §6 表 | `stat -c '%a %U:%G %n' /etc/opendiscord /var/lib/opendiscord` |
-| 3 | 写环境变量文件（存在则不动） | `/etc/opendiscord/env`（0600 root:opendiscord） | `ls -l /etc/opendiscord/env` |
-| 4 | 生成密钥（存在则跳过，绝不覆盖） | `keys/{jwt_sign_key.pem,admin_jwt_key.pem,ipc_key,hmac_key,pii_key,phone_lookup_key,download_key,upload_secret,audit_chain_key,backup.key}`；`/etc/opendiscord/backup.key -> keys/backup.key` | `ls -l /etc/opendiscord/keys`；`openssl pkey -in .../jwt_sign_key.pem -pubout \| openssl dgst -sha256` |
-| 5 | 安装配置（存在则保留；`Caddyfile.reference` 每次覆盖） | `opendiscord.toml` 0640、`policy.json` 0640、`Caddyfile.reference` 0640；`config/chatd.toml -> ../opendiscord.toml` | `ls -l /etc/opendiscord` |
-| 6 | 安装二进制（前端已内嵌；若包内有 `apps/*/dist` 则额外复制到 `current/web` 作静态回退） | `/opt/opendiscord/releases/bootstrap/bin/chatd`；`current -> releases/bootstrap`；`bin -> current/bin`；`web -> current/web` | `ls -l /opt/opendiscord/current/bin/chatd` |
-| 7 | 安装 unit 与 journald 配额 | `/etc/systemd/system/opendiscord.service`；`/etc/systemd/journald.conf.d/opendiscord.conf`（`SystemMaxUse=200M`） | `systemctl cat opendiscord`；`journalctl --disk-usage` |
-| 8 | `daemon-reload` + `enable --now`（`--no-start` 跳过） | 运行中的 unit | `systemctl is-active opendiscord` |
-| 9 | 红线自检：`find /etc/opendiscord /var/lib/opendiscord -perm /o+rwx` 必须为空，否则 **exit 1** | — | 手工重跑同一条命令 |
+| 1 | 建组 `ufot` 与系统用户（`ufot`，shell=nologin，home=`/var/lib/ufot`；embedded-only） | `/etc/group`、`/etc/passwd` | `getent passwd ufot` |
+| 2 | 建目录并按 §6 矩阵 chmod/chown | 见 §6 表 | `stat -c '%a %U:%G %n' /etc/ufot /var/lib/ufot` |
+| 3 | 写环境变量文件（存在则不动） | `/etc/ufot/env`（0600 root:ufot） | `ls -l /etc/ufot/env` |
+| 4 | 生成密钥（存在则跳过，绝不覆盖） | `keys/{jwt_sign_key.pem,admin_jwt_key.pem,ipc_key,hmac_key,pii_key,phone_lookup_key,download_key,upload_secret,audit_chain_key,backup.key}`；`/etc/ufot/backup.key -> keys/backup.key` | `ls -l /etc/ufot/keys`；`openssl pkey -in .../jwt_sign_key.pem -pubout \| openssl dgst -sha256` |
+| 5 | 安装配置（存在则保留；`Caddyfile.reference` 每次覆盖） | `ufot.toml` 0640、`policy.json` 0640、`Caddyfile.reference` 0640；`config/chatd.toml -> ../ufot.toml` | `ls -l /etc/ufot` |
+| 6 | 安装二进制（前端已内嵌；若包内有 `apps/*/dist` 则额外复制到 `current/web` 作静态回退） | `/opt/ufot/releases/bootstrap/bin/chatd`；`current -> releases/bootstrap`；`bin -> current/bin`；`web -> current/web` | `ls -l /opt/ufot/current/bin/chatd` |
+| 7 | 安装 unit 与 journald 配额 | `/etc/systemd/system/ufot.service`；`/etc/systemd/journald.conf.d/ufot.conf`（`SystemMaxUse=200M`） | `systemctl cat ufot`；`journalctl --disk-usage` |
+| 8 | `daemon-reload` + `enable --now`（`--no-start` 跳过） | 运行中的 unit | `systemctl is-active ufot` |
+| 9 | 红线自检：`find /etc/ufot /var/lib/ufot -perm /o+rwx` 必须为空，否则 **exit 1** | — | 手工重跑同一条命令 |
 | 10 | 打印下一步（改 toml / policy / Caddy / 首登） | stdout | — |
 
 **幂等语义**：重复执行只校正目录权限，不覆盖已有配置、环境文件与密钥；升级配置需人工 merge
-（`install_cfg` 会打印「已存在，保持不变」）。所以**升级前先备份 `/etc/opendiscord`**（§8.1）。
+（`install_cfg` 会打印「已存在，保持不变」）。所以**升级前先备份 `/etc/ufot`**（§8.1）。
 
 > 第 9 步失败时服务可能已经启动（第 8 步在前）。修完权限重跑脚本即可，不必先停服。
-> `install.sh` **不安装** `adminctl` / `opendiscordctl`，CLI 安装见 §9.1。
+> `install.sh` **不安装** `adminctl` / `ufotctl`，CLI 安装见 §9.1。
 
 ---
 
 ## 3. 配置项
 
-### 3.1 `/etc/opendiscord/opendiscord.toml`（0640 root:opendiscord）
+### 3.1 `/etc/ufot/ufot.toml`（0640 root:ufot）
 
-改完 **必须 restart**（TOML 不热载）：`sudo systemctl restart opendiscord`。
+改完 **必须 restart**（TOML 不热载）：`sudo systemctl restart ufot`。
 
 | 字段 | 默认值 | 含义与约束 |
 |---|---|---|
@@ -147,13 +147,13 @@ sudo ./deploy/install.sh --prefix /opt/opendiscord --etc /etc/opendiscord --stat
 | `admin_listen` | `"127.0.0.1:7780"` | 管理 API 监听（Caddy 仅对白名单 IP 反代 `/api/admin/*`） |
 | `metrics_listen` | `"127.0.0.1:9090"` | Prometheus `/metrics` 监听（契约字段，见下方「消费进度」） |
 | `public_origin` | `"https://chat.example.com"` | 对外站点，用于绝对 URL、CORS、Cookie 域；**不带尾斜杠**，必须与实际域名一致（否则 WS 握手 401） |
-| `hot_db` | `"/var/lib/opendiscord/chatd.db"` | 热库 SQLite（WAL）。文件 0600，目录 0700 |
-| `admin_db` | `"/var/lib/opendiscord/admin.db"` | 管理库（管理员/会话），独立文件做最小权限隔离 |
-| `media_dir` | `"/var/lib/opendiscord/media"` | 媒体根（LUKS 卷挂载点），0750 |
-| `jwt_key_path` | `"/etc/opendiscord/keys/jwt_sign_key.pem"` | 用户 token 签名私钥（Ed25519 PKCS#8，0640 root:opendiscord） |
-| `pii_hmac_key_path` | `"/etc/opendiscord/keys/phone_lookup_key"` | 手机号/邮箱 HMAC 索引密钥（32B hex，0600） |
-| `cold_dsn` | `postgres://opendiscord@db.internal:5432/opendiscord?sslmode=require` | 冷库 DSN；`sslmode=require` 为底线，内网也建议 `verify-full` |
-| `policy_path` | `"/etc/opendiscord/policy.json"` | 策略唯一真源（保留期/cron/限流）；SIGHUP 热载 |
+| `hot_db` | `"/var/lib/ufot/chatd.db"` | 热库 SQLite（WAL）。文件 0600，目录 0700 |
+| `admin_db` | `"/var/lib/ufot/admin.db"` | 管理库（管理员/会话），独立文件做最小权限隔离 |
+| `media_dir` | `"/var/lib/ufot/media"` | 媒体根（LUKS 卷挂载点），0750 |
+| `jwt_key_path` | `"/etc/ufot/keys/jwt_sign_key.pem"` | 用户 token 签名私钥（Ed25519 PKCS#8，0640 root:ufot） |
+| `pii_hmac_key_path` | `"/etc/ufot/keys/phone_lookup_key"` | 手机号/邮箱 HMAC 索引密钥（32B hex，0600） |
+| `cold_dsn` | `postgres://ufot@db.internal:5432/ufot?sslmode=require` | 冷库 DSN；`sslmode=require` 为底线，内网也建议 `verify-full` |
+| `policy_path` | `"/etc/ufot/policy.json"` | 策略唯一真源（保留期/cron/限流）；SIGHUP 热载 |
 | `log_level` | `"info"` | `debug`/`info`/`warn`/`error`；日志只写 stdout → journald |
 | `shutdown_timeout_sec` | `30` | SIGTERM 优雅退出预算（flusher 最后组提交 + 归档断点） |
 | `watchdog_interval_sec` | `7` | 进程心跳间隔，取 systemd `WatchdogSec=15` 的一半（契约字段） |
@@ -186,9 +186,9 @@ sudo ./deploy/install.sh --prefix /opt/opendiscord --etc /etc/opendiscord --stat
 > `max_upload_bytes`、`daily_upload_bytes_per_user` 是契约字段，本版本尚未消费（未知键被
 > 安全忽略，不会导致启动失败）。改这些字段前先确认二进制版本。
 
-### 3.2 `/etc/opendiscord/policy.json`（0640 root:opendiscord）
+### 3.2 `/etc/ufot/policy.json`（0640 root:ufot）
 
-策略唯一真源；改完 `sudo systemctl reload opendiscord`（SIGHUP）热生效。非法策略会被拒绝并继续用旧值。
+策略唯一真源；改完 `sudo systemctl reload ufot`（SIGHUP）热生效。非法策略会被拒绝并继续用旧值。
 
 | 键 | 默认 | 含义 |
 |---|---|---|
@@ -198,7 +198,7 @@ sudo ./deploy/install.sh --prefix /opt/opendiscord --etc /etc/opendiscord --stat
 | `archive.batch_pause_ms` | `100` | 批间停顿，避免打满 I/O |
 | `archive.active_exempt` | `true` | 活跃会话（近 7 天有消息）不归档 |
 | `backup.cron` | `"30 5 * * *"` | 备份调度（每日 05:30；调度器见 §8.2） |
-| `backup.dir` | `"/var/lib/opendiscord/backup"` | 本地备份目录（0700） |
+| `backup.dir` | `"/var/lib/ufot/backup"` | 本地备份目录（0700） |
 | `backup.keep_days` | `14` | 本地备份保留天数 |
 | `trim[]` | `sys_rate_limit` 7 天、`identity_login_history` 180 天 | 只允许白名单表；其他值加载即拒绝（防动态 SQL） |
 | `rate_limit.msg_per_user_per_min` | `60` | 用户级消息速率（跨设备聚合） |
@@ -213,7 +213,7 @@ sudo ./deploy/install.sh --prefix /opt/opendiscord --etc /etc/opendiscord --stat
 > all-or-nothing、去重（`ErrDuplicate`）与崩溃持久性语义；SIGHUP 热载
 > 对**下一批**生效（在途批次按旧参数提交）。
 
-### 3.3 `/etc/opendiscord/env`（0600 root:opendiscord）
+### 3.3 `/etc/ufot/env`（0600 root:ufot）
 
 只放运行时参数，不放密钥（密钥走 `keys/`）：
 
@@ -221,10 +221,10 @@ sudo ./deploy/install.sh --prefix /opt/opendiscord --etc /etc/opendiscord --stat
 |---|---|---|
 | `TZ` | `UTC` | 固定 UTC，避免 cron/归档时间漂移 |
 | `GOMEMLIMIT` | `1280MiB` | Go 软内存上限（2C2G 留 700MB 给系统/页缓存） |
-| `OPENDISCORD_CONFIG` | `/etc/opendiscord/opendiscord.toml` | 配置路径（`chatd --config` 的默认值来源） |
-| `OPENDISCORD_LAYER` | `embedded` | 进程角色标识（embedded-only） |
+| `UFOT_CONFIG` | `/etc/ufot/ufot.toml` | 配置路径（`chatd --config` 的默认值来源） |
+| `UFOT_LAYER` | `embedded` | 进程角色标识（embedded-only） |
 
-改完 `systemctl restart opendiscord`（EnvironmentFile 只在启动时读取）。
+改完 `systemctl restart ufot`（EnvironmentFile 只在启动时读取）。
 
 ---
 
@@ -234,14 +234,14 @@ sudo ./deploy/install.sh --prefix /opt/opendiscord --etc /etc/opendiscord --stat
 
 ```bash
 # 1) 配置键齐全、引号成对（TOML 不支持中文标点）
-grep -nE '^(mode|listen|admin_listen|public_origin|hot_db|cold_dsn|policy_path|jwt_key_path)' /etc/opendiscord/opendiscord.toml
+grep -nE '^(mode|listen|admin_listen|public_origin|hot_db|cold_dsn|policy_path|jwt_key_path)' /etc/ufot/ufot.toml
 
 # 2) 密钥齐全且权限对（私钥 0640，对称密钥 0600）
-ls -l /etc/opendiscord/keys/
+ls -l /etc/ufot/keys/
 
 # 3) unit 语法与安全评分
-systemd-analyze verify /etc/systemd/system/opendiscord.service
-systemd-analyze security --offline=true /etc/systemd/system/opendiscord.service | tail -3
+systemd-analyze verify /etc/systemd/system/ufot.service
+systemd-analyze security --offline=true /etc/systemd/system/ufot.service | tail -3
 
 # 4) 端口没被占用
 ss -lntp | grep -E ':(8080|7780|9090)' || echo "ports free"
@@ -250,9 +250,9 @@ ss -lntp | grep -E ':(8080|7780|9090)' || echo "ports free"
 ### 4.2 启动
 
 ```bash
-sudo systemctl enable --now opendiscord
-systemctl is-active opendiscord                 # 期望 active
-journalctl -u opendiscord -n 50 --no-pager      # 期望 msg="chatd ready"
+sudo systemctl enable --now ufot
+systemctl is-active ufot                 # 期望 active
+journalctl -u ufot -n 50 --no-pager      # 期望 msg="chatd ready"
 
 # 本机验证（绕过 Caddy，确认上游活着）
 curl -sI http://127.0.0.1:8080/ | head -3             # 200 + text/html
@@ -299,7 +299,7 @@ TOTP 参数（§3.3 红线）：**SHA-1 / 6 位 / 30s 周期，时间窗 ±1**�
 # 1) 站点 200 且证书有效
 curl -sSI https://chat.example.com/ | grep -E 'HTTP/|strict-transport-security'
 # 2) 管理后台 200（白名单内）
-curl -sS https://chat.example.com/admin/ | grep -q 'OpenDiscord 管理后台' && echo admin-ok
+curl -sS https://chat.example.com/admin/ | grep -q 'UFOT 管理后台' && echo admin-ok
 # 3) 指标只对本机开放：公网应为 404
 curl -s -o /dev/null -w '%{http_code}\n' https://chat.example.com/metrics   # 期望 404
 # 4) 管理 API 对非白名单 404（从白名单外的机器执行）
@@ -331,16 +331,16 @@ Caddyfile 用 `{$VAR:default}` 读环境变量，变量放在 systemd drop-in（
 
 ```bash
 sudo mkdir -p /etc/systemd/system/caddy.service.d
-sudo tee /etc/systemd/system/caddy.service.d/opendiscord.conf >/dev/null <<'EOF'
+sudo tee /etc/systemd/system/caddy.service.d/ufot.conf >/dev/null <<'EOF'
 [Service]
-Environment=OPENDISCORD_DOMAIN=chat.example.com
-Environment=OPENDISCORD_ACME_EMAIL=ops@example.com
-Environment=OPENDISCORD_WS_PORT=8080
-Environment=OPENDISCORD_METRICS_PORT=9090
+Environment=UFOT_DOMAIN=chat.example.com
+Environment=UFOT_ACME_EMAIL=ops@example.com
+Environment=UFOT_WS_PORT=8080
+Environment=UFOT_METRICS_PORT=9090
 EOF
 sudo systemctl daemon-reload
 
-sudo cp /etc/opendiscord/Caddyfile.reference /etc/caddy/Caddyfile
+sudo cp /etc/ufot/Caddyfile.reference /etc/caddy/Caddyfile
 sudo caddy fmt --overwrite /etc/caddy/Caddyfile
 sudo caddy validate --config /etc/caddy/Caddyfile     # 必须 "Valid configuration"
 ```
@@ -353,9 +353,9 @@ sudo caddy validate --config /etc/caddy/Caddyfile     # 必须 "Valid configurat
 
 | 路径 | 上游 | 保护 |
 |---|---|---|
-| `/ws` | `127.0.0.1:{$OPENDISCORD_WS_PORT:8081}` | WS upgrade；`flush_interval -1`；建议 10 次/分钟/IP（E-3）+ 失败熔断（E-4） |
+| `/ws` | `127.0.0.1:{$UFOT_WS_PORT:8081}` | WS upgrade；`flush_interval -1`；建议 10 次/分钟/IP（E-3）+ 失败熔断（E-4） |
 | `/api/admin/*` | `127.0.0.1:7780` | `remote_ip` 白名单；**非白名单返回 404**（不暴露管理端存在） |
-| `/metrics` | `127.0.0.1:{$OPENDISCORD_METRICS_PORT:9090}` | 仅 127/8、10/8、192.168/16；公网 404 |
+| `/metrics` | `127.0.0.1:{$UFOT_METRICS_PORT:9090}` | 仅 127/8、10/8、192.168/16；公网 404 |
 | `/api/*` | `127.0.0.1:8080` | 请求体 1 MB（E-7） |
 | `/api/v1/media/presign` | `127.0.0.1:8080` | 请求体 64 KB（E-7） |
 | 其余（`/`、`/admin/`、静态资源） | `127.0.0.1:8080` | 二进制内嵌 SPA；index 不缓存、hash 资源 immutable |
@@ -437,45 +437,45 @@ embedded 形态（**1.4 起 embedded-only**，split 多进程未实现）。**�
 
 | 路径 | owner:group | mode | 内容 / 说明 |
 |---|---|---|---|
-| `/opt/opendiscord` | root:root | 0755 | 发布根；运行用户不可写 |
-| `/opt/opendiscord/releases/<ver>` | root:root | 0755 | 每个版本一个目录 |
-| `/opt/opendiscord/releases/<ver>/bin/*` | root:root | 0755 | `chatd` 等二进制 |
-| `/opt/opendiscord/current` | root:root | symlink | → `releases/<ver>`（原子的切换点） |
-| `/opt/opendiscord/bin` | root:root | symlink | → `current/bin` |
-| `/opt/opendiscord/web` | root:root | symlink | → `current/web`（旧布局静态回退，可空） |
-| `/etc/opendiscord` | root:opendiscord | 0750 | 配置根 |
-| `/etc/opendiscord/opendiscord.toml` | root:opendiscord | 0640 | 运行配置 |
-| `/etc/opendiscord/policy.json` | root:opendiscord | 0640 | 策略真源 |
-| `/etc/opendiscord/Caddyfile.reference` | root:opendiscord | 0640 | 边缘配置样例（每次安装覆盖） |
-| `/etc/opendiscord/env` | root:opendiscord | 0600 | 环境变量 |
-| `/etc/opendiscord/keys/` | root:opendiscord | 0750 | 密钥目录 |
-| `/etc/opendiscord/keys/*.pem` | root:opendiscord | 0640 | Ed25519 私钥（JWT 签名） |
-| `/etc/opendiscord/keys/{ipc,hmac,pii,phone_lookup,download,upload_secret,audit_chain}_key` | root:opendiscord | 0600 | 对称密钥 |
-| `/etc/opendiscord/keys/backup.key` | root:opendiscord | 0600 | 备份加密口令（`/etc/opendiscord/backup.key` 为符号链接） |
-| `/var/lib/opendiscord` | opendiscord:opendiscord | 0700 | 运行数据根（embedded） |
-| `/var/lib/opendiscord/chatd.db` | opendiscord:opendiscord | 0600 | 热库（含 `-wal`/`-shm`） |
-| `/var/lib/opendiscord/admin.db` | opendiscord:opendiscord | 0600 | 管理库 |
-| `/var/lib/opendiscord/media/` | opendiscord:opendiscord | 0750 | 媒体对象（建议 LUKS 卷） |
-| `/var/lib/opendiscord/backup/` | opendiscord:opendiscord | 0700 | 本地加密备份 |
-| `/run/opendiscord/` | opendiscord:opendiscord | 0750 | UDS 目录（systemd `RuntimeDirectory`） |
-| `/etc/systemd/system/opendiscord*.service` | root:root | 0644 | unit |
-| `/etc/systemd/journald.conf.d/opendiscord.conf` | root:root | 0644 | journald 配额 |
+| `/opt/ufot` | root:root | 0755 | 发布根；运行用户不可写 |
+| `/opt/ufot/releases/<ver>` | root:root | 0755 | 每个版本一个目录 |
+| `/opt/ufot/releases/<ver>/bin/*` | root:root | 0755 | `chatd` 等二进制 |
+| `/opt/ufot/current` | root:root | symlink | → `releases/<ver>`（原子的切换点） |
+| `/opt/ufot/bin` | root:root | symlink | → `current/bin` |
+| `/opt/ufot/web` | root:root | symlink | → `current/web`（旧布局静态回退，可空） |
+| `/etc/ufot` | root:ufot | 0750 | 配置根 |
+| `/etc/ufot/ufot.toml` | root:ufot | 0640 | 运行配置 |
+| `/etc/ufot/policy.json` | root:ufot | 0640 | 策略真源 |
+| `/etc/ufot/Caddyfile.reference` | root:ufot | 0640 | 边缘配置样例（每次安装覆盖） |
+| `/etc/ufot/env` | root:ufot | 0600 | 环境变量 |
+| `/etc/ufot/keys/` | root:ufot | 0750 | 密钥目录 |
+| `/etc/ufot/keys/*.pem` | root:ufot | 0640 | Ed25519 私钥（JWT 签名） |
+| `/etc/ufot/keys/{ipc,hmac,pii,phone_lookup,download,upload_secret,audit_chain}_key` | root:ufot | 0600 | 对称密钥 |
+| `/etc/ufot/keys/backup.key` | root:ufot | 0600 | 备份加密口令（`/etc/ufot/backup.key` 为符号链接） |
+| `/var/lib/ufot` | ufot:ufot | 0700 | 运行数据根（embedded） |
+| `/var/lib/ufot/chatd.db` | ufot:ufot | 0600 | 热库（含 `-wal`/`-shm`） |
+| `/var/lib/ufot/admin.db` | ufot:ufot | 0600 | 管理库 |
+| `/var/lib/ufot/media/` | ufot:ufot | 0750 | 媒体对象（建议 LUKS 卷） |
+| `/var/lib/ufot/backup/` | ufot:ufot | 0700 | 本地加密备份 |
+| `/run/ufot/` | ufot:ufot | 0750 | UDS 目录（systemd `RuntimeDirectory`） |
+| `/etc/systemd/system/ufot*.service` | root:root | 0644 | unit |
+| `/etc/systemd/journald.conf.d/ufot.conf` | root:root | 0644 | journald 配额 |
 
 ### 6.1 权限自检（贴进巡检脚本）
 
 ```bash
 # 1) 红线：other 位不得有 rwx（期望无输出）
-sudo find /etc/opendiscord /var/lib/opendiscord -perm /o+rwx -print
+sudo find /etc/ufot /var/lib/ufot -perm /o+rwx -print
 
 # 2) 关键路径逐项核对
-stat -c '%a %U:%G %n' /etc/opendiscord /etc/opendiscord/keys /etc/opendiscord/env \
-  /var/lib/opendiscord /var/lib/opendiscord/media /var/lib/opendiscord/backup
+stat -c '%a %U:%G %n' /etc/ufot /etc/ufot/keys /etc/ufot/env \
+  /var/lib/ufot /var/lib/ufot/media /var/lib/ufot/backup
 
 # 3) 逐级解析（确认父目录没有意外放行）
-namei -l /etc/opendiscord/keys/jwt_sign_key.pem
+namei -l /etc/ufot/keys/jwt_sign_key.pem
 
 # 4) 二进制不可被运行用户改写
-sudo -u opendiscord test -w /opt/opendiscord/current/bin/chatd && echo "FAIL: writable" || echo ok
+sudo -u ufot test -w /opt/ufot/current/bin/chatd && echo "FAIL: writable" || echo ok
 ```
 
 ---
@@ -506,9 +506,9 @@ ssh -o BatchMode=yes root@chat.example.com true   # 先验证免密
 ./deploy/release.sh --target root@chat.example.com --version v1.4.2 --skip-build
 
 # 其它参数
---service opendiscord.service     # systemd 单元名
+--service ufot.service     # systemd 单元名
 --health-url http://127.0.0.1:8080/healthz
---remote-root /opt/opendiscord    # 远端根
+--remote-root /opt/ufot    # 远端根
 --ssh-port 2222
 ```
 
@@ -521,7 +521,7 @@ ssh -o BatchMode=yes root@chat.example.com true   # 先验证免密
 |---|---|---|
 | 1 | `npm ci && npm run build`（client、admin 各自目录） | 立即退出，不动远端 |
 | 2 | `go build -trimpath -ldflags "-s -w"` 逐个子命令（只有存在的 `server/cmd/*` 才编） | 同上；`dist/chatd` 缺失直接 die |
-| 3 | 打包 `dist/opendiscord-<ver>-linux-<arch>.tar.gz`：`bin/` + `web/{client,admin}` + `deploy/`，并生成 `dist/SHA256SUMS` | 同上 |
+| 3 | 打包 `dist/ufot-<ver>-linux-<arch>.tar.gz`：`bin/` + `web/{client,admin}` + `deploy/`，并生成 `dist/SHA256SUMS` | 同上 |
 | 4 | `scp` 到 `$REMOTE_ROOT/incoming/` | SSH 失败即退出 |
 | 5 | 远端 `sha256sum -c SHA256SUMS` → 解包到 `releases/<ver>` → `chown -R root:root` | 校验失败即退出，旧版本不受影响 |
 | 6 | 原子切换 `current`（`ln -sfn` 到 `.new` + `mv -Tf`），同步 `bin`/`web` 链接，`systemctl restart` | 启动失败进入回滚 |
@@ -529,20 +529,20 @@ ssh -o BatchMode=yes root@chat.example.com true   # 先验证免密
 | 8 | 记录 `last`，清理 `incoming` 与多余 release（只留 `current`、`last`、`bootstrap`） | 清理失败不影响服务 |
 
 回滚语义：第 7 步失败时把 `current` 指回上一版本并重启；**回滚也失败**则退出非 0 并保留现场
-（`journalctl -u opendiscord -n 100`）。首次发布没有 `last` 时无法自动回滚，必须人工介入。
+（`journalctl -u ufot -n 100`）。首次发布没有 `last` 时无法自动回滚，必须人工介入。
 
 ### 7.4 产物与校验
 
 ```bash
-ls -l dist/opendiscord-*-linux-*.tar.gz dist/SHA256SUMS
+ls -l dist/ufot-*-linux-*.tar.gz dist/SHA256SUMS
 sha256sum -c dist/SHA256SUMS          # 在 dist/ 目录内执行
-tar -tzf dist/opendiscord-<ver>-linux-amd64.tar.gz | head -20
+tar -tzf dist/ufot-<ver>-linux-amd64.tar.gz | head -20
 ```
 
-远端布局（`--remote-root /opt/opendiscord`）：
+远端布局（`--remote-root /opt/ufot`）：
 
 ```
-/opt/opendiscord/
+/opt/ufot/
 ├── releases/v1.4.2/{bin,web,deploy}
 ├── releases/v1.4.1/            # last
 ├── current -> releases/v1.4.2
@@ -555,18 +555,18 @@ tar -tzf dist/opendiscord-<ver>-linux-amd64.tar.gz | head -20
 
 ```bash
 # 1) 看当前与上一版本
-readlink -f /opt/opendiscord/current /opt/opendiscord/last
+readlink -f /opt/ufot/current /opt/ufot/last
 
 # 2) 切回上一版本（原子）
-sudo ln -sfn "$(readlink -f /opt/opendiscord/last)" /opt/opendiscord/current.new
-sudo mv -Tf /opt/opendiscord/current.new /opt/opendiscord/current
-sudo ln -sfn current/bin /opt/opendiscord/bin
-sudo ln -sfn current/web /opt/opendiscord/web
+sudo ln -sfn "$(readlink -f /opt/ufot/last)" /opt/ufot/current.new
+sudo mv -Tf /opt/ufot/current.new /opt/ufot/current
+sudo ln -sfn current/bin /opt/ufot/bin
+sudo ln -sfn current/web /opt/ufot/web
 
 # 3) 重启并验证
-sudo systemctl restart opendiscord
-systemctl is-active opendiscord
-journalctl -u opendiscord -n 100 --no-pager
+sudo systemctl restart ufot
+systemctl is-active ufot
+journalctl -u ufot -n 100 --no-pager
 ```
 
 **数据库迁移只向前**：回滚二进制前先确认该版本引入的迁移是否向后兼容；破坏性迁移必须
@@ -576,14 +576,14 @@ journalctl -u opendiscord -n 100 --no-pager
 
 | | `make release-all` | `deploy/release.sh` |
 |---|---|---|
-| 产物 | `dist/opendiscord-<ver>-linux-<arch>.tar.gz` + `dist/SHA256SUMS` | 同左，但直接上传并切换 |
+| 产物 | `dist/ufot-<ver>-linux-<arch>.tar.gz` + `dist/SHA256SUMS` | 同左，但直接上传并切换 |
 | 前端 | `make web`（npm ci + build + 复制到 `server/web/{client,admin}`） | 自己 `npm ci + build`，再把 `apps/*/dist` 打进 `web/` |
 | 适用 | CI 出包、离线交付 | 运维一条命令发布到远端 |
 | 前置 | 本机 Node + Go | 本机 Node + Go + 免密 SSH |
 
 ---
 
-### 7.7 升级到 v1.4：`opendiscordctl upgrade`（一次性维护自动化）
+### 7.7 升级到 v1.4：`ufotctl upgrade`（一次性维护自动化）
 
 1.4 把历史上需要手工做的两项一次性维护合并成一条命令：
 
@@ -604,26 +604,26 @@ journalctl -u opendiscord -n 100 --no-pager
 sudo deploy/backup.sh
 
 # 2. 停服（VACUUM 期间不能有连接）
-sudo systemctl stop opendiscord
+sudo systemctl stop ufot
 
 # 3. 预览计划（dry-run，只读）
-opendiscordctl upgrade --hot-db /var/lib/opendiscord/data/hot.db
-opendiscordctl upgrade --json --hot-db /var/lib/opendiscord/data/hot.db   # 结构化输出
+ufotctl upgrade --hot-db /var/lib/ufot/data/hot.db
+ufotctl upgrade --json --hot-db /var/lib/ufot/data/hot.db   # 结构化输出
 
 # 4. 执行（thumbs 迁移 + auto_vacuum 转换，幂等，可重跑）
-opendiscordctl upgrade --run --hot-db /var/lib/opendiscord/data/hot.db
+ufotctl upgrade --run --hot-db /var/lib/ufot/data/hot.db
 
 # 5. 校验并启动：auto_vacuum 必须为 2（INCREMENTAL）
-opendiscordctl doctor --hot-db /var/lib/opendiscord/data/hot.db   # 应全 OK
-sudo systemctl start opendiscord
+ufotctl doctor --hot-db /var/lib/ufot/data/hot.db   # 应全 OK
+sudo systemctl start ufot
 ```
 
 计划输出示例（dry-run）：
 
 ```
 upgrade: dry-run（未改库；加 --run 执行）
-  hot_db      : /var/lib/opendiscord/data/hot.db (auto_vacuum=0)
-  [!] thumbs       1234 行旧 thumb_data 待迁移到 /var/lib/opendiscord/media
+  hot_db      : /var/lib/ufot/data/hot.db (auto_vacuum=0)
+  [!] thumbs       1234 行旧 thumb_data 待迁移到 /var/lib/ufot/media
   [!] auto_vacuum  auto_vacuum=0 → 需转换为 INCREMENTAL（PRAGMA auto_vacuum=INCREMENTAL; VACUUM;）
 图例: ! 待执行  ✓ 已执行  - 无需  ✗ 失败
 ```
@@ -637,13 +637,13 @@ upgrade: dry-run（未改库；加 --run 执行）
 | 步骤 | 命令 / 动作 | 失败会怎样 |
 |---|---|---|
 | 1 | 备份热库与配置（`deploy/backup.sh`） | 无备份可回滚 |
-| 2 | `opendiscordctl upgrade`（dry-run 预览 → `--run` 执行；含 auto_vacuum 转换与 thumbs 迁移，一次性） | 磁盘只涨不落 / 热库虚胖 |
+| 2 | `ufotctl upgrade`（dry-run 预览 → `--run` 执行；含 auto_vacuum 转换与 thumbs 迁移，一次性） | 磁盘只涨不落 / 热库虚胖 |
 | 3 | 确认 `rate_limit_enabled` 未显式为 false | 生产环境会**拒绝启动**（这是有意的护栏） |
 | 4 | 确认 `public_origin` 已设为 https 域名 | 同源校验与安全 Cookie 走宽松分支 |
 | 5 | 若用短信/邮件登录：配置供应商（未配则仅 dev 模式可用） | 生产注册登录不可用 |
 | 6 | 若要开视频/语音通话：`feature_flags.call_enabled=true` + 配 TURN | 通话按钮不出现/建连失败 |
-| 7 | 替换二进制 → `systemctl restart opendiscord` | — |
-| 8 | `opendiscordctl doctor` + `opendiscordctl status` | 逐项排查 |
+| 7 | 替换二进制 → `systemctl restart ufot` | — |
+| 8 | `ufotctl doctor` + `ufotctl status` | 逐项排查 |
 
 ## 8. 备份与恢复（backup.sh）
 
@@ -654,11 +654,11 @@ upgrade: dry-run（未改库；加 --run 执行）
 
 | 对象 | 为什么重要 | 单独备份方式 |
 |---|---|---|
-| `/var/lib/opendiscord/admin.db` | 管理员账号、TOTP secret、会话 | 停服或 `sqlite3 .backup` 后加密（见 §8.5） |
-| `/etc/opendiscord/keys/` | `audit_chain_key` 丢失 = 审计链永久无法验证；`pii_key` 丢失 = 手机号不可解 | 离线加密保管，**不要**放进 `/var/lib/opendiscord/backup` 自动清理目录 |
+| `/var/lib/ufot/admin.db` | 管理员账号、TOTP secret、会话 | 停服或 `sqlite3 .backup` 后加密（见 §8.5） |
+| `/etc/ufot/keys/` | `audit_chain_key` 丢失 = 审计链永久无法验证；`pii_key` 丢失 = 手机号不可解 | 离线加密保管，**不要**放进 `/var/lib/ufot/backup` 自动清理目录 |
 | 媒体文件 `media/` | 图片/语音/文件本体 | LUKS 卷快照或 `restic`/`borg` 增量 |
 | 冷库 PostgreSQL | 90 天前的全量历史 | PostgreSQL 自身 PITR / `pg_dump` |
-| `/etc/opendiscord/*.toml/json` | 配置与策略 | 随发布包或配置管理（Git）留存 |
+| `/etc/ufot/*.toml/json` | 配置与策略 | 随发布包或配置管理（Git）留存 |
 
 > 只恢复 `chatd.db` 而丢掉 `admin.db`/`keys`，等于「有消息但没人能登录、审计链无法验证」。
 > 生产环境必须把上表纳入同一份恢复演练。
@@ -668,29 +668,29 @@ upgrade: dry-run（未改库；加 --run 执行）
 `policy.json` 的 `backup.cron` 是**声明**，由外部调度器执行。推荐 systemd timer（可查、幂等）：
 
 ```bash
-sudo install -m 0755 deploy/backup.sh /usr/local/sbin/opendiscord-backup
+sudo install -m 0755 deploy/backup.sh /usr/local/sbin/ufot-backup
 
-sudo tee /etc/systemd/system/opendiscord-backup.service >/dev/null <<'EOF'
+sudo tee /etc/systemd/system/ufot-backup.service >/dev/null <<'EOF'
 [Unit]
-Description=OpenDiscord hot DB backup (sqlite3 .backup + encrypt)
-After=opendiscord.service
+Description=UFOT hot DB backup (sqlite3 .backup + encrypt)
+After=ufot.service
 [Service]
 Type=oneshot
 User=root
-ExecStart=/usr/local/sbin/opendiscord-backup
+ExecStart=/usr/local/sbin/ufot-backup
 Nice=10
 IOSchedulingClass=best-effort
 IOSchedulingPriority=7
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/var/lib/opendiscord/backup
+ReadWritePaths=/var/lib/ufot/backup
 NoNewPrivileges=true
 EOF
 
-sudo tee /etc/systemd/system/opendiscord-backup.timer >/dev/null <<'EOF'
+sudo tee /etc/systemd/system/ufot-backup.timer >/dev/null <<'EOF'
 [Unit]
-Description=Daily OpenDiscord backup at 05:30
+Description=Daily UFOT backup at 05:30
 [Timer]
 OnCalendar=*-*-* 05:30:00
 Persistent=true
@@ -700,46 +700,46 @@ WantedBy=timers.target
 EOF
 
 sudo systemctl daemon-reload
-sudo systemctl enable --now opendiscord-backup.timer
-systemctl list-timers opendiscord-backup.timer
+sudo systemctl enable --now ufot-backup.timer
+systemctl list-timers ufot-backup.timer
 ```
 
 `OnCalendar` 用**系统时区**；建议 `sudo timedatectl set-timezone UTC` 与 `policy.json` 的
-`"30 5 * * *"` 对齐。备份以 root 运行：`backup.key` 是 0600 root:opendiscord，普通用户读不到。
+`"30 5 * * *"` 对齐。备份以 root 运行：`backup.key` 是 0600 root:ufot，普通用户读不到。
 
 ### 8.3 手动备份与产物
 
 ```bash
 # 预检：空间、密钥、加密工具、异地目标（不写任何文件）
-sudo /usr/local/sbin/opendiscord-backup --dry-run
+sudo /usr/local/sbin/ufot-backup --dry-run
 
 # 立即备份
-sudo /usr/local/sbin/opendiscord-backup
+sudo /usr/local/sbin/ufot-backup
 ```
 
-产物（`$BACKUP_DIR` 默认 `/var/lib/opendiscord/backup`，umask 077）：
+产物（`$BACKUP_DIR` 默认 `/var/lib/ufot/backup`，umask 077）：
 
 ```
-opendiscord-20261029T053000Z.db.enc        # openssl 加密；用 age 时为 .db.age
-opendiscord-20261029T053000Z.db.enc.sha256 # 密文校验和
-opendiscord-20261029T053000Z.manifest.json # created_at / 源库大小 / 明文 sha256 / 保留天数 / host
+ufot-20261029T053000Z.db.enc        # openssl 加密；用 age 时为 .db.age
+ufot-20261029T053000Z.db.enc.sha256 # 密文校验和
+ufot-20261029T053000Z.manifest.json # created_at / 源库大小 / 明文 sha256 / 保留天数 / host
 ```
 
 流程：`sqlite3 .backup`（在线一致快照，不锁写）→ `PRAGMA integrity_check` 必须 ok →
 立即删除明文（有 `shred` 则覆写）→ 加密 → 原子 rename 落盘 → 异地 → 按 `keep_days` 清理。
 任一步失败退出非 0，timer 记录 failed。
 
-加密选择：`OPENDISCORD_AGE_RECIPIENT`（或 `backup.key` 内容以 `age1` 开头）且装了 `age` → age；
-否则 `openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -pass file:/etc/opendiscord/backup.key`。
+加密选择：`UFOT_AGE_RECIPIENT`（或 `backup.key` 内容以 `age1` 开头）且装了 `age` → age；
+否则 `openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -pass file:/etc/ufot/backup.key`。
 
 ### 8.4 异地副本
 
 ```bash
 # rsync（写进 systemd unit 的 Environment= 或 root 的 crontab）
-OPENDISCORD_BACKUP_RSYNC=backup@10.0.0.9:/srv/opendiscord-backup
+UFOT_BACKUP_RSYNC=backup@10.0.0.9:/srv/ufot-backup
 
 # 对象存储（aws 或 rclone 二选一）
-OPENDISCORD_BACKUP_S3=s3://my-bucket/opendiscord
+UFOT_BACKUP_S3=s3://my-bucket/ufot
 ```
 
 未配置异地目标时脚本只告警（不会失败），但**本机磁盘故障会同时丢失数据与备份**——
@@ -749,8 +749,8 @@ OPENDISCORD_BACKUP_S3=s3://my-bucket/opendiscord
 
 ```bash
 # 0) 选定一份备份（含 .sha256 与 manifest）
-B=/var/lib/opendiscord/backup
-LATEST=$(ls -1t "$B"/opendiscord-*.db.enc "$B"/opendiscord-*.db.age 2>/dev/null | head -1)
+B=/var/lib/ufot/backup
+LATEST=$(ls -1t "$B"/ufot-*.db.enc "$B"/ufot-*.db.age 2>/dev/null | head -1)
 echo "$LATEST"
 
 # 1) 先验密文完整性（在备份目录内执行，文件名要对得上）
@@ -758,15 +758,15 @@ echo "$LATEST"
 
 # 2) 解密到临时目录（0600）
 #    age 身份私钥由运维离线保管（install.sh 不生成）：
-#      age-keygen -o /root/.age/opendiscord.key && chmod 600 /root/.age/opendiscord.key
-#    公钥（age1...）写进 OPENDISCORD_AGE_RECIPIENT 后再备份。
+#      age-keygen -o /root/.age/ufot.key && chmod 600 /root/.age/ufot.key
+#    公钥（age1...）写进 UFOT_AGE_RECIPIENT 后再备份。
 sudo install -d -m 0700 /var/tmp/oc-restore
 case "$LATEST" in
   *.age)
-    sudo age -d -i /root/.age/opendiscord.key -o /var/tmp/oc-restore/chatd.db "$LATEST" ;;
+    sudo age -d -i /root/.age/ufot.key -o /var/tmp/oc-restore/chatd.db "$LATEST" ;;
   *.enc)
     sudo openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 \
-      -in "$LATEST" -out /var/tmp/oc-restore/chatd.db -pass file:/etc/opendiscord/backup.key ;;
+      -in "$LATEST" -out /var/tmp/oc-restore/chatd.db -pass file:/etc/ufot/backup.key ;;
 esac
 
 # 3) 恢复前校验（不通过就停止，不要覆盖生产库）
@@ -774,20 +774,20 @@ sudo sqlite3 /var/tmp/oc-restore/chatd.db "PRAGMA integrity_check;"   # 必须 o
 sudo sqlite3 /var/tmp/oc-restore/chatd.db "SELECT count(*) FROM sqlite_master;"  # 表数量合理
 
 # 4) 停服，保留现场（不要直接覆盖唯一副本）
-sudo systemctl stop opendiscord
-sudo mv /var/lib/opendiscord/chatd.db "/var/lib/opendiscord/chatd.db.bak.$(date -u +%Y%m%dT%H%M%SZ)"
-sudo rm -f /var/lib/opendiscord/chatd.db-wal /var/lib/opendiscord/chatd.db-shm
+sudo systemctl stop ufot
+sudo mv /var/lib/ufot/chatd.db "/var/lib/ufot/chatd.db.bak.$(date -u +%Y%m%dT%H%M%SZ)"
+sudo rm -f /var/lib/ufot/chatd.db-wal /var/lib/ufot/chatd.db-shm
 
 # 5) 落盘（owner/mode 必须与矩阵一致）
-sudo install -m 0600 -o opendiscord -g opendiscord /var/tmp/oc-restore/chatd.db /var/lib/opendiscord/chatd.db
+sudo install -m 0600 -o ufot -g ufot /var/tmp/oc-restore/chatd.db /var/lib/ufot/chatd.db
 
 # 6) 起服
-sudo systemctl start opendiscord
-systemctl is-active opendiscord
-journalctl -u opendiscord -n 50 --no-pager
+sudo systemctl start ufot
+systemctl is-active ufot
+journalctl -u ufot -n 50 --no-pager
 
 # 7) 业务验证（四件事）
-sudo sqlite3 /var/lib/opendiscord/chatd.db "PRAGMA quick_check;"          # ok
+sudo sqlite3 /var/lib/ufot/chatd.db "PRAGMA quick_check;"          # ok
 curl -sI https://chat.example.com/ | head -1                            # 200
 adminctl --server http://127.0.0.1:7780 audit --since-id 0 --limit 5 --output json
 # 管理后台随机抽 3 个会话，确认最近消息时间点 = 备份时刻
@@ -799,7 +799,7 @@ sudo shred -u /var/tmp/oc-restore/chatd.db 2>/dev/null || sudo rm -f /var/tmp/oc
 **恢复后必须知道的两件事**：
 
 1. 热库回到备份时刻，**冷库不回滚**。归档游标可能落后于冷库已有数据，先跑
-   `opendiscordctl archive --dry-run` / `adminctl archive status` 核对 cutoff，再决定是否重跑归档。
+   `ufotctl archive --dry-run` / `adminctl archive status` 核对 cutoff，再决定是否重跑归档。
 2. 备份时刻之后写入的审计事件会缺失，哈希链会出现断点。这是数据丢失的**预期结果**，
    不是"被篡改"；按 §10.4 记录事件，并在审计报告里说明恢复点（附 manifest 的 `sha256_plain`）。
 
@@ -809,29 +809,29 @@ sudo shred -u /var/tmp/oc-restore/chatd.db 2>/dev/null || sudo rm -f /var/tmp/oc
 
 ## 9. 日常运维命令
 
-### 9.1 opendiscordctl（本机运维，直连 systemd/信号/热库）
+### 9.1 ufotctl（本机运维，直连 systemd/信号/热库）
 
-`opendiscordctl` 不说话给网络端口：它读 systemd 状态、给进程发信号、只读打开热库，因此**必须与
+`ufotctl` 不说话给网络端口：它读 systemd 状态、给进程发信号、只读打开热库，因此**必须与
 `chatd` 同机、通常用 root 运行**。`install.sh` 不安装 CLI，从发布包或源码装一次：
 
 ```bash
 # 从源码构建（任何安装方式都适用）
-go build -o /usr/local/bin/opendiscordctl ./server/cmd/opendiscordctl
+go build -o /usr/local/bin/ufotctl ./server/cmd/ufotctl
 go build -o /usr/local/bin/adminctl    ./server/cmd/adminctl
 
 # 用 release.sh 发布过的机器：current/bin 里已带 CLI，直接 install
-sudo install -m 0755 /opt/opendiscord/current/bin/opendiscordctl /usr/local/bin/opendiscordctl
+sudo install -m 0755 /opt/ufot/current/bin/ufotctl /usr/local/bin/ufotctl
 ```
 
 | 命令 | 用途 | 关键参数 |
 |---|---|---|
-| `opendiscordctl status` | 进程状态 + `SIGUSR1` dump 摘要 + 热库统计 | `--unit opendiscord`、`--hot-db /var/lib/opendiscord/chatd.db`、`--signal usr1\|usr2\|none`、`--no-journal`、`--journal-lines 50` |
-| `opendiscordctl doctor` | 体检：热库完整性、磁盘余量、近 1h error 数、冷库 TCP 连通 | `--hot-db PATH`、`--unit NAME`、`--since -1h`、`--no-logs`、`--no-cold` |
-| `opendiscordctl backup --dry-run` | 只校验备份环境，不写文件 | `--db PATH`、`--script PATH`、`--to DIR` |
-| `opendiscordctl backup` | 调 `deploy/backup.sh`；找不到脚本则内置 `sqlite .backup` | 同上 |
-| `opendiscordctl archive --dry-run` / `--run` | 经管理 API 触发/预估归档 | 需先 `adminctl login` |
-| `opendiscordctl flags list` / `flags set KEY=VALUE` | 读/写 feature flag | `--json` 统一 JSON |
-| `opendiscordctl ban <uid> --days 7 --level 2 --reason spam` / `unban <uid>` | 封禁/解封（与管理 API 同一链路） | — |
+| `ufotctl status` | 进程状态 + `SIGUSR1` dump 摘要 + 热库统计 | `--unit ufot`、`--hot-db /var/lib/ufot/chatd.db`、`--signal usr1\|usr2\|none`、`--no-journal`、`--journal-lines 50` |
+| `ufotctl doctor` | 体检：热库完整性、磁盘余量、近 1h error 数、冷库 TCP 连通 | `--hot-db PATH`、`--unit NAME`、`--since -1h`、`--no-logs`、`--no-cold` |
+| `ufotctl backup --dry-run` | 只校验备份环境，不写文件 | `--db PATH`、`--script PATH`、`--to DIR` |
+| `ufotctl backup` | 调 `deploy/backup.sh`；找不到脚本则内置 `sqlite .backup` | 同上 |
+| `ufotctl archive --dry-run` / `--run` | 经管理 API 触发/预估归档 | 需先 `adminctl login` |
+| `ufotctl flags list` / `flags set KEY=VALUE` | 读/写 feature flag | `--json` 统一 JSON |
+| `ufotctl ban <uid> --days 7 --level 2 --reason spam` / `unban <uid>` | 封禁/解封（与管理 API 同一链路） | — |
 
 全局：`--json`、`--admin-url`、`--token`、`--csrf-token`、`--timeout`（默认 20s）。
 退出码：`0` 成功 / `1` 错误（doctor 有 FAIL）/ `64` 语法 / `77` 未授权或未登录。
@@ -839,19 +839,19 @@ sudo install -m 0755 /opt/opendiscord/current/bin/opendiscordctl /usr/local/bin/
 
 ### 9.2 adminctl（走管理 API）
 
-> `admin_listen` 默认 `127.0.0.1:7780`，`adminctl` / `opendiscordctl` 的内置默认地址也是
+> `admin_listen` 默认 `127.0.0.1:7780`，`adminctl` / `ufotctl` 的内置默认地址也是
 > `http://127.0.0.1:7780`，开箱即用；如需连接其它端口（如经 SSH 隧道），显式传 `--server`
 > 或导出环境变量覆盖：
 >
 > ```bash
-> export OPENDISCORD_ADMIN_URL=http://127.0.0.1:7780   # 与 opendiscord.toml 的 admin_listen 一致
+> export UFOT_ADMIN_URL=http://127.0.0.1:7780   # 与 ufot.toml 的 admin_listen 一致
 > ```
 >
 > `adminctl` 的路径前缀是 `/api/v1/*`（不经 Caddy 的 `/api/admin/*` 白名单），因此只在
 > 本机/内网使用；远程运维先开隧道：`ssh -L 7780:127.0.0.1:7780 ops@chat.example.com`。
 
 ```bash
-# 登录（交互式密码 + TOTP；凭据默认落 ~/.config/opendiscord/adminctl.json）
+# 登录（交互式密码 + TOTP；凭据默认落 ~/.config/ufot/adminctl.json）
 adminctl --server http://127.0.0.1:7780 login
 
 # 我是谁 / 当前 token 是否有效
@@ -876,16 +876,16 @@ adminctl --server http://127.0.0.1:7780 flags list
 adminctl --server http://127.0.0.1:7780 flags set registration false
 ```
 
-全局开关：`--output json|table`、`--token`（env `OPENDISCORD_ADMIN_TOKEN`）、`--csrf-token`、
+全局开关：`--output json|table`、`--token`（env `UFOT_ADMIN_TOKEN`）、`--csrf-token`、
 `--idempotency-key`（写操作 5 分钟内幂等）。退出码：0 ok / 1 error / 64 usage / 65 not found / 77 权限。
 
 ### 9.3 journalctl（五条够用）
 
 ```bash
-journalctl -u opendiscord -f                                   # 实时跟随
-journalctl -u opendiscord --since '10 min ago' -p warning      # 近 10 分钟告警
-journalctl -u opendiscord -g 'trace_id=01H...'                 # 单条消息全链路
-journalctl -u opendiscord -o cat | jq -c 'select(.level=="ERROR")' | tail -20
+journalctl -u ufot -f                                   # 实时跟随
+journalctl -u ufot --since '10 min ago' -p warning      # 近 10 分钟告警
+journalctl -u ufot -g 'trace_id=01H...'                 # 单条消息全链路
+journalctl -u ufot -o cat | jq -c 'select(.level=="ERROR")' | tail -20
 journalctl --disk-usage && sudo journalctl --vacuum-size=200M   # 配额 200M，满了先查循环重启
 ```
 
@@ -895,13 +895,13 @@ journalctl --disk-usage && sudo journalctl --vacuum-size=200M   # 配额 200M，
 ### 9.4 systemd 与一次性检查
 
 ```bash
-systemctl status opendiscord --no-pager -l
-systemctl reload opendiscord          # SIGHUP：热载 policy + 白名单（失败保留旧策略）
-systemctl restart opendiscord         # 重启：TOML/env 变更后
+systemctl status ufot --no-pager -l
+systemctl reload ufot          # SIGHUP：热载 policy + 白名单（失败保留旧策略）
+systemctl restart ufot         # 重启：TOML/env 变更后
 
-sqlite3 /var/lib/opendiscord/chatd.db "PRAGMA wal_checkpoint(TRUNCATE);"
-sqlite3 /var/lib/opendiscord/chatd.db "PRAGMA quick_check;"
-du -sh /var/lib/opendiscord/media /var/lib/opendiscord/backup && df -h /var/lib/opendiscord
+sqlite3 /var/lib/ufot/chatd.db "PRAGMA wal_checkpoint(TRUNCATE);"
+sqlite3 /var/lib/ufot/chatd.db "PRAGMA quick_check;"
+du -sh /var/lib/ufot/media /var/lib/ufot/backup && df -h /var/lib/ufot
 ss -lntp | grep -E ':(8080|7780|9090)'
 ```
 
@@ -915,28 +915,28 @@ ss -lntp | grep -E ':(8080|7780|9090)'
 
 ```bash
 # 1) 看退出码与重启次数
-systemctl status opendiscord --no-pager -l | head -20
-systemctl show opendiscord -p ExecMainStatus -p NRestarts -p Result
+systemctl status ufot --no-pager -l | head -20
+systemctl show ufot -p ExecMainStatus -p NRestarts -p Result
 
 # 2) 看最后 100 行结构化日志（先找 msg/fields，不要只看 systemd 摘要）
-journalctl -u opendiscord -n 100 --no-pager
-journalctl -u opendiscord -o cat | jq -c 'select(.level=="ERROR" or .level=="WARN")' | tail -20
+journalctl -u ufot -n 100 --no-pager
+journalctl -u ufot -o cat | jq -c 'select(.level=="ERROR" or .level=="WARN")' | tail -20
 
 # 3) 手工前台跑（绕过 systemd，直接看 stderr；先停 unit 释放端口）
-sudo systemctl stop opendiscord
-sudo -u opendiscord env $(grep -v '^#' /etc/opendiscord/env | xargs) \
-  /opt/opendiscord/current/bin/chatd --config /etc/opendiscord/opendiscord.toml
+sudo systemctl stop ufot
+sudo -u ufot env $(grep -v '^#' /etc/ufot/env | xargs) \
+  /opt/ufot/current/bin/chatd --config /etc/ufot/ufot.toml
 ```
 
 | 现象 | 最可能原因 | 处置 |
 |---|---|---|
-| `status=1/FAILURE`，日志 `config:` | TOML 语法/引号/policy 非法 | 对照 `deploy/opendiscord.toml` 逐键核对；`journalctl -u opendiscord -o cat \| jq -c 'select(.msg\|test("config"))'` |
+| `status=1/FAILURE`，日志 `config:` | TOML 语法/引号/policy 非法 | 对照 `deploy/ufot.toml` 逐键核对；`journalctl -u ufot -o cat \| jq -c 'select(.msg\|test("config"))'` |
 | `status=2/FAILURE`，日志 `assembly failed` | 层装配失败（kind 冲突/配置缺项） | 回滚上一版本，保留 `journalctl` 现场 |
-| `status=203/EXEC` | 二进制不存在/无执行位 | `ls -l /opt/opendiscord/current/bin/chatd`；确认 `current` 链接 |
-| `status=226/NAMESPACE` | `ReadWritePaths` 指向的目录不存在 | `install -d -o opendiscord -g opendiscord /var/lib/opendiscord` |
+| `status=203/EXEC` | 二进制不存在/无执行位 | `ls -l /opt/ufot/current/bin/chatd`；确认 `current` 链接 |
+| `status=226/NAMESPACE` | `ReadWritePaths` 指向的目录不存在 | `install -d -o ufot -g ufot /var/lib/ufot` |
 | `start operation timed out` + 反复重启 | `Type=notify` 未收到 `READY=1` | 见附录 A.1（临时 `Type=exec`） |
 | `address already in use` | 旧进程/别的服务占用 8080/7780/9090 | `ss -lntp \| grep :8080`，`systemctl stop` 冲突单元 |
-| `permission denied` 打开 DB | 文件 owner/mode 被改（曾用 root 跑过） | 按 §6 恢复：`chown opendiscord:opendiscord`、`chmod 0600` |
+| `permission denied` 打开 DB | 文件 owner/mode 被改（曾用 root 跑过） | 按 §6 恢复：`chown ufot:ufot`、`chmod 0600` |
 
 ### 10.2 连不上（浏览器/客户端）
 
@@ -961,7 +961,7 @@ sudo nft list ruleset | head -40
 
 | 症状 | 原因 | 处置 |
 |---|---|---|
-| 502 Bad Gateway | Caddy 指向的端口没有进程 | 启 `opendiscord`；核对 `OPENDISCORD_WS_PORT`/`listen` 一致 |
+| 502 Bad Gateway | Caddy 指向的端口没有进程 | 启 `ufot`；核对 `UFOT_WS_PORT`/`listen` 一致 |
 | `/admin/` 404，其它正常 | 来源 IP 不在白名单（Caddy 故意 404） | 改 `remote_ip` 后 `systemctl restart caddy` |
 | `/admin/` 503 `admin UI is not embedded` | 二进制是未 `make web` 的构建 | 用发布包/重新 `make release` |
 | `/ws` 握手 401 | token 放在 query（红线）、Cookie 域不符、access 过期 | token 只放 Cookie 或 `Sec-WebSocket-Protocol`；核对 `public_origin` |
@@ -978,15 +978,15 @@ sudo nft list ruleset | head -40
 curl -s 127.0.0.1:9090/metrics | grep -E 'writech_queue_depth|writech_busy_total'
 
 # 2) SQLite 是否卡住/损坏
-sqlite3 /var/lib/opendiscord/chatd.db "PRAGMA wal_checkpoint(PASSIVE); PRAGMA quick_check;"
-ls -lh /var/lib/opendiscord/chatd.db*
-journalctl -u opendiscord -o cat | jq -c 'select(.msg|test("write|flush|busy";"i"))' | tail -30
+sqlite3 /var/lib/ufot/chatd.db "PRAGMA wal_checkpoint(PASSIVE); PRAGMA quick_check;"
+ls -lh /var/lib/ufot/chatd.db*
+journalctl -u ufot -o cat | jq -c 'select(.msg|test("write|flush|busy";"i"))' | tail -30
 
 # 3) 磁盘与 inode（WAL 写不进去最常见的根因）
-df -h /var/lib/opendiscord; df -i /var/lib/opendiscord
+df -h /var/lib/ufot; df -i /var/lib/ufot
 
 # 4) 文件权限（root 跑过之后 owner 变 root 会写失败）
-stat -c '%a %U:%G %n' /var/lib/opendiscord/chatd.db /var/lib/opendiscord
+stat -c '%a %U:%G %n' /var/lib/ufot/chatd.db /var/lib/ufot
 
 # 5) 冷库归档滞后（只影响历史，不影响新消息落热库）
 adminctl --server http://127.0.0.1:7780 archive status
@@ -1013,9 +1013,9 @@ adminctl --server http://127.0.0.1:7780 archive status
 adminctl --server http://127.0.0.1:7780 flags set readonly true
 
 # 2) 保全现场（顺序很重要：先快照/拷贝，再分析）
-sudo systemctl stop opendiscord
-sudo cp -a /var/lib/opendiscord/chatd.db /var/lib/opendiscord/chatd.db.incident.$(date -u +%s)
-sudo journalctl -u opendiscord -n 2000 --no-pager > /var/log/opendiscord-incident-$(date -u +%s).log
+sudo systemctl stop ufot
+sudo cp -a /var/lib/ufot/chatd.db /var/lib/ufot/chatd.db.incident.$(date -u +%s)
+sudo journalctl -u ufot -n 2000 --no-pager > /var/log/ufot-incident-$(date -u +%s).log
 
 # 3) 定位断点：从 broken_at 往前取 5 条，记录 id/ts/type/prev_hash
 #    （走管理 API，不依赖热库表名；N 换成页面显示的断链 id）
@@ -1036,14 +1036,14 @@ adminctl --server http://127.0.0.1:7780 audit --since-id $((N-5)) --limit 11 --o
 ```bash
 {
   date -u; uname -a
-  systemctl is-active opendiscord; systemctl show opendiscord -p NRestarts -p ExecMainStatus
+  systemctl is-active ufot; systemctl show ufot -p NRestarts -p ExecMainStatus
   adminctl --server http://127.0.0.1:7780 whoami 2>/dev/null || true
-  sqlite3 /var/lib/opendiscord/chatd.db "PRAGMA wal_checkpoint(PASSIVE); PRAGMA quick_check;"
-  df -h /var/lib/opendiscord; du -sh /var/lib/opendiscord/*
+  sqlite3 /var/lib/ufot/chatd.db "PRAGMA wal_checkpoint(PASSIVE); PRAGMA quick_check;"
+  df -h /var/lib/ufot; du -sh /var/lib/ufot/*
   ss -lntp | grep -E ':(8080|7780|9090)'
   curl -s 127.0.0.1:9090/metrics | grep -E 'writech|ratelimit|audit_chain|go_goroutines'
-  journalctl -u opendiscord -n 200 --no-pager
-} > /tmp/opendiscord-dump.txt 2>&1
+  journalctl -u ufot -n 200 --no-pager
+} > /tmp/ufot-dump.txt 2>&1
 ```
 
 外发前删除用户 ID/会话 ID/手机号；**不要**打包 `keys/`、`env`、数据库文件。
@@ -1057,14 +1057,14 @@ adminctl --server http://127.0.0.1:7780 audit --since-id $((N-5)) --limit 11 --o
 - [ ] **1. systemd 加固**：`NoNewPrivileges=true`、`ProtectSystem=strict`、`ProtectHome=true`、
       `PrivateTmp/PrivateDevices=true`、`ProtectKernel{Tunables,Modules,Logs,ControlGroups,Clock}=true`、
       `RestrictSUIDSGID/LockPersonality/RestrictNamespaces=true`（§6.1 红线）。
-      验证：`systemd-analyze security --offline=true /etc/systemd/system/opendiscord.service`。
-- [ ] **2. 非 root 独立用户 + EnvironmentFile 0600**：embedded 用 `opendiscord`（embedded-only）；
-      `EnvironmentFile=/etc/opendiscord/env`（§6.1 红线）。
-      验证：`ps -o user= -p $(systemctl show -p MainPID --value opendiscord)`。
+      验证：`systemd-analyze security --offline=true /etc/systemd/system/ufot.service`。
+- [ ] **2. 非 root 独立用户 + EnvironmentFile 0600**：embedded 用 `ufot`（embedded-only）；
+      `EnvironmentFile=/etc/ufot/env`（§6.1 红线）。
+      验证：`ps -o user= -p $(systemctl show -p MainPID --value ufot)`。
 - [ ] **3. 最小权限边界**：`CapabilityBoundingSet=` 与 `AmbientCapabilities=` 为空；
       `ReadWritePaths` 只含本进程数据目录；配置与二进制 `ReadOnlyPaths`（§6.1 红线）。
-      验证：`systemctl cat opendiscord | grep -E 'Capability|ReadWritePaths|ReadOnlyPaths'`。
-- [ ] **4. 文件权限矩阵**：§6 表逐项一致；`find /etc/opendiscord /var/lib/opendiscord -perm /o+rwx` 为空
+      验证：`systemctl cat ufot | grep -E 'Capability|ReadWritePaths|ReadOnlyPaths'`。
+- [ ] **4. 文件权限矩阵**：§6 表逐项一致；`find /etc/ufot /var/lib/ufot -perm /o+rwx` 为空
       （§6.2 红线）。验证：§6.1 四条命令。
 - [ ] **5. SSH 基线**：`PermitRootLogin no`、`PasswordAuthentication no`、仅 ed25519 公钥、
       `MaxAuthTries 3`、`AllowUsers` 白名单（§6.3 红线）。
@@ -1079,9 +1079,9 @@ adminctl --server http://127.0.0.1:7780 audit --since-id $((N-5)) --limit 11 --o
       验证：`curl --data-binary @2MB.bin https://域名/api/v1/auth/login` 应 413。
 - [ ] **9. 密钥清单与轮换**：§6.4.1 清单齐全、`kid` 支持双钥轮换、私钥不入库不进镜像、
       `backup.key`/`db_disk_key` 离线保管（§6.4.1 红线）。
-      验证：`ls -l /etc/opendiscord/keys`；`git grep -n 'BEGIN PRIVATE KEY'` 应为空。
+      验证：`ls -l /etc/ufot/keys`；`git grep -n 'BEGIN PRIVATE KEY'` 应为空。
 - [ ] **10. 备份与审计**：备份加密 + 异地 + 至少一次成功恢复演练（§8.5）；审计链每日校验，
-      断裂按 P0 处置（§6.4.2 红线）。验证：`systemctl list-timers opendiscord-backup.timer`；
+      断裂按 P0 处置（§6.4.2 红线）。验证：`systemctl list-timers ufot-backup.timer`；
       后台审计页「校验哈希链」返回 ok。
 
 **密钥轮换日历**（§6.4.1）：`jwt_sign_key` 180 天、`admin_jwt_key` 90 天、`ipc_key`/`hmac_key` 90 天、
@@ -1098,11 +1098,11 @@ adminctl --server http://127.0.0.1:7780 audit --since-id $((N-5)) --limit 11 --o
 
 | # | 差异 | 现象 | 临时绕过 / 上线前要求 |
 |---|---|---|---|
-| A.1 | 未实现 `sd_notify(READY=1)`，但 unit 是 `Type=notify` + `WatchdogSec=15` | `start operation timed out`，`Restart=always` 反复重启 | **仅联调**：`sudo systemctl edit --full opendiscord`，把 `Type=notify` 改 `Type=exec`、`WatchdogSec=15` 改 `WatchdogSec=0`；**上线前必须恢复**并实现 notify + watchdog 心跳 |
+| A.1 | 未实现 `sd_notify(READY=1)`，但 unit 是 `Type=notify` + `WatchdogSec=15` | `start operation timed out`，`Restart=always` 反复重启 | **仅联调**：`sudo systemctl edit --full ufot`，把 `Type=notify` 改 `Type=exec`、`WatchdogSec=15` 改 `WatchdogSec=0`；**上线前必须恢复**并实现 notify + watchdog 心跳 |
 | A.2 | Prometheus `/metrics` 与 `metrics_listen` 未实现（管理 API 只有 `/api/v1/metrics` 摘要） | Caddy `/metrics` 对白名单内来源 502、对公网 404 | 先从管理 API 取指标；上线前接入 Prometheus handler 并监听 9090 |
-| A.3 | `install.sh` 只安装 `chatd`，不安装 `adminctl` / `opendiscordctl` | `command not found` | 按 §9.1 从 `current/bin` 或源码 `install` 到 `/usr/local/bin` |
+| A.3 | `install.sh` 只安装 `chatd`，不安装 `adminctl` / `ufotctl` | `command not found` | 按 §9.1 从 `current/bin` 或源码 `install` 到 `/usr/local/bin` |
 | A.4 | 管理 REST 已挂载：`/api/v1/*` 在 `admin_rest_listen`（默认 `127.0.0.1:7781`） | 启动日志出现 `rest_layer="admin_rest_listen"`，管理 API 由该监听提供（不再有 `not_wired`） | 无需绕过；本机/内网按 §4.4 验证。注意 REST 端口与 `admin_listen`（7780，帧注入）是两个监听 |
-| A.5 | `deploy/opendiscord.toml` 中部分契约字段当前二进制未消费 | 改了 `metrics_listen`/上传上限等无效果 | 见 §3.1 表后的「消费进度」注记 |
+| A.5 | `deploy/ufot.toml` 中部分契约字段当前二进制未消费 | 改了 `metrics_listen`/上传上限等无效果 | 见 §3.1 表后的「消费进度」注记 |
 | A.6 | SPA 已内嵌（`server/web`，`go:embed`），`chatd` 在 `listen` 为 TCP 时同时托管 `/` 与 `/admin/` | 发布包无需额外 web 目录；从源码构建若未执行 `make web`，前端资源为空，访问返回 503 `UI is not embedded` | 用发布包，或 `make web && make release`；不要手改 `server/web/*`，它由 `make web` 整目录替换 |
 | A.7 | 冷库与归档作业已接线（jobber 按 `policy.archive.cron` 调度），但 Postgres driver 需部署层注册 | `cold_dsn` 已配置但 driver 未注册时，启动日志报 `cold store disabled: driver not registered`；归档作业仅 dry-run/报错，审计降级为「只写日志不落盘」 | 部署层 import `github.com/lib/pq`（注册 `postgres` driver，匹配 `sql.Open("postgres", …)`）或注册同名 driver 的 pgx 包装（二进制按架构约定不携带 driver）；未注册前不要开启归档，审计按 security-spec §5.5 补接 |
 | A.8 | 媒体上传/下载已提供（MVP，无会话 ACL） | `POST /api/media/upload` 与 `GET /api/media/{id}` 可用；下载只校验登录态 + 不可枚举 `media_id`，无会话级 ACL，无异步病毒扫描 | 1.0 可用于可信小规模部署，勿把 `media_id` 外传给非会话成员；1.1 补会话 ACL 与 ClamAV |
@@ -1116,13 +1116,13 @@ adminctl --server http://127.0.0.1:7780 audit --since-id $((N-5)) --limit 11 --o
 ## 附录 B：目录速查
 
 ```
-/opt/opendiscord/current/bin/chatd                 # 单二进制（含内嵌前端）
-/opt/opendiscord/current/{deploy,web}              # release.sh 打包时附带
-/etc/opendiscord/{opendiscord.toml,policy.json,env,Caddyfile.reference}
-/etc/opendiscord/keys/{*.pem,*_key,backup.key}
-/etc/opendiscord/config/chatd.toml -> ../opendiscord.toml
-/var/lib/opendiscord/{chatd.db,admin.db,media/,backup/}
-/etc/systemd/system/opendiscord*.service
-/etc/systemd/journald.conf.d/opendiscord.conf     # SystemMaxUse=200M
-/usr/local/sbin/opendiscord-backup                 # §8.2 手动安装
+/opt/ufot/current/bin/chatd                 # 单二进制（含内嵌前端）
+/opt/ufot/current/{deploy,web}              # release.sh 打包时附带
+/etc/ufot/{ufot.toml,policy.json,env,Caddyfile.reference}
+/etc/ufot/keys/{*.pem,*_key,backup.key}
+/etc/ufot/config/chatd.toml -> ../ufot.toml
+/var/lib/ufot/{chatd.db,admin.db,media/,backup/}
+/etc/systemd/system/ufot*.service
+/etc/systemd/journald.conf.d/ufot.conf     # SystemMaxUse=200M
+/usr/local/sbin/ufot-backup                 # §8.2 手动安装
 ```

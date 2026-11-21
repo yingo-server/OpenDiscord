@@ -14,7 +14,7 @@ import (
 	"hash/fnv"
 	"sync"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/pkg/featureflags"
+	"github.com/yingo-server/UFOT/server/internal/pkg/featureflags"
 )
 
 // Envelope 是 hub 收到的下行帧的抽象形态。hub 层不解释 proto——只需要

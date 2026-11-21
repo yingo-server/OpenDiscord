@@ -1,4 +1,4 @@
-# OpenDiscord
+# UFOT
 
 **自托管即时通讯：消息与文件留在你自己的服务器上，由你掌控数据。**
 
@@ -9,10 +9,6 @@
 - **给你自己用/小团队用**：按文档快速部署 → [快速开始](#快速开始)
 - **要部署到生产**：平台/产物/升级 → [部署与升级](#部署与升级)
 - **想读代码或参与开发**：架构与协议 → [面向开发者](#面向开发者)
-
-> **商标声明**：OpenDiscord 是独立开发的自托管即时通讯项目，与 Discord Inc. 及 Discord 品牌
-> **没有任何关联、背书或授权关系**。"Discord" 及相关标识是其权利人的商标；本项目名称中的
-> "Discord" 字样仅用于描述性目的，不主张任何商标权利。如权利人提出异议，我们将配合调整名称。
 
 当前版本 **v2.0.0**（架构重设第一步：容量契约 + 写吞吐翻倍，正式版）。容量有明确边界
 （2 核约 512 并发 / ~3,500 msg/s 工作点，见[实测容量](#容量实测非估算)）；v2.0 把过载行为
@@ -26,7 +22,7 @@
 - **数据自主**：热数据留在本机 SQLite（默认 90 天），更早归档到外部 PostgreSQL；
   备份、归档、清理都是独立作业，可 dry-run 预演；审计日志哈希链 + append-only，篡改可被检测。
 - **运维友好**：一个二进制部署，Web 管理后台 + 终端管理台（`opchat`）+ 可编排的
-  命令行（`opendiscordctl` / `adminctl`），退出码可脚本化。
+  命令行（`ufotctl` / `adminctl`），退出码可脚本化。
 - **性能有实测**：不做估算——所有容量数字来自 CI 压测，方法与复现脚本都在仓库里
   （见[实测容量](#容量实测非估算)），包括明确的拐点和不适用的场景。
 - **说清楚它不是什么**：不是 Slack 替代品，不适合超大群（2 核上 1000 人大群不可行）；
@@ -53,7 +49,7 @@
 **管理与运维**
 - Web 管理后台：仪表盘（实时指标 + 趋势图）、用户/举报/广播/开关/归档/审计
 - `opchat`：纯终端管理台，7 个标签页，适合 SSH 里快速处理
-- `opendiscordctl` / `adminctl`：脚本化命令行，退出码可编排
+- `ufotctl` / `adminctl`：脚本化命令行，退出码可编排
 - 全中英双语，界面语言自动跟随系统
 
 ## 容量（实测，非估算）
@@ -120,9 +116,9 @@ CI 2 核 runner、无限流、20 秒稳态、mixed 负载。7cb04fc = 发送路�
 
 ## 快速开始
 
-1. 到 [Releases](https://github.com/yingo-server/OpenDiscord/releases) 下载对应平台的产物（见下表，共 9 个）。
+1. 到 [Releases](https://github.com/yingo-server/UFOT/releases) 下载对应平台的产物（见下表，共 9 个）。
 2. `sudo ./deploy/install-interactive` 交互式安装（无 TTY 时自动降级为参数模式）。
-3. `sudo systemctl enable --now opendiscord` 启动，打开 `https://你的域名` 即可使用。
+3. `sudo systemctl enable --now ufot` 启动，打开 `https://你的域名` 即可使用。
 
 ### 支持的平台
 
@@ -130,7 +126,7 @@ CI 2 核 runner、无限流、20 秒稳态、mixed 负载。7cb04fc = 发送路�
 |---|---|---|
 | Linux | x86_64 / x86 / arm64 / armv7 / riscv64 | `.tar.gz`（静态链接 SQLite） |
 | Windows | x86_64 / x86 | `.zip` |
-| 源码 | — | `opendiscord-<ver>-src.tar.gz` |
+| 源码 | — | `ufot-<ver>-src.tar.gz` |
 
 Windows on ARM / ARM64 暂无产物（缺 mingw CGO 工具链），见 [已知问题](docs/known-issues.md#3-windows-arm--arm64-不提供构建产物)。
 
@@ -143,12 +139,12 @@ Windows on ARM / ARM64 暂无产物（缺 mingw CGO 工具链），见 [已知�
 ### 安装
 
 ```bash
-# 1. 下载（版本号见 https://github.com/yingo-server/OpenDiscord/releases）
+# 1. 下载（版本号见 https://github.com/yingo-server/UFOT/releases）
 V=1.4.0
-curl -LO https://github.com/yingo-server/OpenDiscord/releases/download/v$V/opendiscord-v$V-linux-amd64.tar.gz
-curl -LO https://github.com/yingo-server/OpenDiscord/releases/download/v$V/SHA256SUMS
+curl -LO https://github.com/yingo-server/UFOT/releases/download/v$V/ufot-v$V-linux-amd64.tar.gz
+curl -LO https://github.com/yingo-server/UFOT/releases/download/v$V/SHA256SUMS
 sha256sum -c SHA256SUMS --ignore-missing
-tar -xzf opendiscord-v$V-linux-amd64.tar.gz
+tar -xzf ufot-v$V-linux-amd64.tar.gz
 
 # 2. 安装（交互式向导；无 TTY 时自动降级为参数模式）
 sudo ./deploy/install-interactive
@@ -158,11 +154,11 @@ sudo ./deploy/install-interactive
 #      --admin-user admin --admin-pass-file /root/admin.pass --lang zh
 
 # 3. 启动
-sudo systemctl enable --now opendiscord
+sudo systemctl enable --now ufot
 ```
 
 首次启动会创建管理员账号并打印一次性的
-TOTP 密钥（用 `journalctl -u opendiscord | grep otpauth` 查看），请立即在认证器里登记。
+TOTP 密钥（用 `journalctl -u ufot | grep otpauth` 查看），请立即在认证器里登记。
 
 ## 部署与升级
 
@@ -172,11 +168,11 @@ TOTP 密钥（用 `journalctl -u opendiscord | grep otpauth` 查看），请立�
 
 ```bash
 # 备份 → 替换二进制 → 重启（详见 docs/deploy.md §7）
-sudo opendiscordctl backup
-sudo systemctl stop opendiscord
+sudo ufotctl backup
+sudo systemctl stop ufot
 # 替换 releases/<ver> 下的二进制并切换 current 符号链接
-sudo systemctl start opendiscord
-sudo opendiscordctl doctor
+sudo systemctl start ufot
+sudo ufotctl doctor
 ```
 
 > **从 v1.0 升级到 v1.1 必须做一次热库转换**（启用 auto_vacuum，否则磁盘只涨不落），
@@ -186,19 +182,19 @@ sudo opendiscordctl doctor
 
 | 命令 | 用途 |
 |---|---|
-| `opendiscordctl status` | 服务状态、进程信息、热库统计 |
-| `opendiscordctl doctor` | 体检：数据库完整性、磁盘空间、日志错误、冷库连通、审计存储 |
-| `opendiscordctl backup [--dry-run]` | 备份热库与配置 |
-| `opendiscordctl ban <uid> --days 7` | 封禁用户 |
-| `opendiscordctl unban <uid>` | 解封 |
-| `opendiscordctl flags list` / `flags set k=v` | 查看/修改功能开关 |
-| `opendiscordctl archive --dry-run` / `--run` | 归档预演 / 执行 |
-| `opendiscordctl migrate thumbs [--dry-run]` | 把旧版存在数据库里的缩略图迁到文件系统 |
+| `ufotctl status` | 服务状态、进程信息、热库统计 |
+| `ufotctl doctor` | 体检：数据库完整性、磁盘空间、日志错误、冷库连通、审计存储 |
+| `ufotctl backup [--dry-run]` | 备份热库与配置 |
+| `ufotctl ban <uid> --days 7` | 封禁用户 |
+| `ufotctl unban <uid>` | 解封 |
+| `ufotctl flags list` / `flags set k=v` | 查看/修改功能开关 |
+| `ufotctl archive --dry-run` / `--run` | 归档预演 / 执行 |
+| `ufotctl migrate thumbs [--dry-run]` | 把旧版存在数据库里的缩略图迁到文件系统 |
 | `opchat` | 打开终端管理台（交互式） |
 | `adminctl users list --q 张` | 检索用户（脚本化） |
 | `adminctl broadcast send --text "..."` | 全站广播 |
 
-日志：`journalctl -u opendiscord -f`　　Dump 内部状态：`kill -USR1 $(pidof opendiscord)`
+日志：`journalctl -u ufot -f`　　Dump 内部状态：`kill -USR1 $(pidof ufot)`
 
 日常运维、内容治理与应急处理见 [管理员指南](docs/admin-guide.md)；日常使用（账号、消息、隐私、数据导出）见 [用户指南](docs/user-guide.md)。
 

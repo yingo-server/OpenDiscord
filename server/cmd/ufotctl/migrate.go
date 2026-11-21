@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/pkg/i18n"
+	"github.com/yingo-server/UFOT/server/internal/pkg/i18n"
 )
 
 // media migration: move the legacy inline `thumb_data` blob out of the hot DB
@@ -54,7 +54,7 @@ func cmdMigrateThumbs(ctx context.Context, e *environment, g globals, args []str
 	dry := fs.Bool("dry-run", false, "只统计将迁移的行数与字节数，不写盘不改库")
 	batch := fs.Int("batch", 500, "每批处理的行数")
 	dbPath := fs.String("hot-db", "", "热库路径")
-	mediaDir := fs.String("media-dir", "", "媒体目录（默认读 OPENDISCORD_MEDIA_DIR / ./data/media）")
+	mediaDir := fs.String("media-dir", "", "媒体目录（默认读 UFOT_MEDIA_DIR / ./data/media）")
 	if err := parseFlags(fs, e, "migrate thumbs", args, true); err != nil {
 		return err
 	}
@@ -71,7 +71,7 @@ func cmdMigrateThumbs(ctx context.Context, e *environment, g globals, args []str
 	}
 	dir := resolveMediaDir(e, *mediaDir)
 	if dir == "" {
-		return usagef("migrate thumbs: 未指定媒体目录（--media-dir 或 OPENDISCORD_MEDIA_DIR）")
+		return usagef("migrate thumbs: 未指定媒体目录（--media-dir 或 UFOT_MEDIA_DIR）")
 	}
 
 	// dry-run stays read-only; a real run needs a writable handle.
@@ -348,7 +348,7 @@ func resolveMediaDir(e *environment, explicit string) string {
 	if explicit != "" {
 		return explicit
 	}
-	if v := e.getenv("OPENDISCORD_MEDIA_DIR"); v != "" {
+	if v := e.getenv("UFOT_MEDIA_DIR"); v != "" {
 		return v
 	}
 	return "./data/media"

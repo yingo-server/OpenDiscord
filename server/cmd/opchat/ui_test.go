@@ -44,7 +44,7 @@ func newFakeAdmin(t *testing.T) *fakeAdmin {
 		fmt.Fprint(w, `{"username":"root","role":"super"}`)
 	}))
 	mux.HandleFunc("/api/v1/metrics", rec(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, "# HELP x\nopendiscord_online_connections 1234\nopendiscord_users_total 5000\nopendiscord_messages_today_total 88213\n")
+		fmt.Fprint(w, "# HELP x\nufot_online_connections 1234\nufot_users_total 5000\nufot_messages_today_total 88213\n")
 	}))
 	mux.HandleFunc("/api/v1/archive/status", rec(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, `{"last_run":"ok"}`)

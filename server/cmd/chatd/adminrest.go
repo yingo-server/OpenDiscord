@@ -19,15 +19,15 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/admin"
-	"github.com/yingo-server/OpenDiscord/server/internal/admin/bridgeproxy"
-	adminprod "github.com/yingo-server/OpenDiscord/server/internal/admin/prod"
-	adminstore "github.com/yingo-server/OpenDiscord/server/internal/admin/store"
-	"github.com/yingo-server/OpenDiscord/server/internal/bridge/adminapi"
-	"github.com/yingo-server/OpenDiscord/server/internal/data/policy"
-	"github.com/yingo-server/OpenDiscord/server/internal/data/store/pg"
-	"github.com/yingo-server/OpenDiscord/server/internal/data/store/sqlite"
-	"github.com/yingo-server/OpenDiscord/server/internal/pkg/log"
+	"github.com/yingo-server/UFOT/server/internal/admin"
+	"github.com/yingo-server/UFOT/server/internal/admin/bridgeproxy"
+	adminprod "github.com/yingo-server/UFOT/server/internal/admin/prod"
+	adminstore "github.com/yingo-server/UFOT/server/internal/admin/store"
+	"github.com/yingo-server/UFOT/server/internal/bridge/adminapi"
+	"github.com/yingo-server/UFOT/server/internal/data/policy"
+	"github.com/yingo-server/UFOT/server/internal/data/store/pg"
+	"github.com/yingo-server/UFOT/server/internal/data/store/sqlite"
+	"github.com/yingo-server/UFOT/server/internal/pkg/log"
 )
 
 // adminKeyPath derives the layer-to-admin HMAC key location from the signing

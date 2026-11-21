@@ -1,6 +1,6 @@
 # chatd embedded 模式配置（简化 TOML：key = value，# 注释，[section] 仅用于 feature flags）
 #
-# 生产安装位置 /etc/opendiscord/opendiscord.toml（0640 root:opendiscord）；
+# 生产安装位置 /etc/ufot/ufot.toml（0640 root:ufot）；
 # 仓库内这份是开发/单机默认值，路径均在 ./data 下，开箱即可 go run ./server/cmd/chatd。
 #
 # 策略类参数（保留天数、归档/备份 cron、限流阈值）不在本文件：

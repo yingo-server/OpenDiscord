@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/data/pipe/wire"
-	"github.com/yingo-server/OpenDiscord/server/internal/data/store"
-	"github.com/yingo-server/OpenDiscord/server/internal/proto/kinds"
+	"github.com/yingo-server/UFOT/server/internal/data/pipe/wire"
+	"github.com/yingo-server/UFOT/server/internal/data/store"
+	"github.com/yingo-server/UFOT/server/internal/proto/kinds"
 )
 
 // SYNC (kind 8) gap recovery: rows seq 1,2,5 exist; a member requests

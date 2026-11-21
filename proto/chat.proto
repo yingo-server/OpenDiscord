@@ -1,10 +1,10 @@
 syntax = "proto3";
 
-// OpenDiscord 唯一契约源：所有 kind 定义 + Envelope。
+// UFOT 唯一契约源：所有 kind 定义 + Envelope。
 // 号段总表见 docs/architecture.md「统一 kind 号段」。
 package chat.v1;
 
-option go_package = "github.com/yingo-server/OpenDiscord/server/internal/proto/gen/chatpb;chatpb";
+option go_package = "github.com/yingo-server/UFOT/server/internal/proto/gen/chatpb;chatpb";
 
 // ===================================================================
 // 0-99 系统层（连接生命周期 / 鉴权 / 同步 / 错误）

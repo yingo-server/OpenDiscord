@@ -15,9 +15,9 @@ package identity
 import (
 	"context"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/data/cache"
-	"github.com/yingo-server/OpenDiscord/server/internal/data/pipe/wire"
-	"github.com/yingo-server/OpenDiscord/server/internal/data/store"
+	"github.com/yingo-server/UFOT/server/internal/data/cache"
+	"github.com/yingo-server/UFOT/server/internal/data/pipe/wire"
+	"github.com/yingo-server/UFOT/server/internal/data/store"
 )
 
 // ops for the 940 IDENTITY_DATA lane.

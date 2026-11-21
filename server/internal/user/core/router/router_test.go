@@ -5,16 +5,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/pkg/featureflags"
-	"github.com/yingo-server/OpenDiscord/server/internal/proto"
-	"github.com/yingo-server/OpenDiscord/server/internal/proto/gen/chatpb"
-	"github.com/yingo-server/OpenDiscord/server/internal/proto/kinds"
-	"github.com/yingo-server/OpenDiscord/server/internal/transport"
-	"github.com/yingo-server/OpenDiscord/server/internal/user/core/policy"
-	"github.com/yingo-server/OpenDiscord/server/internal/user/core/session"
-	"github.com/yingo-server/OpenDiscord/server/internal/user/net/bridge"
-	"github.com/yingo-server/OpenDiscord/server/internal/user/net/frame"
-	"github.com/yingo-server/OpenDiscord/server/internal/user/net/limit"
+	"github.com/yingo-server/UFOT/server/internal/pkg/featureflags"
+	"github.com/yingo-server/UFOT/server/internal/proto"
+	"github.com/yingo-server/UFOT/server/internal/proto/gen/chatpb"
+	"github.com/yingo-server/UFOT/server/internal/proto/kinds"
+	"github.com/yingo-server/UFOT/server/internal/transport"
+	"github.com/yingo-server/UFOT/server/internal/user/core/policy"
+	"github.com/yingo-server/UFOT/server/internal/user/core/session"
+	"github.com/yingo-server/UFOT/server/internal/user/net/bridge"
+	"github.com/yingo-server/UFOT/server/internal/user/net/frame"
+	"github.com/yingo-server/UFOT/server/internal/user/net/limit"
 )
 
 // ---------- fakes ----------

@@ -8,8 +8,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/admin/identity"
-	"github.com/yingo-server/OpenDiscord/server/internal/data/store"
+	"github.com/yingo-server/UFOT/server/internal/admin/identity"
+	"github.com/yingo-server/UFOT/server/internal/data/store"
 )
 
 func TestCSRFEqualConstantTime(t *testing.T) {

@@ -1,4 +1,4 @@
-module github.com/yingo-server/OpenDiscord
+module github.com/yingo-server/UFOT
 
 go 1.22
 

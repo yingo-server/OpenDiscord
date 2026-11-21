@@ -9,7 +9,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/data/store"
+	"github.com/yingo-server/UFOT/server/internal/data/store"
 )
 
 // testDB opens a fresh migrated database in t.TempDir().

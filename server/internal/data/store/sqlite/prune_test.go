@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/data/store"
+	"github.com/yingo-server/UFOT/server/internal/data/store"
 )
 
 // TestDeleteHotBeforePrunesOldRows: insert 3 messages (2 old, 1 new), prune

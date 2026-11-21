@@ -1,6 +1,6 @@
 package main
 
-// Command stress is the CI load generator for OpenDiscord. It boots a real chatd,
+// Command stress is the CI load generator for UFOT. It boots a real chatd,
 // pre-registers a user pool ONCE, seeds N-member conversations, then drives the
 // WS channel (and optionally HTTP) and prints an honest, auditable capacity
 // report. See docs/architecture.md: tools are small and composed.
@@ -524,7 +524,7 @@ func main() {
 		dbPath = os.Getenv("CHATD_DB")
 	}
 
-	fmt.Printf("== OpenDiscord stress: %s mode=%s conns=%d duration=%ds conv_members=%d rate_limit=%s ==\n",
+	fmt.Printf("== UFOT stress: %s mode=%s conns=%d duration=%ds conv_members=%d rate_limit=%s ==\n",
 		*base, *mode, *conns, *secs, convMembers, rlLabel(rateLimit))
 
 	// phase 0: pre-register the pool (once)
@@ -640,7 +640,7 @@ func runLadder(base string, start, maxConns, secs int, interval time.Duration, c
 		}
 	}()
 
-	fmt.Printf("== OpenDiscord stress ladder: start=%d max=%d duration=%ds conv_members=%d rate_limit=%s ==\n",
+	fmt.Printf("== UFOT stress ladder: start=%d max=%d duration=%ds conv_members=%d rate_limit=%s ==\n",
 		start, maxConns, secs, convMembers, rlLabel(rateLimit))
 
 	t0 := time.Now()

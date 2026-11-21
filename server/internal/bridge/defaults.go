@@ -2,7 +2,7 @@
 // 单独成文件只为让装配文件 pipeline.go 保持 <300 行；不得在此写逻辑。
 package bridge
 
-import "github.com/yingo-server/OpenDiscord/server/internal/proto/kinds"
+import "github.com/yingo-server/UFOT/server/internal/proto/kinds"
 
 func defaultCaps() map[string][]kinds.Kind {
 	return map[string][]kinds.Kind{

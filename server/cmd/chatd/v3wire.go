@@ -8,7 +8,7 @@
 //	不改连接写循环（P3d-2），不接 DeliveryPlane.Pump 到任何连接。
 //	flag-off 时 adapter 直接返回 (false, nil)，hub.Offer 本身也是 no-op。
 //
-// 孤立说明：cmd/opendiscord/v3.go 是 P3b 的孤立构造/测试单元，不是主干入口；
+// 孤立说明：cmd/ufot/v3.go 是 P3b 的孤立构造/测试单元，不是主干入口；
 // 主干唯一的 v3 构造点是本文件的 newV3Wire。
 package main
 
@@ -17,10 +17,10 @@ import (
 	"database/sql"
 	"sync/atomic"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/bus/delivery"
-	"github.com/yingo-server/OpenDiscord/server/internal/bus/mailbox"
-	"github.com/yingo-server/OpenDiscord/server/internal/data/pipe"
-	"github.com/yingo-server/OpenDiscord/server/internal/pkg/featureflags"
+	"github.com/yingo-server/UFOT/server/internal/bus/delivery"
+	"github.com/yingo-server/UFOT/server/internal/bus/mailbox"
+	"github.com/yingo-server/UFOT/server/internal/data/pipe"
+	"github.com/yingo-server/UFOT/server/internal/pkg/featureflags"
 )
 
 // WireV3 是 v3 总线在 chatd 装配层的句柄集合。P3d-1 起 Hub 会收到 fanout

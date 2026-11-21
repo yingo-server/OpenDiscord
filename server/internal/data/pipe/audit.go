@@ -17,8 +17,8 @@ import (
 	"encoding/json"
 	"reflect"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/data/pipe/wire"
-	"github.com/yingo-server/OpenDiscord/server/internal/data/store"
+	"github.com/yingo-server/UFOT/server/internal/data/pipe/wire"
+	"github.com/yingo-server/UFOT/server/internal/data/store"
 )
 
 // audit appends one event to the cold audit journal. actor is the acting uid

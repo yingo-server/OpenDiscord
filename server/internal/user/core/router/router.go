@@ -14,17 +14,17 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/pkg/featureflags"
-	"github.com/yingo-server/OpenDiscord/server/internal/pkg/log"
-	"github.com/yingo-server/OpenDiscord/server/internal/proto"
-	"github.com/yingo-server/OpenDiscord/server/internal/proto/gen/chatpb"
-	"github.com/yingo-server/OpenDiscord/server/internal/proto/kinds"
-	"github.com/yingo-server/OpenDiscord/server/internal/user/core/policy"
-	"github.com/yingo-server/OpenDiscord/server/internal/user/core/session"
-	"github.com/yingo-server/OpenDiscord/server/internal/user/net/bridge"
-	"github.com/yingo-server/OpenDiscord/server/internal/user/net/frame"
-	"github.com/yingo-server/OpenDiscord/server/internal/user/net/limit"
-	"github.com/yingo-server/OpenDiscord/server/internal/user/net/ws"
+	"github.com/yingo-server/UFOT/server/internal/pkg/featureflags"
+	"github.com/yingo-server/UFOT/server/internal/pkg/log"
+	"github.com/yingo-server/UFOT/server/internal/proto"
+	"github.com/yingo-server/UFOT/server/internal/proto/gen/chatpb"
+	"github.com/yingo-server/UFOT/server/internal/proto/kinds"
+	"github.com/yingo-server/UFOT/server/internal/user/core/policy"
+	"github.com/yingo-server/UFOT/server/internal/user/core/session"
+	"github.com/yingo-server/UFOT/server/internal/user/net/bridge"
+	"github.com/yingo-server/UFOT/server/internal/user/net/frame"
+	"github.com/yingo-server/UFOT/server/internal/user/net/limit"
+	"github.com/yingo-server/UFOT/server/internal/user/net/ws"
 )
 
 // Session 是 router 依赖的连接表只读视图（测试用 fake session 实现）。

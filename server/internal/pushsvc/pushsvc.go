@@ -34,8 +34,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/pkg/log"
-	"github.com/yingo-server/OpenDiscord/server/internal/user/core/authn"
+	"github.com/yingo-server/UFOT/server/internal/pkg/log"
+	"github.com/yingo-server/UFOT/server/internal/user/core/authn"
 )
 
 // Subscription is one registered push subscription (PushSubscriptionJSON).
@@ -170,7 +170,7 @@ func (s *Service) handleTest(w http.ResponseWriter, r *http.Request) {
 		s.unauthorized(w)
 		return
 	}
-	payload := []byte(`{"type":"test","title":"OpenDiscord","body":"push test"}`)
+	payload := []byte(`{"type":"test","title":"UFOT","body":"push test"}`)
 	n := s.Notify(id.UserID, payload)
 	writeJSON(w, http.StatusOK, map[string]any{"sent": n})
 }

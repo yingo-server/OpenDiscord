@@ -55,7 +55,7 @@ func TestUpgradeDryRunDefault(t *testing.T) {
 
 	e := upgradeEnvFor(path, dir)
 	e.getenv = func(string) string { return "" }
-	_ = os.Setenv("OPENDISCORD_MEDIA_DIR", "")
+	_ = os.Setenv("UFOT_MEDIA_DIR", "")
 	g := globals{}
 	if err := cmdUpgrade(context.Background(), e, g, []string{"--hot-db", path, "--media-dir", dir}); err != nil {
 		t.Fatalf("cmdUpgrade dry-run: %v", err)

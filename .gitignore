@@ -23,7 +23,7 @@ apps/admin/dist/
 
 # stray build artifacts (must never be tracked: 15MB+ binaries)
 /chatd
-/opendiscordctl
+/ufotctl
 /server/chatd
 
 # stress binary built by "go build ./scripts/stress"

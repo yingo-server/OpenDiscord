@@ -1,4 +1,4 @@
-# OpenDiscord WebSocket 协议参考（1.0）
+# UFOT WebSocket 协议参考（1.0）
 
 > 只描述 `proto/chat.proto`、`server/internal/proto/kinds/kinds.go`、`server/internal/user/net/frame/codec.go`、`server/internal/user/net/ws/acceptor.go`、`server/internal/data/pipe/wire/wire.go` 中**真实存在**的帧结构与语义。kind 号段逐条取自 `kinds.go`（共 **84** 个常量；客户端真源 `apps/client/src/net/protocol/kinds.ts` 与之一一对应），状态列标注是否已有处理分支。本文描述 v1.4.0 行为。
 

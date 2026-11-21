@@ -24,10 +24,10 @@ import (
 	"context"
 	"time"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/bus/adaptive"
-	"github.com/yingo-server/OpenDiscord/server/internal/data/pipe"
-	"github.com/yingo-server/OpenDiscord/server/internal/pkg/featureflags"
-	"github.com/yingo-server/OpenDiscord/server/internal/pkg/log"
+	"github.com/yingo-server/UFOT/server/internal/bus/adaptive"
+	"github.com/yingo-server/UFOT/server/internal/data/pipe"
+	"github.com/yingo-server/UFOT/server/internal/pkg/featureflags"
+	"github.com/yingo-server/UFOT/server/internal/pkg/log"
 )
 
 // adaptiveControlPeriod 是控制循环周期。机制项：与 §2.1「每 control_period

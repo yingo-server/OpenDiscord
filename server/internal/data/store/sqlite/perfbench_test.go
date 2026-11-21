@@ -20,7 +20,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/data/store"
+	"github.com/yingo-server/UFOT/server/internal/data/store"
 )
 
 // benchDBDSN opens a raw pool with a custom pragma DSN (mattn DSN params apply

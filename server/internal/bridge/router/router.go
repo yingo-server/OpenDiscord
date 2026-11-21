@@ -7,9 +7,9 @@ package router
 import (
 	"sync"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/pipedef"
-	chatpb "github.com/yingo-server/OpenDiscord/server/internal/proto/gen/chatpb"
-	"github.com/yingo-server/OpenDiscord/server/internal/proto/kinds"
+	"github.com/yingo-server/UFOT/server/internal/pipedef"
+	chatpb "github.com/yingo-server/UFOT/server/internal/proto/gen/chatpb"
+	"github.com/yingo-server/UFOT/server/internal/proto/kinds"
 )
 
 // Target 一个投递目标：层 + bus topic。

@@ -6,7 +6,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/proto"
+	"github.com/yingo-server/UFOT/server/internal/proto"
 )
 
 func mkFrame(seq uint32, trace string) *proto.Frame {

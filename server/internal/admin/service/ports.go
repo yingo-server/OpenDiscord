@@ -11,7 +11,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/admin/bridgeproxy"
+	"github.com/yingo-server/UFOT/server/internal/admin/bridgeproxy"
 )
 
 // Sentinel errors. Handlers map these onto HTTP status codes / error bodies.

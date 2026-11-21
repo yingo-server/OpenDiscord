@@ -1,8 +1,8 @@
 package pipe
 
 import (
-	"github.com/yingo-server/OpenDiscord/server/internal/proto"
-	"github.com/yingo-server/OpenDiscord/server/internal/transport"
+	"github.com/yingo-server/UFOT/server/internal/proto"
+	"github.com/yingo-server/UFOT/server/internal/transport"
 )
 
 // req.go — Req view + FrameSource (see req comment in pipe.go).

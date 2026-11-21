@@ -3,9 +3,9 @@ package pipe
 import (
 	"context"
 
-	"github.com/yingo-server/OpenDiscord/server/internal/data/job"
-	"github.com/yingo-server/OpenDiscord/server/internal/data/pipe/wire"
-	"github.com/yingo-server/OpenDiscord/server/internal/proto/kinds"
+	"github.com/yingo-server/UFOT/server/internal/data/job"
+	"github.com/yingo-server/UFOT/server/internal/data/pipe/wire"
+	"github.com/yingo-server/UFOT/server/internal/proto/kinds"
 )
 
 // Trunkee is the OPTIONAL job-trigger port (kind 980 JOB_TRIGGER → the data

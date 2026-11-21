@@ -1,4 +1,4 @@
-# OpenDiscord v2.0 架构重设规划（草案）
+# UFOT v2.0 架构重设规划（草案）
 
 状态：draft · 日期：2026-11-18 · 触发：v1.4.0 知情发布后的容量门槛缺口
 依据：`docs/lts-1.4-plan.md §9` 首轮验收数据、`docs/perf-postmortem-v1.2-draft.md`、

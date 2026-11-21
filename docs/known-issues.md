@@ -1,4 +1,4 @@
-# OpenDiscord 已知问题（v2.0.0 收敛稿）
+# UFOT 已知问题（v2.0.0 收敛稿）
 
 > 版本：**v2.0.0（已发布，2026-11-21）**。CI 全绿；v2.0 引入显式容量契约、修复 ACK 撒谎、
 > 将消息写入吞吐提升约一倍（实测 ≈579→1197 ACK/s）。**容量门槛仍未达标**：单进程 SQLite
@@ -22,8 +22,8 @@
 | 9 | 编辑/转发/@提及 服务端 | 已实现（`msg_domain_v2_enabled` 默认开启；处理分支在 `data/pipe`，经压测守门前不宣称达标） |
 | 10 | 用户举报 kind 453 | v1.5 已修（端到端：服务端 onReport v1.4 在位，本版前端发帧接线） |
 | 10b | 会话列表未虚拟滚动 | 已修（ConvList 接 react-virtual，CI 全绿） |
-| 11 | auto_vacuum 需手工转换 | 已修（`opendiscordctl upgrade` 自动化，CI 全绿） |
-| 12 | 旧 thumb_data 需手工迁移 | 已修（并入 `opendiscordctl upgrade`，dry-run 默认，CI 全绿） |
+| 11 | auto_vacuum 需手工转换 | 已修（`ufotctl upgrade` 自动化，CI 全绿） |
+| 12 | 旧 thumb_data 需手工迁移 | 已修（并入 `ufotctl upgrade`，dry-run 默认，CI 全绿） |
 | 容量 | 扇出写放大（S-1/S-2 缺口） | **v2.0 吞吐翻倍（≈579→1197 ACK/s）但仍未达门槛**：seq 批量分配 + batch500 显著改善写路径；单进程 SQLite 物理上限未突破，S-1/S-2 缺口如实保留，超限由 V2-0 显式限流兜底（不再静默挂起）；架构级突破留待 V2-2 分片/Actor |
 
 另：**CORE-3（v3 总线接线）代码已落盘、待 CI/压测验证**——`AttachV3Deliver` 已在
@@ -79,7 +79,7 @@ v1.4 落地通用 HTTP webhook 适配器（POST JSON、3s 超时、非 2xx 即�
 
 ### 4. split 多进程部署未实现 —— 已修（收敛为明确不做）
 
-v1.2 预留的 `opendiscord-{bridge,user,data,admin}.service` 指向不存在二进制的
+v1.2 预留的 `ufot-{bridge,user,data,admin}.service` 指向不存在二进制的
 systemd 单元已删除，不留会启动失败的运维指引。文档明确 chatd 为 embedded-only
 单进程；真正的水平扩展需求由部署方自行拆分（见 roadmap 明确不做清单）。
 
@@ -136,14 +136,14 @@ PII 只传 msg_id + 枚举原因（detail 不采集自由文本）。
 
 ### 11. 升级到 v1.1 必须做一次热库 auto_vacuum 转换 —— 已修（自动化）
 
-`opendiscordctl upgrade`（v1.4 新增）启动检测 `auto_vacuum=0` 自动生成一次性
+`ufotctl upgrade`（v1.4 新增）启动检测 `auto_vacuum=0` 自动生成一次性
 迁移计划（停服 → 备份 → `PRAGMA auto_vacuum=INCREMENTAL; VACUUM;` → 校验返回 2），
 `--run` 执行、默认 dry-run。手工路径 `docs/deploy.md §7.4` 保留为回退手段。
 
 ### 12. 旧版 `thumb_data` 需要手工迁移 —— 已修（自动化）
 
-并入 `opendiscordctl upgrade`（默认 dry-run，`--run` 执行）。独立的
-`opendiscordctl migrate thumbs --dry-run/--run` 仍可用。
+并入 `ufotctl upgrade`（默认 dry-run，`--run` 执行）。独立的
+`ufotctl migrate thumbs --dry-run/--run` 仍可用。
 
 ## 容量：扇出写放大是主要约束 —— 未解决（S-1/S-2 缺口，转入架构重设专项）
 

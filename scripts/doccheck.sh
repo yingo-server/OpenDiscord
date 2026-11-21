@@ -47,7 +47,7 @@ fi
 
 # ---------------------------------------------------------------- CLI subcommands
 { grep -oE 'case "[a-z]+"' server/cmd/adminctl/main.go
-  grep -oE 'case "[a-z]+"' server/cmd/opendiscordctl/main.go
+  grep -oE 'case "[a-z]+"' server/cmd/ufotctl/main.go
 } | sed -E 's/case "([a-z]+)"/\1/' | sort -u > "$tmp/cmds.txt"
 
 awk '/^#### /{print $2}' "$CLI" | sort -u > "$tmp/doccmds.txt"

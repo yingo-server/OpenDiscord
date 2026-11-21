@@ -190,14 +190,14 @@ func printError(w io.Writer, err error) {
 // ------------------------------------------------------------ credentials
 
 func credPath() string {
-	if p := os.Getenv("OPENDISCORD_ADMIN_CREDENTIALS"); p != "" {
+	if p := os.Getenv("UFOT_ADMIN_CREDENTIALS"); p != "" {
 		return p
 	}
 	dir, err := os.UserConfigDir()
 	if err != nil || dir == "" {
 		dir = filepath.Join(os.Getenv("HOME"), ".config")
 	}
-	return filepath.Join(dir, "opendiscord", "adminctl.json")
+	return filepath.Join(dir, "ufot", "adminctl.json")
 }
 
 func loadCredentials() (credentials, error) {
