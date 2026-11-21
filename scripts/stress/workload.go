@@ -89,11 +89,14 @@ func (o *opLocal) snapshot() (attempted, ok, writeErr int64, samples []time.Dura
 
 // worker is one live WS connection.
 type worker struct {
-	id          int
-	tok         string
-	uid         int64
-	conv        uint64
-	conn        *websocket.Conn
+	id   int
+	tok  string
+	uid  int64
+	conv uint64
+	conn *websocket.Conn
+	// writeMu serializes all WS writes: doOp (send loop), sendSync (watermark
+	// handler on the read goroutine) and capability report can race otherwise.
+	writeMu     sync.Mutex
 	serverDrop  atomic.Int64
 	cmidCounter atomic.Uint64
 	dead        atomic.Bool
@@ -213,7 +216,10 @@ func (w *worker) sendSync(req *syncRequestPayload) {
 	if err != nil {
 		return
 	}
-	if err := w.conn.WriteMessage(websocket.TextMessage, b); err != nil {
+	w.writeMu.Lock()
+	err = w.conn.WriteMessage(websocket.TextMessage, b)
+	w.writeMu.Unlock()
+	if err != nil {
 		w.dead.Store(true)
 		return
 	}
@@ -280,7 +286,10 @@ func (w *worker) doOp(name string, peer *peerRecorder) {
 		return
 	}
 	t0 := time.Now()
-	if werr := w.conn.WriteMessage(websocket.TextMessage, b); werr != nil {
+	w.writeMu.Lock()
+	werr := w.conn.WriteMessage(websocket.TextMessage, b)
+	w.writeMu.Unlock()
+	if werr != nil {
 		op.addWriteErr()
 		w.dead.Store(true)
 		return

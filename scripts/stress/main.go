@@ -219,13 +219,15 @@ func dialWS(base, token string) (*websocket.Conn, error) {
 // server's universal-pull split treats this connection as a modern client
 // (watermark path instead of inline 102). Without this, stress runs measure
 // the legacy inline path even with universal_pull_enabled=true.
-func reportPullCapability(conn *websocket.Conn) error {
+func (w *worker) reportPullCapability() error {
 	pl, _ := json.Marshal(map[string]bool{"pull_capable": true})
 	b, err := encodeEnvelope(&envelope{Kind: 18, Payload: pl})
 	if err != nil {
 		return err
 	}
-	return conn.WriteMessage(websocket.TextMessage, b)
+	w.writeMu.Lock()
+	defer w.writeMu.Unlock()
+	return w.conn.WriteMessage(websocket.TextMessage, b)
 }
 
 // ---------------------------------------------------------------------------
@@ -327,7 +329,7 @@ func runLevel(p levelPlan) *levelResult {
 				w.pull = newPullTracker()
 				// 上报能力：universal pull 服务端据此把本连接归入水位线分支，
 				// 压测才反映真实浏览器客户端的投递路径（否则全走 inline 102）。
-				if err := reportPullCapability(conn); err != nil {
+				if err := w.reportPullCapability(); err != nil {
 					atomic.AddInt64(&rampErr, 1)
 				}
 			}
