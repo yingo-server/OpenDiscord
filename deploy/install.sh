@@ -344,13 +344,14 @@ ln -sfn current/web "$PREFIX/web"
 # ---------------------------------------------------------------------------
 log "安装 systemd unit"
 
-UNIT_DIR="/etc/systemd/system"
+UNIT_DIR="${UFOT_UNIT_DIR:-/etc/systemd/system}"
+JOURNALD_DIR="${UFOT_JOURNALD_DIR:-/etc/systemd/journald.conf.d}"
 install -d -m 0755 -o root -g root "$UNIT_DIR"
 install -m 0644 -o root -g root "$SCRIPT_DIR/systemd/ufot.service" "$UNIT_DIR/ufot.service"
-log "  ufot.service"
+log "  ufot.service → $UNIT_DIR"
 
-install -d -m 0755 -o root -g root /etc/systemd/journald.conf.d
-install -m 0644 -o root -g root "$SCRIPT_DIR/journald/ufot.conf" /etc/systemd/journald.
+install -d -m 0755 -o root -g root "$JOURNALD_DIR"
+install -m 0644 -o root -g root "$SCRIPT_DIR/journald/ufot.conf" "$JOURNALD_DIR/ufot.conf"
 # ---------------------------------------------------------------------------
 # 8. 生效
 # ---------------------------------------------------------------------------

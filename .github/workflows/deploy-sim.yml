@@ -1,0 +1,129 @@
+name: Deploy Simulation
+
+# Real end-to-end execution of the deployment scripts on a CI runner.
+# Not a --help smoke test: installs files, generates keys, checks permissions,
+# verifies idempotency and reports on-disk footprint. All system paths are
+# redirected to a sandbox under $RUNNER_TEMP via UFOT_* env overrides, so the
+# runner itself is not modified (no real systemd start: --no-start).
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'deploy/**'
+      - '.github/workflows/deploy-sim.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  install-sim:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare isolated prefixes and mock build artifacts
+        run: |
+          set -euo pipefail
+          ROOT="$RUNNER_TEMP/ufot-deploy"
+          mkdir -p "$ROOT"/{prefix,etc,state,units,journald} \
+                   "$ROOT/repo/dist" "$ROOT/repo/apps/client/dist" "$ROOT/repo/apps/admin/dist"
+          # Mock the binaries/web that a real release build would place here.
+          printf '#!/bin/sh\necho "UFOT chatd mock"\n' > "$ROOT/repo/dist/chatd"
+          chmod +x "$ROOT/repo/dist/chatd"
+          printf '<!doctype html><title>UFOT client mock</title>\n' > "$ROOT/repo/apps/client/dist/index.html"
+          printf '<!doctype html><title>UFOT admin mock</title>\n' > "$ROOT/repo/apps/admin/dist/index.html"
+          # The scripts derive REPO_DIR from their own location, so copy the
+          # whole deploy/ tree next to the mock artifacts.
+          cp -R deploy "$ROOT/repo/deploy"
+          echo "ROOT=$ROOT" >> "$GITHUB_ENV"
+          echo "UFOT_PREFIX=$ROOT/prefix" >> "$GITHUB_ENV"
+          echo "UFOT_ETC=$ROOT/etc" >> "$GITHUB_ENV"
+          echo "UFOT_STATE=$ROOT/state" >> "$GITHUB_ENV"
+          echo "UFOT_UNIT_DIR=$ROOT/units" >> "$GITHUB_ENV"
+          echo "UFOT_JOURNALD_DIR=$ROOT/journald" >> "$GITHUB_ENV"
+          echo "=== isolated environment ==="
+          env | grep '^UFOT_' | sort
+
+      - name: Interactive wizard (piped stdin, no side effects)
+        run: |
+          set -euo pipefail
+          echo "=== install-interactive --interactive-test (piped answers) ==="
+          printf 'zh\nchat.example.com\n' | \
+            sudo env UFOT_ETC="$UFOT_ETC" UFOT_PREFIX="$UFOT_PREFIX" UFOT_STATE="$UFOT_STATE" \
+              bash "$ROOT/repo/deploy/install-interactive" --interactive-test \
+                --prefix "$UFOT_PREFIX" --etc "$UFOT_ETC" --state "$UFOT_STATE" --no-start 2>&1
+
+      - name: First install (full execution, --no-start)
+        run: |
+          set -euo pipefail
+          echo "=== install.sh run #1 ==="
+          sudo env UFOT_ETC="$UFOT_ETC" UFOT_PREFIX="$UFOT_PREFIX" UFOT_STATE="$UFOT_STATE" \
+            UFOT_UNIT_DIR="$UFOT_UNIT_DIR" UFOT_JOURNALD_DIR="$UFOT_JOURNALD_DIR" \
+            bash "$ROOT/repo/deploy/install.sh" \
+              --no-start --domain https://chat.example.com 2>&1 | tee "$ROOT/install-1.log"
+
+      - name: Second install (idempotency check)
+        run: |
+          set -euo pipefail
+          echo "=== install.sh run #2 (idempotency) ==="
+          sudo env UFOT_ETC="$UFOT_ETC" UFOT_PREFIX="$UFOT_PREFIX" UFOT_STATE="$UFOT_STATE" \
+            UFOT_UNIT_DIR="$UFOT_UNIT_DIR" UFOT_JOURNALD_DIR="$UFOT_JOURNALD_DIR" \
+            bash "$ROOT/repo/deploy/install.sh" \
+              --no-start --domain https://chat.example.com 2>&1 | tee "$ROOT/install-2.log"
+          echo "=== idempotency assertions ==="
+          grep -q '已存在，保持不变' "$ROOT/install-2.log" || {
+            echo "FAIL: second run did not report preserved files"; exit 1; }
+          echo "PASS: existing config/keys preserved on re-run"
+
+      - name: Verify layout, permissions and footprint
+        run: |
+          set -euo pipefail
+          echo "=== installed tree ==="
+          sudo find "$UFOT_ETC" "$UFOT_STATE" "$UFOT_PREFIX" "$UFOT_UNIT_DIR" "$UFOT_JOURNALD_DIR" \
+            -printf '%M %u:%g %s %p\n' | sort -k4 | tee "$ROOT/tree.txt"
+          echo
+          echo "=== key files ==="
+          sudo find "$UFOT_ETC/keys" -type f -printf '%f %s bytes\n' | sort
+          echo
+          echo "=== footprint (du) ==="
+          {
+            echo "== deploy footprint =="
+            sudo du -sh "$UFOT_ETC" "$UFOT_STATE" "$UFOT_PREFIX" "$UFOT_UNIT_DIR" "$UFOT_JOURNALD_DIR"
+            echo "== total =="
+            sudo du -sch "$UFOT_ETC" "$UFOT_STATE" "$UFOT_PREFIX" "$UFOT_UNIT_DIR" "$UFOT_JOURNALD_DIR" | tail -1
+            echo "== file count =="
+            sudo find "$UFOT_ETC" "$UFOT_STATE" "$UFOT_PREFIX" "$UFOT_UNIT_DIR" "$UFOT_JOURNALD_DIR" -type f | wc -l
+          } | tee "$ROOT/footprint.txt"
+          echo
+          echo "=== permission red-line (other rwx must be empty) ==="
+          BAD=$(sudo find "$UFOT_ETC" "$UFOT_STATE" -perm /o+rwx -printf '%M %p\n')
+          [ -z "$BAD" ] || { echo "FAIL: $BAD"; exit 1; }
+          echo "PASS: no world-accessible paths under ETC/STATE"
+          echo
+          echo "=== journald unit installed correctly ==="
+          test -f "$UFOT_JOURNALD_DIR/ufot.conf" || { echo "FAIL: journald conf missing"; exit 1; }
+          test -f "$UFOT_UNIT_DIR/ufot.service" || { echo "FAIL: systemd unit missing"; exit 1; }
+          echo "PASS: ufot.service + ufot.conf present"
+
+      - name: Backup script dry-run against installed DB path
+        run: |
+          set -euo pipefail
+          echo "=== backup.sh --dry-run (installed config) ==="
+          # install.sh does not create a DB; create an empty valid SQLite file
+          # via python3 stdlib so the dry-run's size check has a real target.
+          python3 -c "import sqlite3,sys; sqlite3.connect(sys.argv[1]).execute('create table if not exists t(x)').connection.close()" \
+            "$UFOT_STATE/chatd.db"
+          sudo env UFOT_ETC="$UFOT_ETC" UFOT_DB="$UFOT_STATE/chatd.db" \
+            bash "$ROOT/repo/deploy/backup.sh" --dry-run 2>&1 | tee "$ROOT/backup-dry.log"
+
+      - name: Upload simulation logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deploy-simulation-logs
+          path: |
+            ${{ runner.temp }}/ufot-deploy/*.log
+            ${{ runner.temp }}/ufot-deploy/tree.txt
+            ${{ runner.temp }}/ufot-deploy/footprint.txt
+          if-no-files-found: warn
