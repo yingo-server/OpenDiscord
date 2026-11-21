@@ -47,6 +47,7 @@ import (
 	"github.com/yingo-server/OpenDiscord/server/internal/pkg/log"
 	"github.com/yingo-server/OpenDiscord/server/internal/proto/gen/chatpb"
 	"github.com/yingo-server/OpenDiscord/server/internal/proto/kinds"
+	"github.com/yingo-server/OpenDiscord/server/internal/pushsvc"
 	"github.com/yingo-server/OpenDiscord/server/internal/transport/embedded"
 	"github.com/yingo-server/OpenDiscord/server/internal/user/app"
 	"github.com/yingo-server/OpenDiscord/server/internal/user/core/authn"
@@ -87,6 +88,11 @@ type assembly struct {
 	// adaptiveStore 是 CORE-1 控制循环的 effective[cid] 表；仅在
 	// adaptive_control_enabled=true 时由 startAdaptiveControl 创建并注入。
 	adaptiveStore *pipe.AdaptiveStoreHandle
+
+	// push 是 Web Push（系统推送）服务端句柄：订阅登记 + Notify。本批只挂载
+	// 订阅端点与 Notify API，尚未接入"每条消息送达即推送"的路径
+	// （见 docs/push-setup.md §5）。
+	push *pushsvc.Service
 
 	started time.Time
 }
@@ -301,6 +307,26 @@ func newAssembly(cfg *config, lg *log.Logger) (*assembly, error) {
 	}
 	a.auth = authSvc
 
+	// 9.5 push service (Web Push 服务端): the VAPID sender comes from the
+	// environment and degrades to a no-op when VAPID is not configured
+	// (fail-closed: subscriptions are still registered, nothing is delivered).
+	pushSvc, err := pushsvc.New(pushsvc.Deps{
+		Verifier: verifier,
+		Sender:   pushsvc.SenderFromEnv(log.For("push")),
+		Logger:   log.For("push"),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("chatd: push service: %w", err)
+	}
+	a.push = pushSvc
+	// v1.5: wire the push notification hook into the data-plane flusher so
+	// every committed message notifies offline/background recipients. The
+	// hook is fail-closed inside pushsvc (no subscriptions / no VAPID = no-op),
+	// so this never blocks or changes the existing delivery path.
+	p.SetPushNotify(func(uid int64, payload []byte) {
+		_ = pushSvc.Notify(uid, payload) // 返回已通知的订阅数；钩子不消费
+	})
+
 	// 10. user layer gateway: /ws + /api/auth/* + /healthz + SPA on one port.
 	userCfg := app.DefaultConfig()
 	userCfg.ListenAddr = cfg.Listen
@@ -462,6 +488,11 @@ func (a *assembly) buildHTTP(auth http.Handler) http.Handler {
 	}
 	a.media = mediaSvc
 	mux.Handle("/api/media/", mediaSvc.Routes())
+	// push plane: /api/push/subscribe (browser push registration) — mounted
+	// before the /api/ catch-all so the contract path wins.
+	if a.push != nil {
+		mux.Handle("/api/push/", a.push.Routes())
+	}
 	mux.HandleFunc("GET /healthz", a.healthz)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeJSONStatus(w, http.StatusNotFound, map[string]any{"error": "unknown api path", "code": "NOT_FOUND"})

@@ -256,6 +256,14 @@ func (p *Pipe) SetWritePolicy(pol any) {
 	}
 }
 
+// SetPushNotify installs the optional Web Push notification hook (v1.5).
+// The assembly wires pushsvc.Notify here; nil keeps the pre-v1.5 behaviour.
+func (p *Pipe) SetPushNotify(fn func(uid int64, payload []byte)) {
+	if p.fl != nil {
+		p.fl.setPushNotify(fn)
+	}
+}
+
 // SetAdaptiveStore installs the CORE-2 effective[cid] parameter table
 // (universal-pull-spec §2.2). The assembly (chatd) owns the policy loop that
 // writes it from the adaptive controller; the pipe/fanout mechanism layer only

@@ -1,9 +1,28 @@
 # OpenDiscord
 
-自托管的即时通讯服务：单聊、群聊、图片/语音/文件、语音视频通话、多设备同步。
-数据在你自己的服务器上，不经过任何第三方。
+**自托管即时通讯：数据在你自己的服务器上，不经过任何第三方。**
 
-一个二进制 = 服务端 + 用户端界面 + 管理后台。2 核 2G 起步，不需要容器。
+单聊、群聊、图片/语音/文件、WebRTC 语音视频通话、多设备同步，全部装进一个二进制——服务端、用户端界面、管理后台一体，2 核 2G 即可运行，不需要容器。
+
+- **给你自己用/小团队用**：五分钟装好 → [快速开始](#快速开始)
+- **要部署到生产**：平台/产物/升级 → [部署与升级](#部署与升级)
+- **想读代码或参与开发**：架构与协议 → [面向开发者](#面向开发者)
+
+当前版本 **v1.4.0**（LTS · 知情发布）。容量上它有明确边界（2 核约 512 并发连接、
+~3,500 消息/秒的工作点，见[实测容量](#容量实测非估算)），移动端系统推送与消息举报
+入口**尚未实现**（v1.5 路线图中，见 [docs/v1.5-roadmap.md](docs/v1.5-roadmap.md)）——
+本文档如实标注，不夸大、不隐藏。
+
+## 为什么选它
+
+- **数据自主**：热数据留在本机 SQLite（默认 90 天），更早归档到外部 PostgreSQL；
+  备份、归档、清理都是独立作业，可 dry-run 预演；审计日志哈希链 + append-only，不可篡改。
+- **运维友好**：一个二进制部署，Web 管理后台 + 终端管理台（`opchat`）+ 可编排的
+  命令行（`opendiscordctl` / `adminctl`），退出码可脚本化。
+- **性能有实测**：不做估算——所有容量数字来自 CI 压测，方法与复现脚本都在仓库里
+  （见[实测容量](#容量实测非估算)），包括明确的拐点和不适用的场景。
+- **说清楚它不是什么**：不是 Slack 替代品，不适合超大群（2 核上 1000 人大群不可行）；
+  要更高容量需加核或多实例，架构级重设在 [docs/architecture-reset-v2-plan.md](docs/architecture-reset-v2-plan.md) 规划中。
 
 ## 特性
 
@@ -29,16 +48,16 @@
 - `opendiscordctl` / `adminctl`：脚本化命令行，退出码可编排
 - 全中英双语，界面语言自动跟随系统
 
-**数据自主**
-- 热数据留在本机 SQLite（默认 90 天），更早的归档到外部 PostgreSQL
-- 归档、清理、备份、媒体回收都是独立作业，可 dry-run 预演
-- 审计日志哈希链 + append-only，不可篡改
-
 ## 容量（实测，非估算）
 
 > **1.4 数据待 S-1~S-7 压测刷新**：1.4 的普遍拉取 + 自适应 + v3 总线代码已合入
 > 但全部 flag 默认关闭，下表数字未受影响；flag 灰度启用后由 CI 压测刷新本表，
 > 当前请继续按表中实测值做容量规划。
+>
+> **v1.4 知情发布的容量缺口**：v1.4 首轮双规格压测 PASS=0 / FAIL=6 / BLOCKED=8，
+> S-1（500 人群×1000 在线，实测 0.93%，目标 95%）与 S-2（1000×50 人群，实测 16.38%，
+> 目标 90%）未达标，属单进程 SQLite 架构的物理包络。详见
+> [docs/release-notes-v1.4.0.md](docs/release-notes-v1.4.0.md) 与 [docs/known-issues.md](docs/known-issues.md)。
 
 ### 三列对照：v1.1.1 基线 → 负优化版（已回滚）→ 7cb04fc（当前）
 
@@ -93,6 +112,10 @@ CI 2 核 runner、无限流、20 秒稳态、mixed 负载。7cb04fc = 发送路�
 
 ## 快速开始
 
+1. 到 [Releases](https://github.com/yingo-server/OpenDiscord/releases) 下载对应平台的产物（见下表，共 9 个）。
+2. `sudo ./deploy/install-interactive` 交互式安装（无 TTY 时自动降级为参数模式）。
+3. `sudo systemctl enable --now opendiscord` 启动，打开 `https://你的域名` 即可使用。
+
 ### 支持的平台
 
 | 平台 | 架构 | 产物 |
@@ -113,7 +136,7 @@ Windows on ARM / ARM64 暂无产物（缺 mingw CGO 工具链），见 [已知�
 
 ```bash
 # 1. 下载（版本号见 https://github.com/yingo-server/OpenDiscord/releases）
-V=1.1.0
+V=1.4.0
 curl -LO https://github.com/yingo-server/OpenDiscord/releases/download/v$V/opendiscord-v$V-linux-amd64.tar.gz
 curl -LO https://github.com/yingo-server/OpenDiscord/releases/download/v$V/SHA256SUMS
 sha256sum -c SHA256SUMS --ignore-missing
@@ -130,8 +153,12 @@ sudo ./deploy/install-interactive
 sudo systemctl enable --now opendiscord
 ```
 
-打开 `https://你的域名` 即可使用。首次启动会创建管理员账号并打印一次性的
+首次启动会创建管理员账号并打印一次性的
 TOTP 密钥（用 `journalctl -u opendiscord | grep otpauth` 查看），请立即在认证器里登记。
+
+## 部署与升级
+
+安装细节、Caddy 配置、备份恢复、故障排查与安全基线见 [部署手册](docs/deploy.md)。
 
 ### 升级
 
@@ -147,7 +174,7 @@ sudo opendiscordctl doctor
 > **从 v1.0 升级到 v1.1 必须做一次热库转换**（启用 auto_vacuum，否则磁盘只涨不落），
 > 命令见 `docs/release-notes-v1.1.0.md` 与 `docs/deploy.md §7.4`。
 
-## 常用运维
+### 常用运维
 
 | 命令 | 用途 |
 |---|---|
@@ -165,6 +192,15 @@ sudo opendiscordctl doctor
 
 日志：`journalctl -u opendiscord -f`　　Dump 内部状态：`kill -USR1 $(pidof opendiscord)`
 
+日常运维、内容治理与应急处理见 [管理员指南](docs/admin-guide.md)；日常使用（账号、消息、隐私、数据导出）见 [用户指南](docs/user-guide.md)。
+
+## 面向开发者
+
+- [开发文档索引](docs/README.md)：架构、协议、各层设计（从这里进入）
+- [架构](docs/architecture.md) / [API 参考](docs/api-reference.md) / [CLI 参考](docs/cli-reference.md) / [WS 协议](docs/ws-protocol.md)
+- [压测方法与基准](docs/perf-spec-v1.2.md)：本文容量数据的测量方法
+- 贡献流程与构建方式见开发文档索引；变更日志见 [CHANGELOG.md](CHANGELOG.md)
+
 ## 文档
 
 面向使用者：
@@ -181,6 +217,7 @@ sudo opendiscordctl doctor
 - [API 参考](docs/api-reference.md) / [CLI 参考](docs/cli-reference.md) / [WS 协议](docs/ws-protocol.md)
 - [路线图](docs/roadmap.md) / [变更日志](CHANGELOG.md) / [已知问题](docs/known-issues.md)
 - [1.4 LTS 规划](docs/lts-1.4-plan.md)：普遍拉取 + 自适应 + v3 总线的决策与验收门槛
+- [v1.5 路线图](docs/v1.5-roadmap.md)：推送/举报等功能补齐与发布计划
 - [v2.0 架构重设规划（草案）](docs/architecture-reset-v2-plan.md)：容量瓶颈归因与分片/异步写/会话 Actor 路线
 
 ## 许可

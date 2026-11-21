@@ -40,6 +40,10 @@ type flusher struct {
 	// putAck places an ACK on the lane with full capacity: the sender is
 	// blocked on it, so it outranks broadcast traffic.
 	putAck func(*env)
+	// pushNotify 是可选的 Web Push 通知钩子（v1.5）：每条已提交消息的每个
+	// 收件人调一次，由 assembly 注入 pushsvc.Notify。nil = 未装配 = no-op；
+	// 任何失败由 pushsvc 自行 fail-closed，绝不阻塞投递热路径。
+	pushNotify func(uid int64, payload []byte)
 	lg     *log.Logger
 	// batchSize / interval are the group-commit tunables. They are read on
 	// every loop iteration by run(), so they are guarded by cfgMu to allow
@@ -85,6 +89,11 @@ func newFlusher(w store.MsgWriter, convs store.ConvStore, out chan<- *env, ready
 // the scan status. A nil store degrades gracefully: the media[] entries keep
 // whatever the uplink carried, minus the store-only fields.
 func (f *flusher) setMediaStore(ms store.MediaStore) { f.media = ms }
+
+// setPushNotify injects the optional Web Push notification hook (v1.5).
+// nil keeps the pre-v1.5 behaviour (no push). The hook must be fail-closed —
+// it is called on the fan-out path and must never block or panic.
+func (f *flusher) setPushNotify(fn func(int64, []byte)) { f.pushNotify = fn }
 
 // applyWritePolicy overrides the group-commit batch size and flush interval
 // from the policy snapshot (write_path section) when one is supplied. The
@@ -284,6 +293,19 @@ func (f *flusher) fanoutNew(m store.PendingMsg, mediaIdx map[string]*store.Media
 			continue
 		}
 		uids = append(uids, uint64(member.UID))
+	}
+	// Web Push（v1.5）：对每个离线/后台收件人推一条系统通知。body 只放通用
+	// 文案 + 会话号，绝不带消息正文（PII/内容不进系统通知）。钩子 fail-closed：
+	// 未装配（nil）或无订阅/无 VAPID 时 pushsvc 内部 no-op，不影响投递热路径。
+	if f.pushNotify != nil && len(uids) > 0 {
+		np, _ := json.Marshal(map[string]any{
+			"title":  "OpenDiscord",
+			"body":   "你有一条新消息",
+			"convId": m.Cid,
+		})
+		for _, uid := range uids {
+			f.pushNotify(int64(uid), np)
+		}
 	}
 	// 拉取模式分流（§3.1/§3.2）：只有 len(members) > pull_mode_threshold 时才
 	// 改走水位线。threshold 默认 0（禁用），此时整段判定为假，下面仍是 v1.1.1

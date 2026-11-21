@@ -104,6 +104,27 @@ export function buildForwardContent(message: ChatMessage): {
 }
 
 /** 转发到目标会话：复用 outbox 乐观上屏 + MSG_ACK 语义。 */
+/**
+ * 举报消息：上行 REPORT(453) {target_msg, reason, detail}（服务端 onReport
+ * 已实现、落 sys_reports + 审计，msgdomain_v2 默认开启）。detail 留空——
+ * 客户端不采集自由文本，服务端最多截断 512B，PII 红线只存 id 与枚举。
+ */
+export function reportMessage(message: ChatMessage): boolean {
+  if (!message.msgId) return false;
+  const { client } = current;
+  if (!client) return false;
+  const payload = new TextEncoder().encode(
+    JSON.stringify({ target_msg: message.msgId, reason: 1, detail: '' }),
+  );
+  return client.send(
+    createEnvelope({
+      kind: KINDS.REPORT,
+      convId: message.convId,
+      payload,
+    }),
+  );
+}
+
 export async function forwardMessages(message: ChatMessage, targetConvId: number): Promise<boolean> {
   const content = buildForwardContent(message);
   const { outbox } = current;

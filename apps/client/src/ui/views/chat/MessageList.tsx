@@ -26,7 +26,7 @@ import { Avatar } from '../../components/Avatar';
 import { SpinnerIcon, AlertIcon, CopyIcon, FlagIcon, ForwardIcon, ReplyIcon, SelectIcon, TrashIcon } from '../../components/icons';
 import { t } from '../../i18n';
 import { formatDayDivider, formatTime } from '../../utils/format';
-import { discardSend, retrySend, recallMessage, forwardMessages } from '../../services/app-services';
+import { discardSend, retrySend, recallMessage, forwardMessages, reportMessage } from '../../services/app-services';
 import { toast } from '../../components/Toast';
 
 const EMPTY_IDS: string[] = [];
@@ -684,10 +684,11 @@ function MessageMenu({
         key: 'report',
         label: t('chat.report'),
         icon: <FlagIcon size={18} />,
-        // 服务端尚无用户举报上行链路（453 REPORT 未在 pipe.dispatch 路由），
-        // 保留占位，用户举报入口排期 v1.2。
+        // v1.5：举报上行链路已实现（服务端 453 REPORT 落 sys_reports），
+        // 直接发帧；服务端 ACK 即受理，失败 fail-closed 仅提示，不重试风暴。
         action: () => {
-          toast.info(t('common.comingSoon'));
+          const ok = reportMessage(message);
+          toast.info(ok ? t('chat.reportSent') : t('chat.reportFailed'));
           onClose();
         },
       },
