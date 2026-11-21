@@ -191,22 +191,21 @@ func resolveGlobals(g *globals) error {
 func printUsage(w io.Writer) {
 	fmt.Fprint(w, `adminctl — OpenDiscord management API client
 
-Usage:
-  adminctl [global flags] <command> [args]
+usage: adminctl [global flags] <command> [args]
 
 Commands:
-  login                       Interactive password + TOTP login; prints a token
+  login                       Administrators: obtain a bearer token (interactive password + TOTP)
   whoami                      Show the current admin identity
-  users list|show|ban|unban   User administration
-  kick <uid>                  Disconnect all of a user's sessions
-  reports list|show|handle    Report queue / state machine
-  messages search|recall      Message search / forced recall
-  broadcast preview|send      Broadcast preview (dry run) / send
-  flags list|set              Feature flags / policy-as-flag
-  metrics                     Prometheus metrics (GET /api/v1/metrics, raw text)
+  users list|show|ban|unban   User administration: list, show, ban, unban
+  kick <uid>                  Kick: disconnect all of a user's sessions
+  reports list|show|handle    Report administration: list, show, handle
+  messages search|recall      Message administration: search, recall
+  broadcast preview|send      Broadcast: preview (dry run) / send
+  flags list|set              Feature flags / policy-as-flag: list, set
+  metrics                     Show Prometheus metrics (GET /api/v1/metrics, raw text)
   logout                      Log out (POST /api/v1/logout) and delete credentials
-  audit --since-id <id>       Sequential audit cursor stream
-  archive status              Archive job ledger
+  audit --since-id <id>       Stream the sequential audit cursor
+  archive status|run          Archive: job ledger / run a job (--dry-run previews)
   completion bash             Print bash completion
 
 Global flags:
@@ -217,6 +216,7 @@ Global flags:
   --idempotency-key <key>     Explicit key for a write operation
   --no-save                   login only: do not persist credentials
 
+Run 'adminctl <command> --help' for command-specific flags.
 Exit codes: 0 ok, 1 error, 64 usage, 65 not found, 77 permission denied.
 `)
 }

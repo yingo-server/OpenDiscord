@@ -70,7 +70,10 @@ func run(args []string, e *environment) int {
 	return exitOK
 }
 
-const usageText = `opendiscordctl — OpenDiscord 系统级运维 CLI（直连本机 systemd/信号/热库；不新增网络端口）
+// Usage: opendiscordctl [global options] <command> [args] <required> [optional]
+// Run 'opendiscordctl <command> --help' for command-specific flags.
+// 机器可读输出：--json 信封 {ok, command, data}（错误仍写 stderr）。
+const usageText = `opendiscordctl — OpenDiscord system-level operations CLI (local systemd/signals/hot SQLite; no new network port)
 
 用法:
   opendiscordctl [全局选项] <命令> [参数]
@@ -81,14 +84,11 @@ const usageText = `opendiscordctl — OpenDiscord 系统级运维 CLI（直连�
   doctor    [--hot-db PATH] [--unit NAME] [--no-logs]
             体检：热库完整性、磁盘余量、近 1h error 日志数、冷库连通
   backup    [--dry-run] [--db PATH] [--script PATH] [--to DIR]
-            调用 deploy/backup.sh；不存在则内置 sqlite .backup + 加密提示
+            备份热库；--dry-run 只校验环境不写文件
   archive   --dry-run | --run
             经管理 API 触发归档（未登录时提示 adminctl archive）
   migrate   thumbs [--dry-run] [--batch N] [--hot-db PATH] [--media-dir DIR]
             一次性把旧 thumb_data 内联缩略图迁移到 media_dir/thumbs/ 文件并清空该列
-  upgrade   [--run] [--force] [--hot-db PATH] [--media-dir DIR] [--batch N] [--unit NAME]
-            一次性升级维护计划（默认 dry-run 只读）：旧 thumb_data 迁移 +
-            auto_vacuum=0 → INCREMENTAL 转换（VACUUM；执行前须停服，--force 跳过检查）
   flags     list | set KEY=VALUE
             功能开关（经管理 API，policy-as-flag）
   ban       <uid> [--days N] [--reason TEXT] [--level 1..3]
@@ -96,6 +96,9 @@ const usageText = `opendiscordctl — OpenDiscord 系统级运维 CLI（直连�
             经管理 API 封禁/解封（与 adminctl 同一链路）
   version   版本信息
   help      本帮助
+
+提示: upgrade（旧 thumb_data 迁移 + auto_vacuum 转换的 v1.4 维护计划）在本版本源码中
+      只有实现与单测，未接入命令分发；请使用上面的 migrate 与 adminctl 完成维护。
 
 全局选项:
   --json                    统一 JSON 输出（ok/command/data 信封）

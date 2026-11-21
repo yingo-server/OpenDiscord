@@ -1,19 +1,20 @@
-# OpenDiscord CLI 参考（1.0）
+# OpenDiscord CLI 参考（v2.0 终审）
 
-> 只描述两个二进制 **代码里真实实现且实测过** 的子命令/flag/退出码。命令表取自
-> `rg 'case "' server/cmd/*/main.go`，flag 取自 `rg 'fs\.(String|Int|Bool|StringVar)' server/cmd/`。
-> 每个子命令的退出码实测为 `0/1/64/65/77` 子集。凡与预期不符的缺口在 **§7 已知限制** 如实列出。
+> 只描述三个二进制 **代码里真实实现且实测过（或已如实标注未接线）** 的子命令/flag/退出码。命令表取自
+> `rg 'case "' server/cmd/*/main.go`，flag 取自 `rg 'fs\.(String|Int|Bool)' server/cmd/`。
+> 业务 CLI 的退出码为 `0/1/64/65/77` 子集；`opchat`（TUI）另见 §3.3。凡与预期不符的缺口在 **§7 已知限制** 如实列出。
 
-两个二进制：
+三个二进制：
 
 | 二进制 | 定位 | 说明 |
 |--------|------|------|
 | `adminctl` | **管理 API 客户端** | 纯 HTTP 客户端，所有操作经 `admin_rest_listen` 的 `/api/v1/*`，与浏览器控制台同一 CRUD/鉴权路径（"API 的第二皮肤，不是旁路"）。 |
 | `opendiscordctl` | **本机运维 + 管理 API** | 直连本机 systemd/信号/热 SQLite（status/doctor/backup）；少数变更动作（archive/flags/ban）经同一 loopback 管理 API。 |
+| `opchat` | **纯 TUI 管理控制台** | SSH 值守用，7 标签页（概览/用户/举报/广播/Flags/归档/审计）；与 `adminctl` 共用凭据，非 TTY 降级为用法 + 64。不可脚本化。 |
 
 ---
 
-## 1. 全局约定（两者共享）
+## 1. 全局约定（两个业务 CLI 共享；opchat 共用凭据文件）
 
 ### 1.1 凭据文件
 
@@ -74,23 +75,24 @@
 
 | flag | 默认 | 说明 |
 |------|------|------|
-| `--server <url>` / `-server` | `http://127.0.0.1:7781` | 管理 API base URL |
+| `--server <url>` / `-server` | `http://127.0.0.1:7781` | 管理 API base URL（management REST，不是 injector 面） |
 | `--token <t>` | — | Bearer token |
 | `--csrf-token <t>` | — | CSRF token |
-| `--output json\|table` / `-o` | `table` | 输出格式（非法值 → 退出 64） |
+| `--output json\|table\|text` / `-o` | `table` | 输出格式（非法值 → 退出 64；`text` 为兼容别名，输出同 table） |
 | `--idempotency-key <k>` | — | 写操作显式幂等键 |
 | `--no-save` | false | 仅 login：不持久化凭据 |
 
 > 默认端口硬编码 `http://127.0.0.1:7781`。全局 flag 可出现在任意位置（会被 `parseGlobals` 提前摘出）。
+> 文档建议：脚本与 CI 一律显式传 `--server` / `--output json`，不要依赖内嵌默认值。
 
 ### 2.2 子命令总表（`main.go` case 分支）
 
 `login` · `whoami` · `users` · `kick` · `reports` · `messages` · `broadcast` · `flags` · `logout` · `metrics` · `audit` · `archive` · `completion` · `help`
-（12 个业务子命令 + `completion` + `help`。实测子命令总数以 `rg 'case "' server/cmd/adminctl/main.go` 为准。）
+（12 个业务子命令 + `completion` + `help`；`case` 行共 14 个分支，其中 `help`/`-h`/`--help` 同一行。）
 
 #### login
 - 语法：`adminctl login [--username U] [--password-stdin] [--totp T]`
-- 交互：无 `--username` 时提示 `Username:`；密码用 `stty -echo` 隐藏；无 `--totp` 时提示 `TOTP:`（TOTP 是本版必填）。
+- 交互：无 `--username` 时提示 `Username:`；密码用 `stty -echo` 隐藏；无 `--totp` 时提示 `TOTP:`（TOTP 是本版必填）。stdin 非 TTY 时提示被替换为「缺少必需 flag」错误并以 64 退出，不会挂起。
 - `--password-stdin` 要求同时给 `--username`，密码从 stdin 读一行。
 - 成功：默认把 token 打到 stdout（脚本可消费）；`--output json` 则打完整响应；并保存凭据（除非 `--no-save`）。
 - 退出码：0 / 64（参数）/ 77（401/403）。
@@ -170,7 +172,7 @@
 | flag | 默认 | 说明 |
 |------|------|------|
 | `--json` / `-json` | false | 统一 JSON 输出信封 `{ok, command, data}` |
-| `--admin-url <url>` | `http://127.0.0.1:7781` | 管理 API 地址 |
+| `--admin-url <url>` | `http://127.0.0.1:7781` | 管理 API 地址（management REST，不是 injector 面；env 亦支持 `OPENDISCORD_ADMIN_CREDENTIALS_SERVER`） |
 | `--token <t>` | — | 管理令牌 |
 | `--csrf-token <t>` | — | CSRF 令牌 |
 | `--timeout <dur>` | `20s` | 总超时（`time.ParseDuration`，≤0 → 64） |
@@ -179,8 +181,13 @@
 
 ### 3.2 子命令总表（`main.go` case 分支）
 
-`version` · `status` · `doctor` · `backup` · `archive` · `migrate` · `upgrade` · `flags` · `ban` · `unban` · `help`
-（10 个功能子命令 + help；实测以 `rg 'case "' server/cmd/opendiscordctl/main.go` 为准。）
+`version` · `status` · `doctor` · `backup` · `archive` · `migrate` · `flags` · `ban` · `unban` · `help`
+（9 个功能子命令 + `help`；`case` 行 10 分支，其中 `version`/`--version`/`-v` 同一行。`upgrade` **未接入分发**，见下。）
+> 入口提示：脚本/CI 请显式传 `--admin-url`、`--token`（或用 `adminctl login` 写凭据文件）与 `--timeout`。
+
+#### upgrade（未接入，勿在发布说明中当作可用命令）
+- `server/cmd/opendiscordctl/upgrade.go` 有 `cmdUpgrade` 实现并有单测（默认只读 dry-run，`--run` 执行），但 `main.go` 的 `run()` **没有 `case "upgrade"`**；实际调用会被当作未知命令 → 退出 64。
+- 顶层和帮助文本已如实标注此限制；维护操作请改用 `migrate thumbs` 与 `adminctl`。
 
 #### version
 - 语法：`opendiscordctl version`
@@ -230,6 +237,21 @@
 - `--days` 与 `--until` 互斥且不能为负；`ban` 校验 `--level 1..3`。
 - 退出码：0 / 64（缺 uid / 非法 level / 互斥冲突）/ 65 / 77 / 1。
 
+### 3.3 TUI `opchat`（第三个 CLI）
+
+- 定位：**纯 TUI 管理控制台**，7 个标签页（概览/用户/举报/广播/Flags/归档/审计），面向 SSH 里的人工值守；不适合脚本与 CI。
+- flag：`--lang zh-CN|en`、`--sound`；`-h`/`--help` 打印用法。
+- 非 TTY（stdout 非字符设备）→ 用 locale 打印用法并以 **64** 退出；无重复提示挂起。
+- 凭据：与 `adminctl` 共用 `adminctl.json`；无凭据时进入登录向导，失败退出 1。
+- 交互动作前会打印 `即将调用 GET/POST …`（含 dry-run 预览）；退出码：0 正常退出、1 登录失败、64 用法/非 TTY。
+
+### 3.4 v2.0 容量契约（policy.capacity）的 CLI 入口
+
+- 结论：**三个 CLI 均无专用容量契约命令或 flag**（`rg -i 'capacity|admission_qps' server/cmd/{opendiscordctl,adminctl,opchat}` 无命中）。
+- 容量轴通过 `config/policy.json` 的 `policy.capacity.admission_qps`（全局准入 QPS）/ `max_concurrent_conns`（预留未接线）配置，`0`/缺省 = 禁用、逐字节等同 v1.5；SIGHUP 热加载即时生效。
+- 观测：`policy.capacity.admission_qps > 0` 且 `capacity_admission_enabled` flag 开启时，服务端日志 `WARN admission.reject axis=admission_qps …`；超限帧为 `RATE_LIMITED`。可配合 `opendiscordctl status/doctor` 看进程/日志，但它们**不读写容量参数**。
+- 事实来源：`docs/capacity-contract.md`、`docs/release-notes-v2.0.0.md`。
+
 ---
 
 ## 4. 退出码详解（逐条）
@@ -237,8 +259,8 @@
 | 码 | adminctl 触发点 | opendiscordctl 触发点 |
 |----|----------------|-------------------|
 | 0 | 命令成功、`help`/`completion` 成功 | 命令成功、`help`/`version` 成功 |
-| 1 | 网络/非 2xx 且非 401/403/404 | 一般错误；`doctor` 有 FAIL |
-| 64 | 未知命令、缺参数、非法 `--output`、缺 uid、`reports handle` 缺 `--action`、`broadcast` 缺 `--text` | 未知命令、`archive` 既/未指定 dry-run/run、`flags` 语法错、非法 `--timeout`、缺 uid |
+| 1 | 网络/非 2xx 且非 401/403/404；login 失败、TUI 凭据获取失败 | 一般错误；`doctor` 有 FAIL |
+| 64 | 未知命令、缺参数、非法 `--output`、缺 uid、`reports handle` 缺 `--action`、`broadcast` 缺 `--text`、非 TTY 凭据提示降级（TUI） | 未知命令（含未接线的 `upgrade`）、`archive` 既/未指定 dry-run/run、`flags` 语法错、非法 `--timeout`、缺 uid |
 | 65 | REST 404（`statusError` → `exitNotFound`） | REST 404 或本地路径缺失（热库/备份脚本） |
 | 77 | REST 401/403 | 未配置管理令牌 / REST 401/403 |
 
@@ -264,37 +286,39 @@ adminctl completion bash > /etc/bash_completion.d/adminctl
 
 ---
 
-## 7. 已知限制（按 2026-10 当前源码实测记录）
-
-> 说明：任务书里原始列的"adminctl 缺 logout/metrics""`<sub> --help` 无输出""opendiscordctl `--help` 返回 64"三条，在当前仓库源码中**已不成立**（见下）；本文件按**实测**记录真实状态。
+## 7. 已知限制（按 v2.0 当前源码静态核对记录）
 
 1. **`adminctl` 已含 `logout`、`metrics` 子命令（原"缺失"说法已过时）。**
    `main.go` 有 `case "logout"` / `case "metrics"`，对应 `cmdLogout`（`POST /api/v1/logout` + 删凭据）与 `cmdMetrics`（`GET /api/v1/metrics` 原文输出）。实测均可用。
 
-2. **`opendiscordctl` 已含 `migrate`、`upgrade` 子命令（v1.4 新增，原清单未收录）。**
-   `migrate thumbs` 做旧缩略图一次性迁移；`upgrade` 合并 auto_vacuum 转换 + thumbs 迁移为一次维护计划，默认 dry-run、`--run` 执行。详见 §3。
+2. **`opendiscordctl upgrade` 未接入命令分发（v2.0 实测修正）。**
+   `upgrade.go` 有 `cmdUpgrade` 实现与单测，但 `main.go` 的 `run()` 没有 `case "upgrade"`；实际执行返回未知命令（64）。帮助文本已改为如实标注。现有维护入口是 `migrate thumbs`（dry-run 只读）与 `adminctl`；详见 §3.2。
 
-2. **`adminctl <sub> --help` 的行为分两种，非"无输出"。**
+3. **`adminctl <sub> --help` 的行为分两种，非"无输出"。**
    - **叶子子命令**（如 `users list --help`、`login --help`、`metrics --help`）会打印 flag 用法并退出 **0**。
    - **父命令**（如 `users --help`、`reports --help`）把 `--help` 当作参数走子命令分发，返回 `users requires list|show|ban|unban` 并退出 **64**。要查看父命令帮助请用顶层 `adminctl help`。
 
-3. **`opendiscordctl status|doctor|backup|archive --help` 当前返回 0（原"返回 64"已过时）。**
+4. **`opendiscordctl status|doctor|backup|archive --help` 当前返回 0（原"返回 64"已过时）。**
    实测这四个子命令的 `--help` 都会打印 flag 用法并退出 **0**。只有 `opendiscordctl help`/`-h`/`--help` 作为顶层命令时也是 0。
 
-4. **两个 CLI 的 `flags set` 语法不同（仍然成立）。**
+5. **两个 CLI 的 `flags set` 语法不同（仍然成立）。**
    - `adminctl flags set <key> <value>`：**两个位置参数**。
    - `opendiscordctl flags set KEY=VALUE` 或 `flags set KEY VALUE`：支持 `k=v` 与 `k v` 两种；语法校验先于凭据检查（语法错 → 64，未登录 → 77）。
 
-5. **JSON 开关命名不同（仍然成立）。**
+6. **JSON 开关命名不同（仍然成立）。**
    - `adminctl --output json`（或 `-o json`；`table` 为默认）。
    - `opendiscordctl --json`（布尔开关，输出 `{ok,command,data}` 信封）。
 
-6. **端口 footgun：CLI 内置默认端口 7781，而 `config/chatd.toml` 里写的 `admin_listen` 是 7780（仍然成立）。**
+7. **端口 footgun：CLI 内置默认端口 7781，而 `config/chatd.toml` 里写的 `admin_listen` 是 7780（仍然成立）。**
    - 两个 CLI 默认 base URL 都是 `http://127.0.0.1:7781`，指向 **`admin_rest_listen`（REST 面）**——正确。
    - 但 `config/chatd.toml` **只配置了 `admin_listen = 127.0.0.1:7780`**（injector 面，只为 `POST /admin/inject`），**没有** `admin_rest_listen` 项；后者取默认 7781。
    - 若把 CLI 的 `--server` 手动改成 7780，会打到 injector 端口：`/api/v1/*` 全部不是 REST 面（404 / `WRONG_SURFACE`）。**裸跑 `adminctl` 依赖默认 7781 才连得通 REST 面**。
 
-7. **`opendiscordctl` 没有 `completion` 子命令**（只有 `adminctl completion bash`）。
+7. **`opendiscordctl` 没有 `completion` 子命令**（只有 `adminctl completion bash`；opendiscordctl 的补全脚本也未提供）。
+
+8. **`opchat` 不在本参考的退出码表里**（见 §3.3）：纯 TUI，非 TTY → 64，登录失败 → 1；它没有 `--json`/`--output`，不能进入脚本管道。
+
+9. **三 CLI 均无 `capacity` 专用命令/flag**（见 §3.4）；容量契约只由 `config/policy.json` 配置。
 
 ---
 
