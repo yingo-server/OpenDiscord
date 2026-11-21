@@ -49,6 +49,17 @@
   ②若成立，L2-5 普遍拉取完成态（大群下行帧 -99%）→ ③L1-2 扇出解耦 →
   ④L2-2 Actor。L3-3/4/5 建议不做（单机约束下收益存疑）。
 
-## 用户决策点
-是否继续投入巨大工程量？若继续，从"引擎接线"开始；若到此为止，
-当前 v2.0.0 是稳定可发布状态，appendlog 引擎作为未接线的技术储备留在仓库。
+## 用户决策点（已决，2026-11-21）
+用户选择"全部逐项实现"→ 已执行至 appendlog 引擎接线 + 两次 CI A/B 压测。
+**结果：自研 appendlog 主线停止**（1197/s SQLite vs 283/s / 174/s appendlog，见
+docs/appendlog-deployment.md）。不切默认、不发 v3.0，稳定版仍 v2.0.0。
+剩余 L2/L3 项（Actor/普遍拉取完成态/CRDT/eBPF/列存）按前文风险评估，
+单机约束下收益存疑，暂不启动；如用户坚持再单独立项。
+
+## 本轮最终产物
+- 代码：appendlog 引擎 + hybrid 接线 + e2e 测试 + stress A/B 支持（CI 全绿，未发布默认）。
+- 文档：appendlog-deployment.md（停止主线、实测数据、恢复条件）、
+  architecture-optimization-menu.md（全清单+决策）、
+  implementation-progress-honest-assessment.md（本文件）。
+- 发布：最新正式版 v2.0.0（9 产物），当前 HEAD 为未发布的实验性 appendlog 代码
+  （默认关闭，不影响生产行为）。

@@ -1,6 +1,30 @@
 # appendlog 消息存储（V3 实验性，v3.0 接线）
 
-状态：v3.0 接线完成，默认**关闭**；需显式配置 `appendlog_dir` 才启用。
+状态：**停止主线** —— 两次 CI 压测均未达 SQLite 基线，默认**不启用**。
+
+> 2026-11-21 决策：自研 appendlog 未能超越 SQLite，保留为实验性技术储备，
+> 生产默认仍为 SQLite（appendlog_dir 空）。**勿在生产启用**。
+
+## 实测结论（S-2 4c16g raw ceiling，30s）
+
+| 配置 | ACK 吞吐 | 可用性 | p95 |
+|---|---|---|---|
+| SQLite（v2.0 基线） | **1197/s** | **17.54%** | 471ms |
+| appendlog sync_window=0（每条 fsync） | 283/s | 4.11% | 3025ms |
+| appendlog sync_window=50ms（批量 fsync） | 174/s | 2.51% | 4016ms |
+
+**根因**：appendlog 的 group-commit 窗口实现让提交者在协调通道上等待满窗口
+（50ms/批 → 理论上限 20/s/shard），而非"立即写、延迟 fsync"；即使修此缺陷，
+SQLite WAL+synchronous=NORMAL 已是极成熟的写入路径，追平/超越的把握不足。
+实测数据与理论预期（×5~20）严重背离，遵守客观规律：**不发布、不切默认**。
+
+## 保留价值
+- 引擎实现本身完整（接口、恢复、dedup、overlay、单测），是一份可复用的技术资产；
+- 接线（hybrid store）与 CI A/B 框架留存，后续若有人修复 group-commit 可快速重测。
+
+## 若要恢复该主线（未来）
+必须先重写 writer goroutine：请求到达即执行 fn 写 buffer 并立即返回，窗口只合并
+fsync（不阻塞 submit）；再跑同样的 A/B 压测，超不过 SQLite 1197/s 就彻底放弃。
 
 ## 是什么
 
