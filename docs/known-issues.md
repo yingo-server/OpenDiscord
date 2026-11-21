@@ -1,12 +1,11 @@
-# OpenDiscord 已知问题（v1.4.0 发布稿）
+# OpenDiscord 已知问题（v2.0.0 收敛稿）
 
-> 版本：**v1.4.0（已发布，2026-11-18）**。CI 全绿；v1.4 四项实验性 flag 已转生产默认开启
-> （`universal_pull_enabled` / `adaptive_control_enabled` / `v3_bus_enabled` / `v3_bus_percent=100`，
-> 另 `msg_domain_v2_enabled` 默认开启，见 `server/internal/pkg/featureflags/flags.go` `Defaults()`）。
-> 基线 1.1.0 的 12 条 + 容量段逐条给出三态结论：**已修 / 保持（写明理由） / 延后 v1.5**。
-> 纪律：凡未经 S-1~S-7 压测守门的性能声明一律不写成"达标"。v1.4 首轮压测
-> PASS=0 / FAIL=6 / BLOCKED=8，**S-1/S-2 容量缺口未解决**，随 v1.4.0 知情发布一并交付，
-> 转入 v1.5 架构重设专项；详见 `docs/lts-1.4-plan.md §9` 与 `docs/architecture-reset-v2-plan.md`。
+> 版本：**v2.0.0（已发布，2026-11-21）**。CI 全绿；v2.0 引入显式容量契约、修复 ACK 撒谎、
+> 将消息写入吞吐提升约一倍（实测 ≈579→1197 ACK/s）。**容量门槛仍未达标**：单进程 SQLite
+> + 满速扇出的物理天花板未突破，S-1/S-2 缺口如实保留，超限由显式限流兜底。
+> 纪律：凡未经 S-1~S-7 压测守门的性能声明一律不写成"达标"。历史 v1.4 首轮压测
+> PASS=0 / FAIL=6 / BLOCKED=8 与 v2.0 吞吐改善数据并存，详见 `docs/v2.0-roadmap.md`
+> 与 `docs/release-notes-v2.0.0.md`。
 
 ## 状态速览
 
@@ -25,7 +24,7 @@
 | 10b | 会话列表未虚拟滚动 | 已修（ConvList 接 react-virtual，CI 全绿） |
 | 11 | auto_vacuum 需手工转换 | 已修（`opendiscordctl upgrade` 自动化，CI 全绿） |
 | 12 | 旧 thumb_data 需手工迁移 | 已修（并入 `opendiscordctl upgrade`，dry-run 默认，CI 全绿） |
-| 容量 | 扇出写放大（S-1/S-2 缺口） | **未解决**：v1.4 三核心已默认开启，但未达 S-1~S-7 门槛；转入 v1.5/v2.0 架构重设专项 |
+| 容量 | 扇出写放大（S-1/S-2 缺口） | **v2.0 吞吐翻倍（≈579→1197 ACK/s）但仍未达门槛**：seq 批量分配 + batch500 显著改善写路径；单进程 SQLite 物理上限未突破，S-1/S-2 缺口如实保留，超限由 V2-0 显式限流兜底（不再静默挂起）；架构级突破留待 V2-2 分片/Actor |
 
 另：**CORE-3（v3 总线接线）代码已落盘、待 CI/压测验证**——`AttachV3Deliver` 已在
 `newAssembly` 末尾调用，`AddConnLifecycle` 已注入 user 层 Server，自适应控制循环
