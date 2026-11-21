@@ -28,6 +28,13 @@ type Policy struct {
 	// WritePath tunes the group-commit write pipeline (flusher).
 	WritePath WritePathConfig `json:"write_path"`
 
+	// Capacity holds the V2-0 admission capacity contract (docs/capacity-contract.md).
+	// Unlike rate_limit (per-user token buckets), these are GLOBAL axes:
+	// process-wide concurrent connections and process-wide admission QPS.
+	// 0 = disabled (the historical behavior); negative values are rejected by
+	// Validate and treated as disabled by consumers.
+	Capacity CapacityConfig `json:"capacity"`
+
 	// Group holds the group-conversation limits.
 	//
 	// MaxMembers is the hard ceiling on the member count of a group
@@ -74,6 +81,22 @@ type TrimRule struct {
 type RateLimitConfig struct {
 	MsgPerUserPerMin int `json:"msg_per_user_per_min"`
 	LoginPerIPPerMin int `json:"login_per_ip_per_min"`
+}
+
+// CapacityConfig is the explicit admission capacity contract (V2-0,
+// docs/capacity-contract.md). Both axes are optional and independent:
+//   - MaxConcurrentConns: global connection ceiling — RESERVED for a later
+//     phase; connection-count admission is currently the deployment layer's
+//     responsibility. Validation accepts >=0; no runtime enforcement yet.
+//   - AdmissionQPS: global admission QPS ceiling, enforced by the limiter's
+//     shared global bucket on MSG_SEND. Over-limit frames take the usual
+//     Throttle path (kind 13 with ack_id). 0 = disabled.
+//
+// Negative values are rejected at load time; a consumer that still sees one
+// (hand-built Config in tests) treats it as disabled.
+type CapacityConfig struct {
+	MaxConcurrentConns int `json:"max_concurrent_conns"`
+	AdmissionQPS       int `json:"admission_qps"`
 }
 
 // WritePathConfig tunes the group-commit write pipeline (flusher): how many

@@ -308,3 +308,33 @@ func TestRateLimitThrottle(t *testing.T) {
 	}
 	_ = time.Now()
 }
+
+// TestRateLimitedCarriesAckID：V2-0 容量契约——RATE_LIMITED 带触发帧的 Envelope.Id，
+// 客户端据此把 in-flight 消息立即标记失败（零协议改动，AckId 是现成字段）。
+func TestRateLimitedCarriesAckID(t *testing.T) {
+	sess := newFakeSession()
+	cfg := policy.Default()
+	cfg.Limits = limit.DefaultConfig()
+	cfg.Limits.Rules = map[uint32]limit.Rule{kinds.KindMsgSend: {Rate: 0.001, Burst: 1, Capacity: 1}}
+	pol := policy.New(cfg)
+	lim := limit.New(cfg.Limits)
+	fwd := bridge.NewForwarder(newFakePeer(), nil, 10)
+	r := New(sess, lim, pol, fwd, newOffFlags(), nil)
+	c := &fakeConn{id: 7, uid: 8}
+	sess.add(c)
+	const triggerID = uint64(4242)
+	// 第一帧正常放行（消耗唯一令牌），第二帧带明确 Id 触发限流。
+	r.HandleUpstream(&UpEvent{Conn: c, Env: &chatpb.Envelope{Id: 1, Kind: kinds.KindMsgSend}})
+	r.HandleUpstream(&UpEvent{Conn: c, Env: &chatpb.Envelope{Id: triggerID, Kind: kinds.KindMsgSend}})
+	frames := c.frames()
+	if len(frames) != 1 {
+		t.Fatalf("got %d frames, want 1 RATE_LIMITED", len(frames))
+	}
+	e, _ := frame.Decode(frames[0])
+	if e.Kind != kinds.KindRateLimited {
+		t.Fatalf("kind = %d, want RATE_LIMITED", e.Kind)
+	}
+	if e.AckId != triggerID {
+		t.Fatalf("AckId = %d, want trigger env.Id %d", e.AckId, triggerID)
+	}
+}

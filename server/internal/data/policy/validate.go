@@ -103,6 +103,19 @@ func Validate(p Policy) []error {
 			fmt.Sprintf("must be <= %d (a larger group would overflow the 64KB WS frame limit)", MaxGroupMembersHardLimit)))
 	}
 
+	// capacity: global admission axes (docs/capacity-contract.md). 0 means
+	// "unset → disabled" (the historical behavior); a negative value is a
+	// policy typo and is rejected so it can never silently disable a limit
+	// the operator meant to set.
+	if p.Capacity.MaxConcurrentConns < 0 {
+		errs = append(errs, fieldErr("capacity.max_concurrent_conns",
+			"negative value (0 = disabled; set >= 1 to enable)"))
+	}
+	if p.Capacity.AdmissionQPS < 0 {
+		errs = append(errs, fieldErr("capacity.admission_qps",
+			"negative value (0 = disabled; set >= 1 to enable)"))
+	}
+
 	return errs
 }
 

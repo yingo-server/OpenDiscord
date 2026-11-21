@@ -99,6 +99,12 @@ type Config struct {
 	UserHalfDuration time.Duration
 	// UserKillDuration 惩罚断连的持续时间。
 	UserKillDuration time.Duration
+
+	// GlobalQPS 是全局（进程级）准入 QPS 上限（V2-0 容量契约，
+	// docs/capacity-contract.md）。>0 时每帧先消耗共享全局桶的一个令牌
+	// （在连接级/用户级判定之前），取不到令牌返回 Throttle（→ kind 13
+	// RATE_LIMITED，带 ack_id 配对）。0 = 禁用（与主干逐字节一致）。
+	GlobalQPS float64
 }
 
 // 用户级惩罚默认参数（security-spec §1.2.1）。
@@ -222,6 +228,9 @@ type Limiter struct {
 	mu    sync.Mutex
 	conns map[uint64]*connState
 	users map[int64]*userState
+	// global 是 V2-0 准入容量契约的共享全局桶（cfg.GlobalQPS>0 时启用，mu 保护）。
+	// 只对 MSG_SEND 等写操作消耗；心跳/豁免帧不消耗（过载下也不拒心跳）。
+	global bucket
 }
 
 // New 构造限流器。
@@ -307,6 +316,13 @@ func (l *Limiter) AllowAt(connID uint64, uid int64, kind uint32, payloadLen int,
 	rule, ok := cfg.Rules[kind]
 	if !ok {
 		rule = cfg.DefaultRule
+	}
+
+	// V2-0 准入容量：全局 QPS 桶（cfg.GlobalQPS>0 时启用），只对消息写入
+	// 这类重操作消耗令牌；flag/配置关闭时本段完全不执行（逐字节等价主干）。
+	// 超限返回 Throttle → Router 下发 kind13 RATE_LIMITED（带 env.Id 配对）。
+	if cfg.GlobalQPS > 0 && kind == uint32(kinds.KindMsgSend) && !l.allowGlobal(now, cfg.GlobalQPS) {
+		return Throttle
 	}
 
 	// 单帧 payload 上限（security-spec §1.2.2 最后一列）。
@@ -487,6 +503,14 @@ func (l *Limiter) userMultiplier(uid int64, cfg *Config, now time.Time) float64 
 }
 
 // Stats 可观测快照（指标采集用）。
+// allowGlobal 消耗一个全局准入令牌（V2-0 容量契约）。桶参数 {Rate,Burst,Capacity}=qps，
+// 即突发不超过 1 秒的量。l.mu 与 conns/users 共用，锁粒度可接受（每 msg_send 一次）。
+func (l *Limiter) allowGlobal(now time.Time, qps float64) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.global.allow(now, Rule{Rate: qps, Burst: qps, Capacity: qps})
+}
+
 type Stats struct {
 	Conns      int
 	Users      int

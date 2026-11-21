@@ -134,7 +134,14 @@ func (r *Router) HandleUpstream(ev *UpEvent) {
 		return
 	case limit.Throttle:
 		r.drop(kind, verdict)
-		r.writeRateLimited(ev.Conn, kind)
+		r.writeRateLimited(ev.Conn, kind, env.Id)
+		if r.logger != nil && r.flags != nil &&
+			r.flags.Bool(featureflags.KeyCapacityAdmissionEnabled, false) &&
+			r.lim.Config().GlobalQPS > 0 {
+			r.logger.Warn("admission.reject", "axis", "admission_qps",
+				"kind", kinds.KindName(kind), "uid", ev.Conn.UserID(),
+				"conn", ev.Conn.ID(), "env_id", env.Id)
+		}
 		return
 	case limit.Kill:
 		r.drop(kind, verdict)
@@ -495,9 +502,12 @@ func (r *Router) writeEnv(c session.Conn, env *chatpb.Envelope) {
 	c.Write(b)
 }
 
-func (r *Router) writeRateLimited(c session.Conn, kind uint32) {
+// writeRateLimited 下发 kind13 RATE_LIMITED。ackID 取触发帧的 env.Id，写入
+// Envelope.AckId（现成字段，零协议改动），客户端据此把 in-flight 消息标记失败，
+// 不再等 10s ACK 超时（V2-0 容量契约）。ackID=0 时与旧行为等价。
+func (r *Router) writeRateLimited(c session.Conn, kind uint32, ackID uint64) {
 	payload, _ := (&chatpb.RateLimited{Scope: "conn", Limit: 1, RetryAfterMs: 500}).Marshal()
-	r.writeEnv(c, &chatpb.Envelope{Kind: kinds.KindRateLimited, Payload: payload})
+	r.writeEnv(c, &chatpb.Envelope{Kind: kinds.KindRateLimited, AckId: ackID, Payload: payload})
 }
 
 func (r *Router) drop(kind uint32, v limit.Verdict) {

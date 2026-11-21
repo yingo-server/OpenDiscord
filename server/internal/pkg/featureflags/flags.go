@@ -52,6 +52,13 @@ const (
 	// @ 提及定向通知 / 453 举报入库）。默认 false：关闭时这些 kind 的上行走
 	// 原有 default 分支（debug 日志后丢弃），现有路径逐字节不变。
 	KeyMsgDomainV2 = "msg_domain_v2_enabled"
+
+	// KeyCapacityAdmissionEnabled 是 V2-0 显式准入容量的总开关
+	//（docs/capacity-contract.md）。默认 false：flag-off 时准入检查完全不执行，
+	// 行为与主干逐字节一致（无 admission.reject 日志、无全局 QPS 桶扣减）。
+	// flag-on 且 policy.json capacity 配置了值（>=1）时才启用对应轴。
+	// SIGHUP 热改即时生效（共享 *featureflags.Flags）。
+	KeyCapacityAdmissionEnabled = "capacity_admission_enabled"
 )
 
 // Defaults 返回默认 flag 集合的副本。
@@ -77,6 +84,8 @@ func Defaults() map[string]any {
 		KeyV3BusPercent: 100,  // 全量（按 uid 哈希分桶，100 = 所有 uid 在桶内）
 
 		KeyMsgDomainV2: true, // FE-1a 消息域（106 编辑 / 109 转发 / @ / 453 举报）默认启用
+
+		KeyCapacityAdmissionEnabled: false, // V2-0 准入容量：默认 off（零行为影响）
 	}
 }
 
