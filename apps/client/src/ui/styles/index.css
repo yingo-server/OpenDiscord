@@ -134,7 +134,7 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
 .tag { color: var(--text-tertiary); font-size: 10px; letter-spacing: 0.04em; }
 .avatar {
   width: 32px; height: 32px; flex: 0 0 32px; display: grid; place-items: center;
-  border-radius: 4px; background: var(--surface-muted); border: 1px solid var(--border);
+  border-radius: 50%; background: var(--surface-muted); border: 1px solid var(--border);
   font-size: 12px; font-weight: 600; color: var(--text-secondary); overflow: hidden;
 }
 .chat-pane { flex: 1; min-width: 0; display: flex; flex-direction: column; }
@@ -188,7 +188,7 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
 .empty p { margin: 0; font-size: 12px; }
 .skeleton { background: var(--surface-muted); border-radius: var(--radius); animation: pulse 1.4s ease-in-out infinite; }
 @keyframes pulse { 50% { opacity: 0.5; } }
-.center-page { flex: 1; overflow-y: auto; display: flex; align-items: center; justify-content: center; padding: 32px 20px; }
+.center-page { flex: 1; min-height: 100dvh; overflow-y: auto; display: flex; align-items: center; justify-content: center; padding: 32px 20px; }
 .auth-card { width: 100%; max-width: 420px; }
 .auth-mark { display: flex; align-items: center; gap: 14px; margin-bottom: 28px; }
 .auth-logo { color: var(--text); }
@@ -254,7 +254,14 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
   .rail { position: fixed; inset: auto 0 0 0; z-index: 30; height: 56px; flex-direction: row; align-items: center; padding: 6px 10px; border-right: 0; border-top: 1px solid var(--border); }
   .brand, .rail-bottom { display: none; }
   .rail-nav { flex-direction: row; width: 100%; justify-content: space-around; }
-  .rail-item { width: auto; flex: 1; justify-content: center; flex-direction: column; gap: 2px; font-size: 10px; padding: 4px; }
+  .rail-item { width: auto; flex: 1; justify-content: center; flex-direction: column; gap: 2px; font-size: 10px; padding: 4px; position: relative; }
+  /* 移动端底部导航：选中态不做整块填充（桌面侧栏的黑块样式在此处过重），
+     改为字重 + 强调色 + 顶部短指示条。 */
+  .rail-item.active { background: transparent; color: var(--text); font-weight: 600; }
+  .rail-item.active::before {
+    content: ''; position: absolute; top: 2px; left: 50%; transform: translateX(-50%);
+    width: 16px; height: 2px; border-radius: 1px; background: var(--accent);
+  }
   .rail-item .badge { position: absolute; transform: translate(14px, -12px); }
   .main { padding-bottom: 56px; }
   .workspace { position: relative; }
