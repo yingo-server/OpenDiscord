@@ -189,9 +189,28 @@ jobs:
           set -euo pipefail
           echo "=== build stress tool in CI (test-only, not shipped) ==="
           go build -o "$ROOT/stressd" ./scripts/stress
-          echo "=== restart real chatd for the load window ==="
-          sudo env APP_ENV=dev UFOT_CONFIG="$UFOT_ETC/ufot.toml" \
-            "$ROOT/repo/dist/chatd" --config "$UFOT_ETC/ufot.toml" \
+          echo "=== restart real chatd with stress config (dev_otp + 18080) ==="
+          # Stress tool injects accounts via dev_otp and talks to :18080; the
+          # production toml has neither. Build a stress-only config that still
+          # uses the REAL installed binary, real hot DB, real keys and policy.
+          SC="$ROOT/stressconf"
+          mkdir -p "$SC"
+          {
+            printf 'mode = "embedded"\n'
+            printf 'listen = "127.0.0.1:18080"\n'
+            printf 'admin_listen = "127.0.0.1:17780"\n'
+            printf 'admin_rest_listen = "127.0.0.1:17781"\n'
+            printf 'public_origin = "http://localhost:18080"\n'
+            printf 'hot_db = "%s/chatd.db"\n' "$UFOT_STATE"
+            printf 'admin_db = "%s/admin.db"\n' "$UFOT_STATE"
+            printf 'policy_path = "%s/policy.json"\n' "$UFOT_ETC"
+            printf 'jwt_key_path = "%s/keys/jwt_sign_key.pem"\n' "$UFOT_ETC"
+            printf 'media_dir = "%s/media"\n' "$UFOT_STATE"
+            printf 'log_level = "info"\n'
+            printf 'dev_otp = true\n'
+          } > "$SC/chatd.toml"
+          sudo env APP_ENV=dev UFOT_CONFIG="$SC/chatd.toml" \
+            "$ROOT/repo/dist/chatd" --config "$SC/chatd.toml" \
             > "$ROOT/chatd-load.log" 2>&1 &
           CPID=$!
           ok=0
