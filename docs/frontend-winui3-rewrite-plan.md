@@ -30,6 +30,15 @@
 - 2026-11-22：计划书落盘。阶段1+2（令牌+外壳）交 Agent `eca960f3` 执行中。
 - 并行完成：VITE_API_BASE env 配置（bootstrap.ts 的 resolveApiBase + resolveWsUrl、
   两处 AuthApi 创建点）；隐藏技术提示（auth-error.ts 未知 code 不再透传后端 message）。
+- 阶段3（commit 42e567c）：22 组件/视图 Fluent 视觉重写，CI 绿。
+- 阶段4a（commit 252e69f）：改用微软官方 @fluentui/react-components v9.75.2 +
+  @fluentui/react-icons —— Button/IconButton/Input/Avatar/Skeleton/Toast 内部转发官方组件，
+  FluentProvider 接入，37 图标官方化（LogoMark 品牌资产保留）。tsc 绿。
+- 阶段4b（Agent 执行中）：视图层剩余 28 个手写 button + 5 个 input/textarea 全部官方化。
+
+## 说明
+- 阶段1-3 是「照 Fluent 设计语言手写 CSS」，阶段4 起按用户要求改为「官方组件库实现」。
+- npm install 报 5 个传递依赖漏洞（audit 因 registry 限流未能详列），未强制 fix 以免破坏性升级。
 
 ## 验收
 - CI go -race + web client/admin 全绿
