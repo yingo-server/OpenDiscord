@@ -18,8 +18,11 @@ Wants=network-online.target
 Conflicts=shutdown.target
 
 [Service]
-Type=notify
-NotifyAccess=main
+# Type=simple：chatd 不发 sd_notify（源码无 sd_notify 实现），Type=notify 会让
+# systemd 等待 READY=1 直到超时并反复重启（实测 NRestarts 循环）。就绪状态以
+# /healthz 为准（部署后用 healthz 探活）。
+Type=simple
+NotifyAccess=none
 User=ufot
 Group=ufot
 # /run/ufot 由 systemd 创建并随单元生命周期管理（UDS 唯一出入口）
@@ -41,8 +44,9 @@ TimeoutStopSec=30
 # crash-only：故障即拉起，1s 后重试（架构设计律 4）
 Restart=always
 RestartSec=1
-# 主循环 15s 心跳；两次未 ping 则 systemd 判定卡死并重启
-WatchdogSec=15
+# 主循环 15s 心跳由程序自身负责；WatchdogSec 需要 sd_notify 的 WATCHDOG=1
+# （程序未实现），故不启用，避免误判卡死后重启。
+# WatchdogSec=15
 
 # 每进程 fd 上限（网关连接数 + 热库 WAL + 冷库连接池）
 LimitNOFILE=16384
