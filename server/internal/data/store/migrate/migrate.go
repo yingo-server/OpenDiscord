@@ -280,7 +280,18 @@ func (r *Runner) applyOne(ctx context.Context, m Migration) error {
 	// Split on semicolons and execute each statement individually. Comments
 	// lines are kept attached to the following statement (harmless to PG).
 	if r.Dialect == DialectPostgres {
-		for _, stmt := range strings.Split(m.SQL, ";") {
+		// Strip -- line comments first: a semicolon inside a comment (e.g.
+		// "indexable; full-text") must not split a statement. Then split on
+		// semicolons and run each statement in the same transaction.
+		clean := strings.Builder{}
+		for _, line := range strings.Split(m.SQL, "\n") {
+			if idx := strings.Index(line, "--"); idx >= 0 {
+				line = line[:idx]
+			}
+			clean.WriteString(line)
+			clean.WriteString("\n")
+		}
+		for _, stmt := range strings.Split(clean.String(), ";") {
 			if strings.TrimSpace(stmt) == "" {
 				continue
 			}
