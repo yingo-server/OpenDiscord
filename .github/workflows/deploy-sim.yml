@@ -221,7 +221,7 @@ jobs:
           [ "$ok" -eq 1 ] || { echo "FAIL: chatd not healthy for load"; cat "$ROOT/chatd-load.log"; exit 1; }
           # S-2 smoke: 64 conns x 10s, mixed ops, no boot (chatd already up).
           echo "=== stressd run (S-2 smoke, real chatd) ==="
-          CHATD_DB="$UFOT_STATE/chatd.db" "$ROOT/stressd" \
+          CHATD_DB="$UFOT_STATE/chatd.db" sudo -E "$ROOT/stressd" \
             -no-boot -base http://127.0.0.1:18080 \
             -mode mixed -conns 64 -duration 10 -conv-members 10 \
             -interval 100ms -no-ratelimit \
