@@ -28,6 +28,8 @@ import (
 	"strings"
 
 	"github.com/yingo-server/UFOT/server/internal/data/store"
+	"github.com/yingo-server/UFOT/server/internal/data/store/migrate"
+	"github.com/yingo-server/UFOT/server/store/migrations"
 )
 
 // ColdDB is the cold store handle. Implements:
@@ -59,6 +61,19 @@ func OpenDriver(driverName, dsn string) (*ColdDB, error) {
 		return nil, fmt.Errorf("pg: open: %w", err)
 	}
 	return &ColdDB{DB: db, DriverName: driverName}, nil
+}
+
+// Migrate applies the embedded cold (PostgreSQL) migration tree. Called by the
+// assembly layer once the cold store is opened — without it the audit journal
+// and archive tables are missing even though cold:true is reported.
+func (c *ColdDB) Migrate(ctx context.Context) error {
+	r := &migrate.Runner{
+		Dialect: migrate.DialectPostgres,
+		Dir:     migrations.FS,
+		DB:      c.DB,
+		Root:    migrate.DirCold,
+	}
+	return r.Up(ctx)
 }
 
 // Close closes the underlying pool.

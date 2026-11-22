@@ -256,7 +256,16 @@ func newAssembly(cfg *config, lg *log.Logger) (*assembly, error) {
 				continue
 			}
 			coldDB = &pg.ColdDB{DB: db, DriverName: drv}
-			lg.Info("cold store handle opened (lazy connect on first use)", "driver", drv)
+			// 冷库开句柄后必须建 schema（审计/归档表），否则 cold:true 但
+			// 审计写不进 PG（实测：sys.audit_log 不存在）。迁移幂等且失败
+			// 即 fail-fast：生产冷库不可用时不该假装可用。
+			if merr := coldDB.Migrate(context.Background()); merr != nil {
+				lg.Error("cold store migration FAILED — audit/archive disabled", "driver", drv, "err", merr.Error())
+				_ = db.Close()
+				coldDB = nil
+				continue
+			}
+			lg.Info("cold store migrated (audit + archive schema ready)", "driver", drv)
 			break
 		}
 		if coldDB == nil {
