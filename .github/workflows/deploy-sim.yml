@@ -184,6 +184,33 @@ jobs:
           sudo env UFOT_ETC="$UFOT_ETC" UFOT_DB="$UFOT_STATE/chatd.db" \
             bash "$ROOT/repo/deploy/backup.sh" --dry-run 2>&1 | tee "$ROOT/backup-dry.log"
 
+      - name: Load test against the REAL installed chatd
+        run: |
+          set -euo pipefail
+          echo "=== build stress tool in CI (test-only, not shipped) ==="
+          go build -o "$ROOT/stressd" ./scripts/stress
+          echo "=== restart real chatd for the load window ==="
+          sudo env APP_ENV=dev UFOT_CONFIG="$UFOT_ETC/ufot.toml" \
+            "$ROOT/repo/dist/chatd" --config "$UFOT_ETC/ufot.toml" \
+            > "$ROOT/chatd-load.log" 2>&1 &
+          CPID=$!
+          ok=0
+          for i in $(seq 1 40); do
+            curl -sf --max-time 1 http://127.0.0.1:8080/healthz >/dev/null 2>&1 && { ok=1; break; }
+            sleep 0.5
+          done
+          [ "$ok" -eq 1 ] || { echo "FAIL: chatd not healthy for load"; cat "$ROOT/chatd-load.log"; exit 1; }
+          # S-2 smoke: 64 conns x 10s, mixed ops, no boot (chatd already up).
+          echo "=== stressd run (S-2 smoke, real chatd) ==="
+          CHATD_DB="$UFOT_STATE/chatd.db" "$ROOT/stressd" \
+            -no-boot -base http://127.0.0.1:18080 \
+            -mode mixed -conns 64 -duration 10 -conv-members 10 \
+            -interval 100ms -no-ratelimit \
+            -out "$ROOT/stress-result.json" 2>&1 | tee "$ROOT/stress.log"
+          python3 -c "import json; d=json.load(open('$ROOT/stress-result.json')); [print('LOAD RESULT: conns=%s avail=%.2f%% acks=%s attempted=%s rpm=%s p95=%.1fms drop=%s' % (lv.get('conns',0),lv.get('availability_pct',0),lv.get('msg_send_acks',0),lv.get('msg_send_attempted',0),lv.get('rpm',0),lv.get('p95_ms',0),lv.get('server_drop',0))) for lv in d.get('levels',[])]"
+          sudo kill "$CPID" 2>/dev/null || true
+          wait "$CPID" 2>/dev/null || true
+
       - name: Upload simulation logs
         if: always()
         uses: actions/upload-artifact@v4
@@ -195,4 +222,7 @@ jobs:
             ${{ runner.temp }}/ufot-deploy/footprint.txt
             ${{ runner.temp }}/ufot-deploy/footprint-real.txt
             ${{ runner.temp }}/ufot-deploy/chatd-boot.log
+            ${{ runner.temp }}/ufot-deploy/chatd-load.log
+            ${{ runner.temp }}/ufot-deploy/stress.log
+            ${{ runner.temp }}/ufot-deploy/stress-result.json
           if-no-files-found: warn
