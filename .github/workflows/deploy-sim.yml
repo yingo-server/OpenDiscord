@@ -8,6 +8,11 @@ name: Deploy Simulation
 
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release tag to install (e.g. v2.0.1); must be a published release'
+        required: false
+        default: 'v2.0.1'
   push:
     paths:
       - 'deploy/**'
@@ -22,20 +27,42 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Prepare isolated prefixes and mock build artifacts
+      - name: Prepare isolated prefixes from REAL release package
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           ROOT="$RUNNER_TEMP/ufot-deploy"
-          mkdir -p "$ROOT"/{prefix,etc,state,units,journald} \
-                   "$ROOT/repo/dist" "$ROOT/repo/apps/client/dist" "$ROOT/repo/apps/admin/dist"
-          # Mock the binaries/web that a real release build would place here.
-          printf '#!/bin/sh\necho "UFOT chatd mock"\n' > "$ROOT/repo/dist/chatd"
-          chmod +x "$ROOT/repo/dist/chatd"
-          printf '<!doctype html><title>UFOT client mock</title>\n' > "$ROOT/repo/apps/client/dist/index.html"
-          printf '<!doctype html><title>UFOT admin mock</title>\n' > "$ROOT/repo/apps/admin/dist/index.html"
-          # The scripts derive REPO_DIR from their own location, so copy the
-          # whole deploy/ tree next to the mock artifacts.
-          cp -R deploy "$ROOT/repo/deploy"
+          SRC="$GITHUB_WORKSPACE"
+          VER="${{ github.event.inputs.version || 'v2.0.1' }}"
+          mkdir -p "$ROOT"/{prefix,etc,state,units,journald} "$ROOT/repo"
+          # Download the ACTUAL published release tarball — no local build,
+          # no mocks. This is the exact artifact users install.
+          echo "=== downloading real release $VER (linux-amd64) ==="
+          curl -sfL --retry 3 -H "Authorization: Bearer $GH_TOKEN" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/tags/$VER" \
+            -o "$ROOT/release.json"
+          URL=$(python3 -c "import json,sys; d=json.load(open('$ROOT/release.json')); print([a['browser_download_url'] for a in d['assets'] if 'linux-amd64.tar.gz' in a['name']][0])")
+          echo "url=$URL"
+          curl -sfL --retry 3 -H "Authorization: Bearer $GH_TOKEN" "$URL" -o "$ROOT/pkg.tar.gz"
+          tar -xzf "$ROOT/pkg.tar.gz" -C "$ROOT/repo"
+          echo "=== real package contents (top level) ==="
+          ls -la "$ROOT/repo" | head -20
+          # Release tarball has chatd at its root and deploy/ scripts; install.sh
+          # looks for $REPO_DIR/dist/chatd and $REPO_DIR/apps/*/dist. Normalize
+          # the extracted real artifacts into that expected layout (no builds,
+          # just moving the shipped files).
+          mkdir -p "$ROOT/repo/dist"
+          if [ -f "$ROOT/repo/chatd" ]; then
+            mv "$ROOT/repo/chatd" "$ROOT/repo/dist/chatd"
+          fi
+          mkdir -p "$ROOT/repo/apps/client" "$ROOT/repo/apps/admin"
+          [ -d "$ROOT/repo/apps/client/dist" ] || mkdir -p "$ROOT/repo/apps/client/dist"
+          [ -d "$ROOT/repo/apps/admin/dist" ] || mkdir -p "$ROOT/repo/apps/admin/dist"
+          echo "=== chatd binary size (real, from release) ==="
+          ls -la "$ROOT/repo/dist/chatd"
+          cp -R "$ROOT/repo/deploy" "$ROOT/repo/deploy-run"
+          echo "ROOT=$ROOT" >> "$GITHUB_ENV"
           echo "ROOT=$ROOT" >> "$GITHUB_ENV"
           echo "UFOT_PREFIX=$ROOT/prefix" >> "$GITHUB_ENV"
           echo "UFOT_ETC=$ROOT/etc" >> "$GITHUB_ENV"
@@ -50,7 +77,7 @@ jobs:
           set -euo pipefail
           echo "=== driving install-interactive through a pseudo-terminal ==="
           sudo env UFOT_ETC="$UFOT_ETC" UFOT_PREFIX="$UFOT_PREFIX" UFOT_STATE="$UFOT_STATE" \
-            python3 scripts/deploy-interactive-sim.py deploy/install-interactive 2>&1 \
+            python3 scripts/deploy-interactive-sim.py "$ROOT/repo/deploy/install-interactive" 2>&1 \
             | tee "$ROOT/interactive.log"
 
       - name: First install (full execution, --no-start)
@@ -105,14 +132,44 @@ jobs:
           test -f "$UFOT_UNIT_DIR/ufot.service" || { echo "FAIL: systemd unit missing"; exit 1; }
           echo "PASS: ufot.service + ufot.conf present"
 
-      - name: Backup script dry-run against installed DB path
+      - name: Real chatd boot + migrate (creates real SQLite schema)
         run: |
           set -euo pipefail
-          echo "=== backup.sh --dry-run (installed config) ==="
-          # install.sh does not create a DB; create an empty valid SQLite file
-          # via python3 stdlib so the dry-run's size check has a real target.
-          sudo python3 -c "import sqlite3,sys; sqlite3.connect(sys.argv[1]).execute('create table if not exists t(x)').connection.close()" \
-            "$UFOT_STATE/chatd.db"
+          echo "=== booting REAL chatd from installed package to migrate DB ==="
+          # The installed config's hot_db points into $UFOT_STATE; run the real
+          # binary with APP_ENV=dev so dev_otp bootstrap is permitted, wait for
+          # /healthz, then stop. The DB that remains is a genuine migrated DB.
+          sudo env APP_ENV=dev UFOT_CONFIG="$UFOT_ETC/ufot.toml" \
+            "$ROOT/repo/dist/chatd" --config "$UFOT_ETC/ufot.toml" \
+            > "$ROOT/chatd-boot.log" 2>&1 &
+          PID=$!
+          ok=0
+          for i in $(seq 1 40); do
+            if curl -sf --max-time 1 http://127.0.0.1:8080/healthz >/dev/null 2>&1; then ok=1; break; fi
+            sleep 0.5
+          done
+          echo "--- chatd boot log ---"; cat "$ROOT/chatd-boot.log"
+          [ "$ok" -eq 1 ] || { echo "FAIL: real chatd did not become healthy"; exit 1; }
+          echo "PASS: real chatd boot + healthz"
+          sudo kill "$PID" 2>/dev/null || true
+          wait "$PID" 2>/dev/null || true
+          echo "=== real migrated DB size ==="
+          sudo ls -la "$UFOT_STATE"/*.db
+          echo
+          echo "=== FINAL footprint (with real binary, real migrated DB) ==="
+          {
+            echo "== deploy footprint (REAL) =="
+            sudo du -sh "$UFOT_ETC" "$UFOT_STATE" "$UFOT_PREFIX" "$UFOT_UNIT_DIR" "$UFOT_JOURNALD_DIR"
+            echo "== total =="
+            sudo du -sch "$UFOT_ETC" "$UFOT_STATE" "$UFOT_PREFIX" "$UFOT_UNIT_DIR" "$UFOT_JOURNALD_DIR" | tail -1
+            echo "== file count =="
+            sudo find "$UFOT_ETC" "$UFOT_STATE" "$UFOT_PREFIX" "$UFOT_UNIT_DIR" "$UFOT_JOURNALD_DIR" -type f | wc -l
+          } | tee "$ROOT/footprint-real.txt"
+
+      - name: Backup script dry-run against REAL migrated DB
+        run: |
+          set -euo pipefail
+          echo "=== backup.sh --dry-run (real migrated DB) ==="
           sudo env UFOT_ETC="$UFOT_ETC" UFOT_DB="$UFOT_STATE/chatd.db" \
             bash "$ROOT/repo/deploy/backup.sh" --dry-run 2>&1 | tee "$ROOT/backup-dry.log"
 
@@ -125,4 +182,6 @@ jobs:
             ${{ runner.temp }}/ufot-deploy/*.log
             ${{ runner.temp }}/ufot-deploy/tree.txt
             ${{ runner.temp }}/ufot-deploy/footprint.txt
+            ${{ runner.temp }}/ufot-deploy/footprint-real.txt
+            ${{ runner.temp }}/ufot-deploy/chatd-boot.log
           if-no-files-found: warn

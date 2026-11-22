@@ -169,7 +169,7 @@ jobs:
           cp README.md LICENSE stage/
           cp docs/deploy.md docs/user-guide.md docs/admin-guide.md docs/known-issues.md stage/docs/ 2>/dev/null || true
           if [ "$GOOS" != windows ]; then
-            cp -R deploy/systemd deploy/journald deploy/keygen deploy/lib deploy/install.sh deploy/backup.sh deploy/release.sh deploy/Caddyfile deploy/ufot.toml deploy/policy.json stage/deploy/ 2>/dev/null || true
+            cp -R deploy/systemd deploy/journald deploy/keygen deploy/lib deploy/install.sh deploy/install-interactive deploy/backup.sh deploy/release.sh deploy/Caddyfile deploy/ufot.toml deploy/policy.json stage/deploy/ 2>/dev/null || true
             # Web UI is embedded into chatd by 'make web'; ship the real dist
             # trees too so the layout is inspectable and install.sh can place them.
             mkdir -p stage/apps/client stage/apps/admin
