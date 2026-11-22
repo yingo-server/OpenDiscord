@@ -226,6 +226,7 @@ sudo ufotctl doctor
 面向开发者：
 - [开发文档索引](docs/README.md)：架构、协议、各层设计
 - [品牌规范](docs/brand-guidelines.md)：名称、口号、字标与视觉基调
+- [Netlify 前端部署](docs/netlify-frontend-deploy.md)：frontend 分支 + VITE_API_BASE 后端域名配置
 - [API 参考](docs/api-reference.md) / [CLI 参考](docs/cli-reference.md) / [WS 协议](docs/ws-protocol.md)
 - [路线图](docs/roadmap.md) / [变更日志](CHANGELOG.md) / [已知问题](docs/known-issues.md)
 - [1.4 LTS 规划](docs/lts-1.4-plan.md)：普遍拉取 + 自适应 + v3 总线的决策与验收门槛
