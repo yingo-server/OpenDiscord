@@ -139,6 +139,9 @@ jobs:
           # The installed config's hot_db points into $UFOT_STATE; run the real
           # binary with APP_ENV=dev so dev_otp bootstrap is permitted, wait for
           # /healthz, then stop. The DB that remains is a genuine migrated DB.
+          # Point the real chatd at the isolated state DB (installed toml uses
+          # the packaged default path, which would write outside our sandbox).
+          sudo sed -i "s|^hot_db *=.*|hot_db = \"$UFOT_STATE/chatd.db\"|" "$UFOT_ETC/ufot.toml"
           sudo env APP_ENV=dev UFOT_CONFIG="$UFOT_ETC/ufot.toml" \
             "$ROOT/repo/dist/chatd" --config "$UFOT_ETC/ufot.toml" \
             > "$ROOT/chatd-boot.log" 2>&1 &
