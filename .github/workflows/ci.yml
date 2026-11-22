@@ -165,6 +165,13 @@ jobs:
           fi
           CGO_ENABLED=1 GOOS=$GOOS GOARCH=$GOARCH CC=$CC \
             go build -trimpath -ldflags "-s -w" -o "stage/chatd$([ "$GOOS" = windows ] && echo .exe)" ./server/cmd/chatd
+          # chatd-pg: cold-store (PostgreSQL) variant that registers the
+          # "postgres" driver (the main binary intentionally carries none).
+          # Deployers with a cold DB use this binary instead of chatd.
+          if [ "$GOOS" != windows ]; then
+            CGO_ENABLED=1 GOOS=$GOOS GOARCH=$GOARCH CC=$CC \
+              go build -trimpath -ldflags "-s -w" -o "stage/chatd-pg" ./server/cmd/chatd-pg
+          fi
           mkdir -p stage/docs stage/deploy
           cp README.md LICENSE stage/
           cp docs/deploy.md docs/user-guide.md docs/admin-guide.md docs/known-issues.md stage/docs/ 2>/dev/null || true

@@ -142,7 +142,7 @@ log "创建目录并校正权限"
 # /etc/ufot 0750 root:ufot —— 配置根
 install -d -m 0750 -o root -g ufot "$ETC"
 # 密钥目录 0750，密钥文件 0640（单密钥单文件）
-install -d -m 0750 -o root -g ufot "$ETC/keys"
+install -d -m 0750 -o ufot -g ufot "$ETC/keys"
 # 兼容当前 chatd 骨架（从工作目录读 config/chatd.toml）
 install -d -m 0750 -o root -g ufot "$ETC/config"
 
@@ -241,9 +241,12 @@ if [ "$SKIP_KEYS" -eq 0 ]; then
   fi
 
   # 密钥文件按矩阵：私钥 0640 root:ufot；对称密钥与备份口令 0600
-  chown root:ufot "$ETC"/keys/*.pem 2>/dev/null || true
+  # 密钥必须由服务账号（ufot）拥有：二进制以 User=ufot 运行，属主为 root
+  # 时 0600 文件不可读，chatd 启动即失败（实测：read hmac key permission denied）。
+  # 0600 保证只有服务账号可读，root 仍可访问。
+  chown ufot:ufot "$ETC"/keys/*.pem 2>/dev/null || true
   chmod 0640 "$ETC"/keys/*.pem 2>/dev/null || true
-  chown root:ufot "$ETC/keys"/* 2>/dev/null || true
+  chown ufot:ufot "$ETC/keys"/* 2>/dev/null || true
   chmod 0600 "$ETC/keys/ipc_key" "$ETC/keys/hmac_key" "$ETC/keys/pii_key" \
              "$ETC/keys/phone_lookup_key" "$ETC/keys/download_key" \
              "$ETC/keys/upload_secret" "$ETC/keys/audit_chain_key" "$ETC/keys/backup.key" 2>/dev/null || true
@@ -311,14 +314,19 @@ log "安装二进制与内嵌前端"
 
 BOOT="$PREFIX/releases/bootstrap"
 installed_bin=0
-for b in chatd; do
-  if [ -f "$REPO_DIR/dist/$b" ]; then
-    install -m 0755 -o root -g root "$REPO_DIR/dist/$b" "$BOOT/bin/$b"
-    installed_bin=1
+# 发布包的二进制在包根目录（tarball 顶层），源码构建在 dist/ —— 两处都找。
+for b in chatd chatd-pg; do
+  src=""
+  [ -f "$REPO_DIR/$b" ] && src="$REPO_DIR/$b"
+  [ -z "$src" ] && [ -f "$REPO_DIR/dist/$b" ] && src="$REPO_DIR/dist/$b"
+  if [ -n "$src" ]; then
+    install -m 0755 -o root -g root "$src" "$BOOT/bin/$b"
+    log "  安装 $b"
+    [ "$b" = "chatd" ] && installed_bin=1
   fi
 done
 if [ "$installed_bin" -eq 0 ]; then
-  warn "未找到 $REPO_DIR/dist/chatd —— 先执行 make build 或 make release-all，再重跑本脚本"
+  die "未找到 chatd 二进制（查找过 $REPO_DIR/chatd 与 $REPO_DIR/dist/chatd）—— 包损坏或未构建"
 fi
 
 for app in client admin; do

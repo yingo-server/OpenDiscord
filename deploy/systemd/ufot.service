@@ -28,6 +28,8 @@ RuntimeDirectoryMode=0750
 RuntimeDirectoryPreserve=yes
 WorkingDirectory=/etc/ufot
 
+# 冷库（PostgreSQL）部署：把下面一行改成 chatd-pg（该变体注册 "postgres"
+# driver，主二进制按架构约定不携带 driver）。默认用主二进制。
 ExecStart=/opt/ufot/current/bin/chatd --config /etc/ufot/ufot.toml
 # SIGHUP = 热重载 policy + 白名单（docs/admin-data-design.md §9），失败保留旧策略
 ExecReload=/bin/kill -HUP $MAINPID
@@ -92,7 +94,9 @@ SystemCallFilter=~@privileged @obsolete
 # MemoryDenyWriteExecute=true
 
 # 唯一可写路径：运行数据、媒体、UDS 目录
-ReadWritePaths=/var/lib/ufot /var/lib/ufot/media /run/ufot
+# /etc/ufot/keys 必须可写：chatd 首次启动会在此生成运行时 IPC 密钥
+# （ipc_admin.key）。密钥文件本身是 0600 且属主为服务账号，别人读不到。
+ReadWritePaths=/var/lib/ufot /var/lib/ufot/media /run/ufot /etc/ufot/keys
 # 配置与密钥只读
 ReadOnlyPaths=/etc/ufot /opt/ufot
 
