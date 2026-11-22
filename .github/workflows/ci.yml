@@ -93,6 +93,52 @@ jobs:
           retention-days: 3
           if-no-files-found: error
 
+  # 前端产物分支：供 Netlify 直接部署（client 为根，admin 在 /admin）。
+  # 每个 SPA 都需要 index.html fallback，故写 _redirects（Netlify 原生支持）。
+  frontend:
+    needs: [web]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-client
+          path: site
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-admin
+          path: site/admin
+
+      - name: SPA redirects + no-cache on hashed assets
+        run: |
+          # Netlify: rewrite all unknown paths to the client SPA, except /admin/*
+          printf '/*    /index.html   200\n' > site/_redirects
+          # Admin is a separate SPA under /admin — override its own deep links.
+          printf '/admin/*  /admin/index.html  200\n' | cat - site/_redirects > site/_redirects.new
+          mv site/_redirects.new site/_redirects
+          # Let Netlify cache fingerprinted assets forever, but never the HTML.
+          printf '/*assets/*  Cache-Control: public, max-age=31536000, immutable\n' > site/_headers
+          printf '/*.html     Cache-Control: no-cache\n' >> site/_headers
+          echo "=== site tree ==="
+          find site -maxdepth 2 -type f | sort | head -25
+
+      - name: Publish to frontend branch
+        run: |
+          set -euo pipefail
+          cd site
+          git init -q -b frontend
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -qm "frontend dist from ${GITHUB_SHA::7} (client + admin)"
+          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" frontend
+          echo "published frontend branch"
+
   # ---------------------------------------------------------------------------
   # 全平台/全 CPU 架构构建（v1.1：对标 FFmpeg 的产物矩阵）
   # Linux × {amd64,386,arm64,arm(ARMv7),riscv64} + Windows × {amd64,386,arm64,arm}
