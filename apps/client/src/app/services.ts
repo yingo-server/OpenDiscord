@@ -3,6 +3,7 @@ import type { PendingMessage } from '../net';
 import type { HttpClient } from '../net/http/client';
 import type { AuthApi, MediaApi } from '../net/http/auth';
 import type { WsClient } from '../net/ws/client';
+import type { WsRequests } from '../net/ws/requests';
 import type { Frame } from '../net/protocol/frame';
 import { getState } from '../state/chat';
 
@@ -29,6 +30,8 @@ export interface AppServices {
   selectConversation: (id: number | null) => void;
   syncConversation: (convId: number, sinceSeq: number) => void;
   upload: (file: File) => Promise<string>;
+  updateProfile: (input: { display_name: string; avatar_url?: string }) => Promise<void>;
+  requests: WsRequests;
   handleFrame: (frame: Frame) => void;
 }
 

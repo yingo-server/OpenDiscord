@@ -7,8 +7,11 @@ export { K } from './protocol/kinds';
 export { decodeFrame, encodeFrame, isRecord } from './protocol/frame';
 export type { Frame } from './protocol/frame';
 export { HttpClient, ApiError } from './http/client';
+export { subscribePush, pushAvailable } from './http/push';
 export { AuthApi, MediaApi } from './http/auth';
 export { WsClient } from './ws/client';
+export { WsRequests, parseIdentityResult, type WsPendingResult } from './ws/requests';
+export { IdentityApi, type StoreUser } from './ws/identity';
 
 export interface PendingMessage {
   convId: number;

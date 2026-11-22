@@ -41,9 +41,7 @@ export class AuthApi {
   setPassword(password: string): Promise<{ ok?: boolean }> {
     return this.http.post<{ ok?: boolean }>('/api/auth/password/set', { password });
   }
-  updateProfile(payload: { display_name?: string; avatar_url?: string }): Promise<unknown> {
-    return this.http.post<unknown>('/api/profile/update', payload);
-  }
+  // 注意：资料更新没有 HTTP 端点，走 WS kind 450 PROFILE_UPDATE（见 ui/views/Settings.tsx）。
 }
 
 export interface UploadedMedia { id?: string; media_id?: string; }

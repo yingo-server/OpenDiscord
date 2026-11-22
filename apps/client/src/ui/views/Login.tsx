@@ -3,6 +3,7 @@ import { ApiError } from '../../net/http/client';
 import { getAppServices } from '../../app/services';
 import { parseSession } from '../../domain/parse';
 import { t } from '../i18n';
+import { BrandMark } from '../components/BrandMark';
 
 type Tab = 'phone' | 'email' | 'password' | 'guest';
 
@@ -89,7 +90,7 @@ export function LoginScreen(): ReactNode {
     <main className="center-page">
       <div className="auth-card">
         <div className="auth-mark">
-          <div className="brand-mark">UF</div>
+          <BrandMark size={44} className="auth-logo" />
           <div><h1>{t('app.name')}</h1><p>Unfettered Freedom Of Thought</p></div>
         </div>
         <div className="card">

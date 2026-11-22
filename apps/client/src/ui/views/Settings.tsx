@@ -2,8 +2,10 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { getSession } from '../../state/session';
 import { getAppServices } from '../../app/services';
 import { currentTheme, applyTheme, clearLocalData, type ThemeMode } from '../../platform/theme';
+import { subscribePush, pushAvailable, ApiError } from '../../net';
 import { t } from '../i18n';
 import { toast } from '../components/Toast';
+import { CallSettingsRow } from '../components/CallOverlay';
 
 export function Settings({ onBack }: { onBack: () => void }): ReactNode {
   const services = getAppServices();
@@ -11,14 +13,22 @@ export function Settings({ onBack }: { onBack: () => void }): ReactNode {
   const [name, setName] = useState(session?.profile.display_name || '');
   const [password, setPassword] = useState('');
   const [theme, setTheme] = useState<ThemeMode>(currentTheme());
+  const [pushOn, setPushOn] = useState(false);
   useEffect(() => { setName(session?.profile.display_name || ''); }, [session]);
 
-  function saveProfile(): void {
+  async function saveProfile(): Promise<void> {
     const trimmed = name.trim();
     if (!trimmed) return;
+    const previous = session?.profile.display_name || '';
     if (session) services.setSession({ ...session, profile: { ...session.profile, display_name: trimmed } });
-    void services.auth.updateProfile({ display_name: trimmed }).catch(() => toast(t('error.generic')));
-    toast(t('settings.saved'));
+    try {
+      await services.updateProfile({ display_name: trimmed });
+      toast(t('settings.saved'));
+    } catch {
+      if (session) services.setSession({ ...session, profile: { ...session.profile, display_name: previous } });
+      setName(previous);
+      toast(t('settings.save.failed'));
+    }
   }
 
   function savePassword(): void {
@@ -26,6 +36,16 @@ export function Settings({ onBack }: { onBack: () => void }): ReactNode {
     void services.auth.setPassword(password)
       .then(() => { setPassword(''); toast(t('settings.saved')); })
       .catch(() => toast(t('error.generic')));
+  }
+
+  async function enablePush(): Promise<void> {
+    try {
+      await subscribePush(services.http);
+      setPushOn(true);
+      toast(t('push.enabled'));
+    } catch (error) {
+      toast(error instanceof ApiError ? error.message : t('push.failed'));
+    }
   }
 
   async function logout(): Promise<void> {
@@ -45,11 +65,11 @@ export function Settings({ onBack }: { onBack: () => void }): ReactNode {
           <div className="settings-row">
             <span className="label">{t('settings.display.name')}</span>
             <input className="input" style={{ maxWidth: 200 }} value={name} onChange={(event) => setName(event.target.value)} />
-            <button className="btn small" type="button" onClick={saveProfile}>{t('settings.save')}</button>
+            <button className="btn small" type="button" onClick={() => void saveProfile()}>{t('settings.save')}</button>
           </div>
           <div className="settings-row">
             <span className="label">{t('settings.password')}<small>{t('settings.password.hint')}</small></span>
-            <input className="input" type="password" style={{ maxWidth: 200 }} value={password} onChange={(event) => setPassword(event.target.value)} placeholder={t('settings.password.field')} />
+            <input className="input" type="password" style={{ maxWidth: 200 }} value={password} onChange={(event) => setPassword(event.target.value)} placeholder="至少 8 位密码" />
             <button className="btn small" type="button" onClick={savePassword}>{t('settings.save')}</button>
           </div>
         </div>
@@ -66,6 +86,13 @@ export function Settings({ onBack }: { onBack: () => void }): ReactNode {
                 </button>
               ))}
             </div>
+          </div>
+          <CallSettingsRow />
+          <div className="settings-row">
+            <span className="label">{t('push.enable')}<small>{pushOn ? t('push.enabled') : t('push.unavailable')}</small></span>
+            <button className="btn small" type="button" disabled={!pushAvailable() || pushOn} onClick={() => void enablePush()}>
+              {t('push.enable')}
+            </button>
           </div>
         </div>
       </section>

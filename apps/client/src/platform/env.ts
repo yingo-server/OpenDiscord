@@ -3,6 +3,9 @@ export interface EnvConfig {
   wsUrl: string;
   defaultLang: string;
   devWsUrl: string;
+  mock: boolean;
+  vapidPublicKey: string;
+  callEnabled: boolean;
 }
 
 interface ViteEnv {
@@ -10,6 +13,9 @@ interface ViteEnv {
   VITE_WS_URL?: string;
   VITE_DEFAULT_LANG?: string;
   VITE_DEV_WS_URL?: string;
+  VITE_MOCK?: string;
+  VITE_VAPID_PUBLIC_KEY?: string;
+  VITE_CALL_ENABLED?: string;
   DEV?: boolean;
 }
 
@@ -64,12 +70,21 @@ export function resolveWsUrl(
   return `${loc.protocol === 'https:' ? 'wss' : 'ws'}://${loc.host}/ws`;
 }
 
+export function resolveMock(raw: string | undefined, dev: boolean | undefined): boolean {
+  const value = (raw || '').trim().toLowerCase();
+  if (value) return value !== '0' && value !== 'false' && value !== 'off';
+  return false;
+}
+
 export function loadEnv(raw: ViteEnv, location?: Location): EnvConfig {
   return {
     apiBase: resolveApiBase(raw.VITE_API_BASE, location),
     wsUrl: resolveWsUrl(raw, location),
     defaultLang: (raw.VITE_DEFAULT_LANG || 'zh-CN').trim() || 'zh-CN',
     devWsUrl: (raw.VITE_DEV_WS_URL || '').trim(),
+    mock: resolveMock(raw.VITE_MOCK, raw.DEV),
+    vapidPublicKey: (raw.VITE_VAPID_PUBLIC_KEY || '').trim(),
+    callEnabled: (raw.VITE_CALL_ENABLED || '').trim().toLowerCase() !== 'false',
   };
 }
 

@@ -6,6 +6,10 @@ import { setSession, getSession, storedRefreshToken } from '../state/session';
 import { parseSession } from '../domain/parse';
 import { setAppServices, type AppServices } from './services';
 import { handleFrame } from './frames';
+import { applyMock, MOCK_SESSION } from './mock';
+import { WsRequests } from '../net/ws/requests';
+import { IdentityApi } from '../net/ws/identity';
+import { callSession } from '../net/ws/call';
 import { getState, setState, addMessage, patchMessage, removeMessage, setActiveConv } from '../state/chat';
 
 export function bootstrap(): AppServices {
@@ -13,6 +17,9 @@ export function bootstrap(): AppServices {
   const auth = new AuthApi(http);
   const media = new MediaApi(http);
   const ws = new WsClient(env.wsUrl);
+  const requests = new WsRequests((frame) => ws.send(frame as never));
+  const identity = new IdentityApi(requests);
+  ws.onFrame((frame) => { requests.handle(frame); });
   const pending = new Map<string, { msg: PendingMessage; timer: number }>();
   const ownId = () => getSession()?.user_id || 0;
 
@@ -116,8 +123,18 @@ export function bootstrap(): AppServices {
     return media.upload(file);
   }
 
-  const handleFrameBound = (frame: import('../net').Frame) => handleFrame(frame, ownId(), pending, syncConversation);
+  async function updateProfile(input: { display_name: string; avatar_url?: string }): Promise<void> {
+    await identity.updateProfile(input);
+  }
+
+  const handleFrameBound = (frame: import('../net').Frame) => {
+    void callSession.handleFrame(frame).then((consumed) => {
+      if (consumed) return;
+      handleFrame(frame, ownId(), pending, syncConversation);
+    });
+  };
   ws.onFrame(handleFrameBound);
+  callSession.configure(requests, env.callEnabled);
 
   // 刷新页面恢复会话：Cookie 里只有 access_token，refresh_token 存 sessionStorage（不进 localStorage）。
   const storedRefresh = storedRefreshToken();
@@ -162,8 +179,17 @@ export function bootstrap(): AppServices {
     connect: () => ws.connect(), disconnect: () => ws.close(),
     sendMessage, retryMessage, editMessage, deleteMessage, recallMessage, forwardMessage,
     sendRead, sendTyping, createConversation, selectConversation, syncConversation, upload,
+    updateProfile, requests,
     handleFrame: handleFrameBound,
   };
   setAppServices(services);
+  if (env.mock) {
+    applyMock(services);
+    // mock 下自动进入主界面（并支持刷新恢复）
+    if (storedRefreshToken() || sessionStorage.getItem('ufot.mock.entered')) {
+      sessionStorage.setItem('ufot.mock.entered', '1');
+      setSession({ ...MOCK_SESSION });
+    }
+  }
   return services;
 }
