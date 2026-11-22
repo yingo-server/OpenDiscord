@@ -3,118 +3,186 @@
 @tailwind utilities;
 
 /* ===========================================================================
-   设计令牌（docs/web-ui-spec.md §10）
-   颜色以 RGB 三元组存 CSS 变量，Tailwind 用 rgb(var(--token) / <alpha>) 引用。
+   UFOT Fluent 设计令牌（WinUI 3 / Fluent Design）
+   ---------------------------------------------------------------------------
+   三层结构：Primitive（色阶）→ Semantic（语义别名）→ Material（Mica/Acrylic）。
+   颜色以 RGB 三元组保存，Tailwind 以 rgb(var(--token) / <alpha-value>) 消费；
+   亮/暗主题只切换 Semantic 层，组件不出现任何字面量颜色。
+   旧令牌名（--primary-* / --bg-* / --text-* / --border-default ...）全部保留，
+   值改为 Fluent 调色板——这样阶段 1 不动组件即可整体换肤。
    =========================================================================== */
 
 :root {
-  --primary-50: 238 241 255;
-  --primary-100: 220 226 255;
-  --primary-300: 168 181 245;
-  --primary-500: 59 91 253;
-  --primary-600: 47 76 232;
-  --primary-700: 37 64 201;
-  --primary-900: 27 47 148;
+  color-scheme: light;
 
-  --success-50: 236 253 243;
-  --success-100: 209 250 223;
-  --success-300: 156 205 176;
-  --success-500: 22 163 74;
-  --success-600: 18 128 60;
-  --success-700: 14 102 48;
-  --success-900: 10 71 34;
+  /* ---- Primitive: Accent（Windows 11 Accent Blue） ---- */
+  --primary-50: 230 242 255;
+  --primary-100: 204 228 255;
+  --primary-300: 118 185 245;
+  --primary-500: 0 103 192;
+  --primary-600: 0 90 170;
+  --primary-700: 0 76 144;
+  --primary-900: 0 51 97;
 
-  --warning-50: 255 251 235;
-  --warning-100: 254 243 199;
-  --warning-300: 243 217 162;
-  --warning-500: 245 158 11;
-  --warning-600: 217 134 10;
-  --warning-700: 178 111 8;
-  --warning-900: 124 74 5;
+  --success-50: 232 247 232;
+  --success-100: 205 235 205;
+  --success-300: 126 199 126;
+  --success-500: 16 124 16;
+  --success-600: 12 104 12;
+  --success-700: 9 84 9;
+  --success-900: 6 56 6;
 
-  --danger-50: 254 242 242;
-  --danger-100: 254 226 226;
-  --danger-300: 239 176 178;
-  --danger-500: 229 72 77;
-  --danger-600: 201 56 61;
-  --danger-700: 168 46 51;
-  --danger-900: 122 31 35;
+  --warning-50: 255 249 230;
+  --warning-100: 255 240 199;
+  --warning-300: 245 206 122;
+  --warning-500: 234 163 0;
+  --warning-600: 200 139 0;
+  --warning-700: 163 114 0;
+  --warning-900: 107 75 0;
 
-  --info-50: 240 249 255;
-  --info-100: 224 242 254;
-  --info-300: 163 216 245;
-  --info-500: 14 165 233;
-  --info-600: 2 132 199;
-  --info-700: 3 105 161;
-  --info-900: 12 74 110;
+  --danger-50: 254 238 236;
+  --danger-100: 253 218 214;
+  --danger-300: 238 148 139;
+  --danger-500: 196 43 28;
+  --danger-600: 168 36 23;
+  --danger-700: 137 29 19;
+  --danger-900: 90 19 12;
 
-  --bg-page: 249 250 251;
+  --info-50: 230 244 255;
+  --info-100: 204 232 255;
+  --info-300: 118 194 244;
+  --info-500: 0 120 212;
+  --info-600: 0 102 180;
+  --info-700: 0 84 148;
+  --info-900: 0 56 99;
+
+  /* ---- Semantic: surfaces / text / strokes（Fluent 分层） ---- */
+  --bg-page: 243 243 243; /* Mica base #F3F3F3 */
   --bg-surface: 255 255 255;
-  --bg-surface-2: 243 244 246;
+  --bg-surface-2: 245 245 245;
   --bg-elevated: 255 255 255;
 
-  --text-primary: 17 24 39;
-  --text-secondary: 75 85 99;
-  --text-tertiary: 156 163 175;
+  --text-primary: 27 27 27;
+  --text-secondary: 89 89 89;
+  --text-tertiary: 99 99 99;
   --text-inverse: 255 255 255;
 
-  --border-default: 229 231 235;
+  --border-default: 229 229 229; /* Fluent DividerStroke */
+  --border-input: 122 122 122; /* Fluent TextControlBorderStroke，≥3:1 */
   --scrim: 0 0 0;
+
+  /* ---- Fluent semantic aliases（阶段 2 外壳使用） ---- */
+  --accent: var(--primary-500);
+  --accent-hover: var(--primary-600);
+  --accent-pressed: var(--primary-700);
+  --accent-fg: var(--text-inverse);
+  --focus-ring: var(--primary-500);
+  --nav-hover-bg: 0 0 0;
+  --nav-hover-alpha: 0.05;
+  --nav-selected-bg: var(--primary-500);
+  --nav-selected-alpha: 0.1;
+
+  /* ---- Material: Mica（桌面墙纸取样近似：低对比底色 + 两层淡入渐变） ---- */
+  --mica-base: var(--bg-page);
+  --mica-bottom: 236 236 236;
+  --mica-tint: var(--primary-500);
+  --mica-tint-alpha: 0.07;
+  --mica-tint-alt: var(--info-500);
+  --mica-tint-alt-alpha: 0.045;
+
+  /* ---- Material: Acrylic（半透明 + blur；@supports 回退见下） ---- */
+  --acrylic-bg: 255 255 255;
+  --acrylic-alpha: 0.86;
+  --acrylic-blur: 24px;
+  --acrylic-saturate: 1.4;
+  --acrylic-stroke: 255 255 255;
+  --acrylic-stroke-alpha: 0.6;
+
+  /* ---- Fluent depth & motion ---- */
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.06);
+  --shadow-flyout: 0 4px 16px rgb(0 0 0 / 0.1), 0 1px 3px rgb(0 0 0 / 0.06);
+  --shadow-dialog: 0 16px 40px rgb(0 0 0 / 0.18), 0 4px 12px rgb(0 0 0 / 0.1);
+  --ease-fluent: cubic-bezier(0, 0, 0.2, 1);
+  --ease-fluent-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --duration-fast: 100ms;
+  --duration-base: 200ms;
+  --duration-slow: 300ms;
 }
 
 [data-theme='dark'] {
-  --primary-50: 30 36 63;
-  --primary-100: 36 44 83;
-  --primary-300: 139 157 249;
-  --primary-500: 92 124 255;
-  --primary-600: 110 139 255;
-  --primary-700: 125 151 255;
-  --primary-900: 168 181 245;
+  color-scheme: dark;
 
-  --success-50: 20 43 32;
-  --success-100: 18 56 34;
-  --success-300: 76 175 118;
-  --success-500: 34 197 94;
-  --success-600: 22 163 74;
-  --success-700: 18 128 60;
-  --success-900: 209 250 223;
+  /* Primitive：暗色下饱和度降一档、亮度提一档 */
+  --primary-50: 32 45 62;
+  --primary-100: 38 56 78;
+  --primary-300: 96 176 237;
+  --primary-500: 96 205 255;
+  --primary-600: 126 216 255;
+  --primary-700: 160 229 255;
+  --primary-900: 204 240 255;
 
-  --warning-50: 60 46 16;
-  --warning-100: 74 56 19;
-  --warning-300: 217 168 80;
-  --warning-500: 251 191 36;
-  --warning-600: 245 158 11;
-  --warning-700: 217 134 10;
-  --warning-900: 254 243 199;
+  --success-50: 20 48 22;
+  --success-100: 26 61 28;
+  --success-300: 108 203 95;
+  --success-500: 108 203 95;
+  --success-600: 137 219 124;
+  --success-700: 164 231 153;
+  --success-900: 216 246 210;
 
-  --danger-50: 60 26 29;
-  --danger-100: 74 31 35;
-  --danger-300: 239 176 178;
-  --danger-500: 242 85 90;
-  --danger-600: 217 72 77;
-  --danger-700: 201 56 61;
-  --danger-900: 254 226 226;
+  --warning-50: 61 49 15;
+  --warning-100: 76 61 18;
+  --warning-300: 232 193 74;
+  --warning-500: 252 225 92;
+  --warning-600: 252 233 133;
+  --warning-700: 255 240 168;
+  --warning-900: 255 249 220;
 
-  --info-50: 18 46 60;
-  --info-100: 24 58 76;
-  --info-300: 163 216 245;
-  --info-500: 56 189 248;
-  --info-600: 14 165 233;
-  --info-700: 2 132 199;
-  --info-900: 224 242 254;
+  --danger-50: 61 24 22;
+  --danger-100: 78 29 26;
+  --danger-300: 241 153 146;
+  --danger-500: 255 153 153;
+  --danger-600: 255 178 178;
+  --danger-700: 255 201 201;
+  --danger-900: 255 232 232;
 
-  --bg-page: 23 24 28;
-  --bg-surface: 31 33 39;
-  --bg-surface-2: 38 40 46;
-  --bg-elevated: 44 47 54;
+  --info-50: 17 46 62;
+  --info-100: 23 60 80;
+  --info-300: 96 190 240;
+  --info-500: 96 205 255;
+  --info-600: 126 216 255;
+  --info-700: 160 229 255;
+  --info-900: 214 241 255;
 
-  --text-primary: 243 244 246;
-  --text-secondary: 156 163 175;
-  --text-tertiary: 107 114 128;
-  --text-inverse: 23 24 28;
+  --bg-page: 32 32 32; /* Mica dark base #202020 */
+  --bg-surface: 43 43 43;
+  --bg-surface-2: 49 49 49;
+  --bg-elevated: 55 55 55;
 
-  --border-default: 42 45 52;
+  --text-primary: 243 243 243;
+  --text-secondary: 200 200 200;
+  --text-tertiary: 176 176 176;
+  --text-inverse: 20 20 20;
+
+  --border-default: 55 55 55;
+  --border-input: 138 138 138;
   --scrim: 0 0 0;
+
+  --accent-fg: var(--text-inverse);
+  --nav-hover-bg: 255 255 255;
+  --nav-hover-alpha: 0.08;
+
+  --mica-bottom: 24 24 24;
+  --mica-tint-alpha: 0.1;
+  --mica-tint-alt-alpha: 0.06;
+
+  --acrylic-bg: 44 44 44;
+  --acrylic-alpha: 0.88;
+  --acrylic-stroke: 255 255 255;
+  --acrylic-stroke-alpha: 0.08;
+
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.3);
+  --shadow-flyout: 0 4px 16px rgb(0 0 0 / 0.45), 0 1px 3px rgb(0 0 0 / 0.35);
+  --shadow-dialog: 0 16px 40px rgb(0 0 0 / 0.6), 0 4px 12px rgb(0 0 0 / 0.4);
 }
 
 @layer base {
@@ -131,15 +199,29 @@
   body {
     margin: 0;
     height: 100%;
-    background-color: rgb(var(--bg-page));
+    background-color: rgb(var(--mica-base));
     color: rgb(var(--text-primary));
-    font-family: -apple-system, 'PingFang SC', 'HarmonyOS Sans SC', 'MiSans', 'Noto Sans SC',
-      'Microsoft YaHei', system-ui, sans-serif;
+    font-family: 'Segoe UI Variable Text', 'Segoe UI Variable', 'Segoe UI', system-ui,
+      -apple-system, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', sans-serif;
     font-size: 16px;
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     overscroll-behavior: none;
+    font-synthesis: none;
+  }
+
+  /* Mica：底层随主题切换，不遮挡内容；渐变是纯装饰，对比度由上层 surface 保证 */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background:
+      radial-gradient(120% 85% at 8% -12%, rgb(var(--mica-tint) / var(--mica-tint-alpha)), transparent 62%),
+      radial-gradient(100% 75% at 102% 4%, rgb(var(--mica-tint-alt) / var(--mica-tint-alt-alpha)), transparent 58%),
+      linear-gradient(180deg, rgb(var(--mica-base)) 0%, rgb(var(--mica-bottom)) 100%);
   }
 
   #root {
@@ -159,50 +241,66 @@
   }
 
   :focus-visible {
-    outline: 2px solid rgb(var(--primary-500));
+    outline: 2px solid rgb(var(--focus-ring));
     outline-offset: 2px;
   }
 
   ::selection {
     background: rgb(var(--primary-300) / 0.45);
+    color: rgb(var(--text-primary));
   }
 }
 
-/* 等宽数字：时间戳 / 未读 / 进度 / 倒计时（§1.4） */
+@layer utilities {
+  /* Fluent Material：Acrylic。blur 不可用时退化为不透明表面，功能不降级 */
+  .acrylic {
+    background-color: rgb(var(--acrylic-bg) / var(--acrylic-alpha));
+    border-color: rgb(var(--acrylic-stroke) / var(--acrylic-stroke-alpha));
+  }
+
+  @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .acrylic {
+      -webkit-backdrop-filter: blur(var(--acrylic-blur)) saturate(var(--acrylic-saturate));
+      backdrop-filter: blur(var(--acrylic-blur)) saturate(var(--acrylic-saturate));
+    }
+  }
+
+  /* Fluent 输入控件边框：比分隔线更强，满足 1.4.11 的 3:1 */
+  input.border-line,
+  textarea.border-line {
+    border-color: rgb(var(--border-input));
+  }
+}
+
+/* ===========================================================================
+   以下为保留的基础设施类（骨架、滚动条、安全区、断行、输入控件），
+   令牌已随主题层更新；结构未改，避免阶段 1 触碰组件行为。
+   =========================================================================== */
+
+/* 等宽数字：时间戳 / 未读 / 进度 / 倒计时 */
 .nums {
-  font-family: 'SF Mono', ui-monospace, 'Cascadia Mono', Consolas, 'Noto Sans SC', monospace;
+  font-family: 'Cascadia Mono', 'SF Mono', ui-monospace, Consolas, 'Noto Sans SC', monospace;
   font-variant-numeric: tabular-nums;
   font-feature-settings: 'tnum';
-  font-variant-numeric: tabular-nums;
 }
 
 /* 主题切换：仅根节点与大面，200ms，避免整页 transition */
 html.theme-transitioning,
 html.theme-transitioning body {
   transition:
-    background-color 200ms ease-in,
-    color 200ms ease-in;
+    background-color var(--duration-base) ease-in,
+    color var(--duration-base) ease-in;
 }
 
 /* 骨架屏：1.2s 亮度波（背景位移，不触发 layout） */
 @keyframes shimmer {
-  0% {
-    background-position: 200% 0;
-  }
-  100% {
-    background-position: -200% 0;
-  }
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }
 
 @keyframes slide-up {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .skeleton {
@@ -238,40 +336,26 @@ html.theme-transitioning body {
 }
 
 @media (max-width: 767px) {
-  .scroll-thin {
-    scrollbar-width: none;
-  }
-
-  .scroll-thin::-webkit-scrollbar {
-    display: none;
-  }
+  .scroll-thin { scrollbar-width: none; }
+  .scroll-thin::-webkit-scrollbar { display: none; }
 }
 
 /* 安全区 */
-.pb-safe {
-  padding-bottom: max(12px, env(safe-area-inset-bottom));
-}
+.pb-safe { padding-bottom: max(12px, env(safe-area-inset-bottom)); }
+.pt-safe { padding-top: env(safe-area-inset-top); }
 
-.pt-safe {
-  padding-top: env(safe-area-inset-top);
-}
-
-/* 气泡正文断行（§1.4） */
+/* 气泡正文断行 */
 .bubble-text {
   word-break: break-word;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
 
-/* 消息出现动画：只 transform/opacity；连续消息时由 JS 控制是否加类 */
-.msg-enter {
-  animation: slide-up 200ms cubic-bezier(0.2, 0, 0, 1);
-}
+/* 消息出现动画：只 transform/opacity */
+.msg-enter { animation: slide-up var(--duration-base) var(--ease-fluent); }
 
 /* 输入框自动高度由 Composer 设置内联 height；去掉原生 resize 手柄 */
-textarea {
-  resize: none;
-}
+textarea { resize: none; }
 
 /* 隐藏 number spinner（验证码/手机号） */
 input[type='number']::-webkit-inner-spin-button,
@@ -280,18 +364,16 @@ input[type='number']::-webkit-outer-spin-button {
   margin: 0;
 }
 
-/* 减少动态效果（§5.5） */
+/* 减少动态效果：0.01ms 保留事件触发，避免 JS 状态机挂起 */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {
-    animation-duration: 0.001ms !important;
+    animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
-    transition-duration: 0.001ms !important;
+    transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
 
-  .skeleton {
-    background-image: none;
-  }
+  .skeleton { background-image: none; }
 }

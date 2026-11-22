@@ -1,7 +1,8 @@
 /**
- * Tailwind 设计令牌 —— 逐项抄自 docs/web-ui-spec.md §10。
- * 颜色一律引用 CSS variables（rgb 三元组），亮/暗主题在 styles/index.css 中切换；
- * 组件里禁止硬编码 hex，间距只允许 4px 网格。
+ * UFOT Fluent 设计令牌（WinUI 3 / Fluent Design）
+ * 所有颜色引用 CSS 变量（RGB 三元组），亮/暗主题在 styles/index.css 中切换；
+ * 保留全部旧令牌名（primary / bg / text / line / ink），值改为 Fluent 调色板——
+ * 组件零改动即可换肤；新增 Fluent 专用别名（acrylic/mica/focus/fluent 阴影等）。
  * @type {import('tailwindcss').Config}
  */
 export default {
@@ -14,7 +15,6 @@ export default {
     },
     extend: {
       colors: {
-        // 品牌与语义色（§1.3，50/100/300/500/600/700/900 六阶）
         primary: {
           50: 'rgb(var(--primary-50) / <alpha-value>)',
           100: 'rgb(var(--primary-100) / <alpha-value>)',
@@ -61,13 +61,13 @@ export default {
           900: 'rgb(var(--info-900) / <alpha-value>)',
         },
 
-        // 表面 / 文本 / 边框（§10.1）
-        // 用法：bg-page / bg-surface / bg-surface-2 / bg-elevated
+        // 表面 / 文本 / 边框（语义层，组件只引用这些）
         page: 'rgb(var(--bg-page) / <alpha-value>)',
         surface: {
           DEFAULT: 'rgb(var(--bg-surface) / <alpha-value>)',
           2: 'rgb(var(--bg-surface-2) / <alpha-value>)',
           elevated: 'rgb(var(--bg-elevated) / <alpha-value>)',
+          mica: 'rgb(var(--mica-base) / <alpha-value>)',
         },
         ink: {
           DEFAULT: 'rgb(var(--text-primary) / <alpha-value>)',
@@ -75,14 +75,19 @@ export default {
           tertiary: 'rgb(var(--text-tertiary) / <alpha-value>)',
           inverse: 'rgb(var(--text-inverse) / <alpha-value>)',
         },
-        line: 'rgb(var(--border-default) / <alpha-value>)',
+        line: {
+          DEFAULT: 'rgb(var(--border-default) / <alpha-value>)',
+          input: 'rgb(var(--border-input) / <alpha-value>)',
+          acrylic: 'rgb(var(--acrylic-stroke) / <alpha-value>)',
+        },
+        focus: 'rgb(var(--focus-ring) / <alpha-value>)',
         scrim: 'rgb(var(--scrim) / <alpha-value>)',
       },
 
-      // §10.2 字号 / 行高 / 字重
+      // Fluent 字号：Segoe UI Variable 的 14/15/17/20/24/28 阶梯
       fontSize: {
-        display: ['24px', { lineHeight: '32px', fontWeight: '700' }],
-        title: ['17px', { lineHeight: '24px', fontWeight: '600' }],
+        display: ['28px', { lineHeight: '36px', fontWeight: '600' }],
+        title: ['20px', { lineHeight: '28px', fontWeight: '600' }],
         body: ['15px', { lineHeight: '22px', fontWeight: '400' }],
         'body-sm': ['13px', { lineHeight: '20px', fontWeight: '400' }],
         caption: ['12px', { lineHeight: '16px', fontWeight: '400' }],
@@ -90,26 +95,37 @@ export default {
       },
       fontFamily: {
         sans: [
+          'Segoe UI Variable Text',
+          'Segoe UI Variable',
+          'Segoe UI',
+          'system-ui',
           '-apple-system',
           'PingFang SC',
-          'HarmonyOS Sans SC',
-          'MiSans',
-          'Noto Sans SC',
           'Microsoft YaHei',
+          'Noto Sans SC',
+          'sans-serif',
+        ],
+        // Fluent 标题/品牌字标：Variable Display 字重轴
+        display: [
+          'Segoe UI Variable Display',
+          'Segoe UI Variable',
+          'Segoe UI',
           'system-ui',
+          'PingFang SC',
+          'Microsoft YaHei',
           'sans-serif',
         ],
         nums: [
+          'Cascadia Mono',
           'SF Mono',
           'ui-monospace',
-          'Cascadia Mono',
           'Consolas',
           'Noto Sans SC',
           'monospace',
         ],
       },
 
-      // §10.3 4px 网格（其余沿用 Tailwind 默认，已是 4px 基准）
+      // 4px 网格（尺寸令牌沿用，保证组件无改动）
       spacing: {
         0.5: '2px',
         1: '4px',
@@ -135,24 +151,25 @@ export default {
         detail: '320px',
       },
 
-      // §10.4 圆角
+      // Fluent 圆角：控件 4/6/8，卡片 8/12，胶囊 999
       borderRadius: {
-        sm: '6px',
-        md: '10px',
-        lg: '14px',
-        tail: '4px',
-        xl: '20px',
+        sm: '4px',
+        md: '8px',
+        lg: '12px',
+        tail: '2px',
+        xl: '16px',
         full: '999px',
       },
 
-      // §10.5 阴影
+      // Fluent 层级阴影：低对比、大扩散（暗色下由令牌变量加深）
       boxShadow: {
-        sm: '0 1px 2px rgb(0 0 0 / 0.05)',
-        md: '0 4px 12px rgb(0 0 0 / 0.10)',
-        lg: '0 12px 32px rgb(0 0 0 / 0.14)',
+        sm: '0 1px 2px rgb(0 0 0 / 0.06)',
+        md: 'var(--shadow-flyout)',
+        lg: 'var(--shadow-dialog)',
+        card: 'var(--shadow-card)',
       },
 
-      // §10.6 动效
+      // Fluent 动效：ease-out 进入、ease-in-out 位移
       transitionDuration: {
         micro: '100ms',
         normal: '200ms',
@@ -160,11 +177,11 @@ export default {
         skeleton: '1200ms',
       },
       transitionTimingFunction: {
-        out: 'cubic-bezier(0.2, 0, 0, 1)',
+        out: 'cubic-bezier(0, 0, 0.2, 1)',
+        'in-out': 'cubic-bezier(0.4, 0, 0.2, 1)',
         in: 'ease-in',
       },
 
-      // §10.7 层级
       zIndex: {
         base: '0',
         sticky: '10',
@@ -204,9 +221,9 @@ export default {
       },
       animation: {
         shimmer: 'shimmer 1.2s linear infinite',
-        'fade-in': 'fade-in 200ms cubic-bezier(0.2, 0, 0, 1)',
-        'slide-up': 'slide-up 200ms cubic-bezier(0.2, 0, 0, 1)',
-        'scale-in': 'scale-in 200ms cubic-bezier(0.2, 0, 0, 1)',
+        'fade-in': 'fade-in 200ms cubic-bezier(0, 0, 0.2, 1)',
+        'slide-up': 'slide-up 200ms cubic-bezier(0, 0, 0.2, 1)',
+        'scale-in': 'scale-in 200ms cubic-bezier(0, 0, 0.2, 1)',
         'pulse-dot': 'pulse-dot 1.5s ease-in-out infinite',
         'wave-breath': 'wave-breath 100ms ease-in-out infinite',
       },

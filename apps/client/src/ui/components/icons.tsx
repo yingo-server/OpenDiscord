@@ -27,6 +27,28 @@ function Svg({ size = 24, children, ...rest }: IconProps & { children: React.Rea
   );
 }
 
+export const ChatIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M20 11.5a7.8 7.8 0 0 1-8 7.8 9 9 0 0 1-2.6-.4L4 20.5l1.5-4.3A7.6 7.6 0 0 1 4 11.5 7.8 7.8 0 0 1 12 3.7a7.8 7.8 0 0 1 8 7.8Z" />
+  </Svg>
+);
+
+/** UFOT 品牌字标：24 网格内的几何三角徽记，当前色继承强调色。 */
+export const LogoMark = ({ size = 24, ...rest }: IconProps) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    aria-hidden="true"
+    {...rest}
+  >
+    <path d="M12 2.6 21.8 20H2.2L12 2.6Z" fill="currentColor" fillOpacity="0.12" />
+    <path d="M12 2.6 21.8 20H2.2L12 2.6Z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+    <path d="M12 9.4 17.4 19H6.6L12 9.4Z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
+  </svg>
+);
+
 export const SendIcon = (p: IconProps) => (
   <Svg {...p}>
     <path d="M4 12 20 4l-3.5 16L12 14l-8-2Z" />
