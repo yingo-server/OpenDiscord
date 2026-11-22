@@ -1,352 +1,169 @@
-/**
- * 应用接线（composition root）——main.tsx 只负责注册与挂载，具体装配集中在这里。
- *
- * 依赖方向：本文件可 import net/core/ui；core/net 不可反向 import 本文件。
- */
-import { openCache } from '../net/cache/idb';
-import { SyncEngine, type SyncSink } from '../net/sync/engine';
-import { historyLoader } from '../net/sync/history-loader';
-import { configurePullScheduler, pullScheduler, type PullSchedulerDeps } from '../net/sync/pull-scheduler';
-import { configureMailboxSync, mailboxSync } from '../net/sync/mailbox';
-import { Outbox, createLocalStoragePersistence } from '../net/sync/outbox';
-import { createEnvelope } from '../net/proto/codec';
-import { encodeSyncRequest } from '../net/proto/payload';
-import { KINDS } from '../net/protocol/kinds';
-import { dispatch } from '../net/protocol/dispatch';
-import type { HandlerContext, HandlerRegistry, SessionPort, ConvPort, PresencePort, MessagePort } from '../net/protocol/registry';
-import { WsClient } from '../net/transport/ws-client';
-import type { NetClient } from '../net/transport/types';
-import { TokenStore } from '../net/auth/token-store';
-import { createHttpAuthApi, type AuthSession } from '../net/auth/provider';
-import { MockBridge, createMockAuthApi, setActiveBridge } from '../net/mock/mockBridge';
-import { useConnStore } from '../core/stores/conn-store';
-import { useSessionStore } from '../core/stores/session-store';
-import { useConvStore } from '../core/stores/conv-store';
-import { useMessageStore } from '../core/stores/message-store';
-import { usePresenceStore } from '../core/stores/presence-store';
-import { navigate } from '../ui/router';
-import { getThemePref, applyTheme, watchSystemTheme } from '../ui/theme';
-import { toast } from '../ui/components/Toast';
-import { t } from '../ui/i18n';
-import { setAppServices } from '../ui/services/app-services';
-import { callController } from '../net/call/controller';
-import { ensureNotificationPermission, registerServiceWorker, subscribeAndReport } from '../net/push';
+import { env } from '../platform/env';
+import { HttpClient, ApiError, AuthApi, MediaApi, WsClient, K, pendingSendFrame, retryTimeout } from '../net';
+import type { PendingMessage } from '../net';
+import type { ChatMessage, Session } from '../domain/types';
+import { setSession, getSession, storedRefreshToken } from '../state/session';
+import { parseSession } from '../domain/parse';
+import { setAppServices, type AppServices } from './services';
+import { handleFrame } from './frames';
+import { getState, setState, addMessage, patchMessage, removeMessage, setActiveConv } from '../state/chat';
 
-const IS_MOCK = import.meta.env.VITE_MOCK === '1';
+export function bootstrap(): AppServices {
+  const http = new HttpClient(env.apiBase);
+  const auth = new AuthApi(http);
+  const media = new MediaApi(http);
+  const ws = new WsClient(env.wsUrl);
+  const pending = new Map<string, { msg: PendingMessage; timer: number }>();
+  const ownId = () => getSession()?.user_id || 0;
 
-/** PWA / Web Push（FE-2）：production only，dev/mock 不注册；全程 fail-closed。 */
-async function initPush(): Promise<void> {
-  const registration = await registerServiceWorker();
-  if (!registration) return;
-  if (!(await ensureNotificationPermission())) {
-    console.info('[push] notification permission not granted, skip subscribe');
-    return;
-  }
-  // 服务端接口缝未实现时内部 fail-closed，只记日志。
-  void subscribeAndReport({ registration });
-  // SW 点击通知 → focus 会话。
-  navigator.serviceWorker.addEventListener('message', (event) => {
-    const data = event.data as { type?: string; convId?: unknown } | null;
-    if (data?.type === 'push-focus-conv' && typeof data.convId === 'number' && data.convId > 0) {
-      navigate(`/chat/${data.convId}`);
-    }
-  });
-}
-
-export async function bootstrap(registry: HandlerRegistry): Promise<void> {
-  applyTheme(getThemePref());
-  watchSystemTheme();
-  void initPush();
-
-  const tokenStore = new TokenStore();
-  const cache = await openCache();
-
-  // 引用占位：sink.onGap 需要 client，而 client 需要 engine；两者在启动后才互相使用。
-  let client: NetClient | null = null;
-
-  const sink: SyncSink = {
-    hydrate(data) {
-      useConvStore.getState().hydrate(data.convs);
-      useMessageStore.getState().hydrate(data.messages);
-    },
-    applyMessages(messages) {
-      useMessageStore.getState().upsertMessages(messages);
-    },
-    applyTombstone(convId, msgId, seq, op) {
-      useMessageStore.getState().applyTombstone(convId, msgId, seq, op);
-    },
-    applyEdit(convId, msgId, text) {
-      useMessageStore.getState().applyEdit(convId, msgId, text);
-    },
-    setSyncState(convId, state) {
-      useConvStore.getState().setSyncState(convId, state);
-    },
-    onGap(convId, gap) {
-      // 缺帧 → 主动 SYNC_REQUEST（与 RESUME 共用同一 ingest 入口）
-      if (!client) return;
-      client.send(
-        createEnvelope({
-          kind: KINDS.SYNC_REQUEST,
-          convId,
-          payload: encodeSyncRequest({
-            convId,
-            sinceSeq: gap.from,
-            limit: Math.min(200, Math.max(1, gap.to - gap.from + 1)),
-          }),
-        }),
-      );
-    },
-    onError(error, context) {
-      console.error(`[sync] ${context}`, error);
-    },
-  };
-
-  const engine = new SyncEngine(cache, sink);
-  await engine.hydrate();
-
-  // 拉取模式调度器（spec v1.2 §2）：只产生 8 SYNC 请求，结果经既有 102 帧路径进 ingest。
-  const pullSchedulerDeps: PullSchedulerDeps = {
-    getLastSeq: (convId) => engine.lastSeq(convId),
-    isConvLoaded: (convId) => useConvStore.getState().convs[convId] !== undefined,
-    sendSync: (convId, sinceSeq, limit) =>
-      net.send(
-        createEnvelope({
-          kind: KINDS.SYNC_REQUEST,
-          convId,
-          payload: encodeSyncRequest({ convId, sinceSeq, limit }),
-        }),
-      ),
-  };
-  configurePullScheduler(pullSchedulerDeps);
-  // 会话 hydrate：conv-store 有会话落位后消费 pendingWatermark（spec §2.1 第 1 步的兑现）
-  useConvStore.subscribe((state, previous) => {
-    if (state.convs === previous.convs) return;
-    for (const convId of Object.keys(state.convs)) {
-      const id = Number(convId);
-      if (previous.convs[id] === undefined) pullScheduler.consumePending(id);
-    }
-  });
-
-  const outbox = new Outbox(
-    {
-      onOptimistic: (item) => useMessageStore.getState().applyOptimistic(item),
-      onSending: () => undefined,
-      onSent: (item, ack) => useMessageStore.getState().confirmLocal(item, ack),
-      onFailed: (item, reason) => useMessageStore.getState().failLocal(item, reason),
-      onRemoved: (localId) => useMessageStore.getState().removeLocal(localId),
-      onQueueChange: () => undefined,
-    },
-    createLocalStoragePersistence(),
-  );
-  await outbox.load();
-
-  // 会话元数据/未读/摘要随 store 变化落库（IndexedDB 为事实源，刷新后立即可渲染）
-  useConvStore.subscribe((state, previous) => {
-    if (state.convs === previous.convs) return;
-    for (const [key, conv] of Object.entries(state.convs)) {
-      if (previous.convs[Number(key)] !== conv) void cache.putConv(conv);
-    }
-  });
-
-  // 会话恢复：UI 先离线渲染 IndexedDB，连接建立后增量收敛
-  const stored = tokenStore.current;
-  if (stored) {
-    useSessionStore.getState().signIn(stored);
-    useConvStore.getState().setSelfUserId(stored.userId);
-    usePresenceStore.getState().setSelfUserId(stored.userId);
+  function dispatchSend(msg: PendingMessage): void {
+    ws.send(pendingSendFrame(msg));
+    const timer = window.setTimeout(() => {
+      const entry = pending.get(msg.clientMsgId);
+      if (!entry) return;
+      if (entry.msg.attempts >= 2) {
+        patchMessage(msg.convId, msg.clientMsgId, { status: 'failed', pending: false, error: 'network' });
+        pending.delete(msg.clientMsgId);
+        return;
+      }
+      entry.msg.attempts += 1;
+      dispatchSend(entry.msg);
+    }, retryTimeout(msg.attempts));
+    pending.set(msg.clientMsgId, { msg, timer });
   }
 
-  const mock = IS_MOCK ? new MockBridge() : null;
-  if (mock) {
-    client = mock;
-    setActiveBridge(mock);
-  } else {
-    client = new WsClient({
-      url: resolveWsUrl(),
-      token: () => tokenStore.accessToken,
-      deviceId: () => tokenStore.getDeviceId(),
-      sessionId: () => tokenStore.sessionId,
-      resumeTickets: () => engine.resumeTickets(),
-      onFrame: () => undefined,
-      format: 'json',
-    });
+  function sendMessage(input: Omit<PendingMessage, 'attempts' | 'sentAt'>): ChatMessage {
+    const optimistic: ChatMessage = {
+      id: input.clientMsgId, seq: 0, convId: input.convId, senderId: ownId(),
+      text: input.text, createdAt: Date.now(), status: 'sending',
+      replyTo: input.replyTo, mentions: input.mentions,
+      media: input.media.map((id) => ({ id, kind: 'file' })), pending: true,
+    };
+    addMessage(input.convId, optimistic);
+    dispatchSend({ ...input, attempts: 0, sentAt: Date.now() });
+    return optimistic;
   }
-  const net = client;
-  net.setResumeProvider(() => engine.resumeTickets());
-  outbox.attach(net);
 
-  // v3 mailbox 游标状态机（docs/v3-bus-design.md §2/§4）：ACK(15)/RESUME(17) 上行依赖注入。
-  // ingest 收敛路径（handleMsgNew → engine.ingest 成功）负责调用 mailboxSync.ingest；
-  // 本模块只做游标与发送决策，不写缓存。重连（online）→ 发 kind 17 续传。
-  configureMailboxSync({
-    send: (kind, payload) => net.send(createEnvelope({ kind, payload })),
-    engineLastSeq: (convId) => engine.lastSeq(convId),
-  });
-  useConnStore.subscribe((state, previous) => {
-    if (state.state === previous.state) return;
-    if (state.state === 'online') mailboxSync.onConnState('online');
-    else if (state.state === 'offline') mailboxSync.onConnState('offline');
-  });
-
-  // 上滑历史：三段式（本地 → 网络 920/921 → 超时降级），docs/perf-spec-v1.2.md §1.2。
-  historyLoader.configure({
-    cache: {
-      listMessages: (convId, limit, beforeSeq) => cache.listMessages(convId, limit, beforeSeq),
-      putMessages: (messages) => cache.putMessages(messages),
-    },
-    send: {
-      requestHistory: (convId, beforeSeq, limit) => net.requestHistory(convId, beforeSeq, limit),
-    },
-    timeoutMs: 3000,
-  });
-  useMessageStore.getState().setHistoryLoader((convId, limit, beforeSeq) =>
-    historyLoader
-      .loadOlder(convId, beforeSeq ?? 0, limit)
-      .then((o) => o.messages),
-  );
-
-  const sessionPort: SessionPort = {
-    get userId() {
-      return useSessionStore.getState().userId;
-    },
-    setFlags: (flags, version) => useSessionStore.getState().setFlags(flags, version),
-    kicked: (reason, bannedUntil) => {
-      tokenStore.clear();
-      useSessionStore.getState().kicked(reason, bannedUntil);
-      net.stop();
-      useMessageStore.getState().clear();
-      useConvStore.getState().clear();
-      engine.reset();
-      void outbox.clear();
-    },
-    rateLimited: (scope, retryAfterMs) => {
-      toast.show(t('toast.rateLimited', { seconds: Math.max(1, Math.ceil(retryAfterMs / 1000)) }));
-    },
-    toast: (key, params) => toast.show(t(key, params)),
-    flag: (key) => useSessionStore.getState().flags[key],
-    flags: () => useSessionStore.getState().flags,
-  };
-
-  const convPort: ConvPort = {
-    upsertFromWire: (payload) => useConvStore.getState().upsertFromWire(payload),
-    setActive: (convId) => useConvStore.getState().setActive(convId),
-  };
-
-  const presencePort: PresencePort = {
-    setStatus: (payload) => usePresenceStore.getState().setStatus(payload),
-    setTyping: (convId, userId, typing, at) =>
-      usePresenceStore.getState().setTyping(convId, userId, typing, at),
-  };
-
-  const messagePort: MessagePort = {
-    applyReceipt: (convId, msgId, type, userId, at) =>
-      useMessageStore.getState().applyReceipt(convId, msgId, type, userId, at),
-  };
-
-  const ctx: HandlerContext = {
-    client: net,
-    sync: engine,
-    outbox,
-    session: sessionPort,
-    convs: convPort,
-    presence: presencePort,
-    messages: messagePort,
-    navigate: (route) => navigate(route),
-    toast: (key, params) => toast.show(t(key, params)),
-  };
-
-  net.onFrame((env) => dispatch(env, ctx, registry));
-  net.onState((state, meta) => {
-    useConnStore.getState().applyState(state, meta);
-    outbox.handleState(state);
-  });
-
-  const authenticate = (session: AuthSession) => {
-    const previousUser = useSessionStore.getState().userId;
-    const storedSession = tokenStore.set(session);
-    if (previousUser > 0 && previousUser !== session.userId) {
-      // 切换账号：本机缓存与同步游标全部作废，避免串号
-      void cache.clear().then(() => {
-        useMessageStore.getState().clear();
-        useConvStore.getState().clear();
-        engine.reset();
-        void outbox.clear();
+  function retryMessage(convId: number, id: string): void {
+    const message = getState().messages[convId]?.find((m) => m.id === id);
+    if (!message) return;
+    patchMessage(convId, id, { status: 'sending', pending: true });
+    const entry = pending.get(id);
+    if (entry) {
+      if (entry.timer) clearTimeout(entry.timer);
+      entry.msg.attempts = 0;
+      dispatchSend(entry.msg);
+    } else {
+      sendMessage({
+        convId, clientMsgId: `retry-${Date.now()}`, text: message.text,
+        mentions: message.mentions || [], media: message.media.map((m) => m.id || '').filter(Boolean),
       });
     }
-    useSessionStore.getState().signIn(storedSession);
-    useConvStore.getState().setSelfUserId(session.userId);
-    usePresenceStore.getState().setSelfUserId(session.userId);
-    navigate('/chats');
-    if (net.state === 'offline') net.start();
-  };
+  }
 
-  const doLogout = async () => {
-    net.stop();
-    tokenStore.clear();
-    useSessionStore.getState().signOut();
-    useMessageStore.getState().clear();
-    useConvStore.getState().clear();
-    usePresenceStore.getState().clear();
-    useConnStore.getState().reset();
-    engine.reset();
-    await outbox.clear();
-    await cache.clear();
-    navigate('/login');
-  };
+  function editMessage(convId: number, id: string, text: string): void {
+    patchMessage(convId, id, { text, edited: true });
+    ws.send({ kind: K.MSG_EDIT, conv_id: convId, request_id: `edit-${id}`, payload: { msgId: Number(id) || id, convId, text } });
+  }
 
-  setAppServices({
-    outbox,
-    engine,
-    cache,
-    client: net,
-    authApi: IS_MOCK ? createMockAuthApi() : createHttpAuthApi(resolveApiBase()),
-    authenticate,
-    logout: () => {
-      void doLogout();
-    },
+  function deleteMessage(convId: number, id: string): void {
+    removeMessage(convId, id);
+    ws.send({ kind: K.MSG_DELETE, conv_id: convId, request_id: `delete-${id}`, payload: { msgId: Number(id) || id, convId, forEveryone: false } });
+  }
+
+  function recallMessage(convId: number, id: string): void {
+    patchMessage(convId, id, { recalled: true, text: '' });
+    ws.send({ kind: K.MSG_RECALL, conv_id: convId, request_id: `recall-${id}`, payload: { msgId: Number(id) || id, convId } });
+  }
+
+  function forwardMessage(fromConv: number, id: string, toConv: number): void {
+    const msg = getState().messages[fromConv]?.find((m) => m.id === id);
+    if (!msg) return;
+    sendMessage({
+      convId: toConv, clientMsgId: `fwd-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      text: msg.text, mentions: [], media: msg.media.map((m) => m.id || '').filter(Boolean),
+    });
+  }
+
+  function sendRead(convId: number, seq: number): void {
+    ws.send({ kind: K.MSG_READ, conv_id: convId, payload: { convId, seq } });
+  }
+
+  function sendTyping(convId: number, typing: boolean): void {
+    ws.send({ kind: K.TYPING, conv_id: convId, payload: { convId, typing } });
+  }
+
+  function createConversation(type: 'direct' | 'group', memberIds: number[], title: string): void {
+    ws.send({
+      kind: K.CONV_CREATE, request_id: `conv-${Date.now()}`,
+      payload: { title, type, convType: type === 'group' ? 2 : 1, member_ids: memberIds, memberIds },
+    });
+  }
+
+  function selectConversation(id: number | null): void {
+    setActiveConv(id);
+    if (id !== null) {
+      const conv = getState().conversations.find((c) => c.id === id);
+      if (conv?.lastSeq) sendRead(id, conv.lastSeq);
+    }
+  }
+
+  function syncConversation(convId: number, sinceSeq: number): void {
+    ws.send({ kind: K.SYNC_REQUEST, conv_id: convId, payload: { convId, sinceSeq, limit: 200, coldMerge: true } });
+  }
+
+  async function upload(file: File): Promise<string> {
+    return media.upload(file);
+  }
+
+  const handleFrameBound = (frame: import('../net').Frame) => handleFrame(frame, ownId(), pending, syncConversation);
+  ws.onFrame(handleFrameBound);
+
+  // 刷新页面恢复会话：Cookie 里只有 access_token，refresh_token 存 sessionStorage（不进 localStorage）。
+  const storedRefresh = storedRefreshToken();
+  if (storedRefresh) {
+    void auth.refresh(storedRefresh).then((value) => {
+      const restored = parseSession(value);
+      if (restored) {
+        setSession(restored);
+        ws.resume();
+      }
+    }).catch(() => undefined);
+  }
+  ws.onState((state) => {
+    setState({ connected: state === 'online' });
+    window.dispatchEvent(new CustomEvent('ufot:connection', { detail: { state } }));
+    if (state === 'online') {
+      for (const conv of getState().conversations) {
+        if (conv.lastSeq) syncConversation(conv.id, conv.lastSeq);
+      }
+    }
+  });
+  window.addEventListener('ufot:unauthorized', () => {
+    setSession(null);
+    ws.close();
   });
 
-  // 通话控制器的提示统一走全局 toast（net 层不直连 UI，用注入回调）。
-  callController.onToast = (key) => toast.show(t(key));
-
-  if (mock) {
-    (window as Window & { __ufotMock?: unknown }).__ufotMock = {
-      goOffline: () => mock.simulateOffline(),
-      goOnline: () => mock.simulateOnline(),
-      sendWatermark: (convId: number, latestSeq?: number) => mock.sendWatermark(convId, latestSeq),
-      sendMailboxWatermark: (convId: number, mailboxSeq?: number) =>
-        mock.sendMailboxWatermark(convId, mailboxSeq),
-    };
+  function authenticate(session: Session): void {
+    setSession(session);
+    ws.resume();
   }
 
-  if (stored) net.start();
-}
+  async function logout(): Promise<void> {
+    const session = getSession();
+    if (session?.refresh_token) await auth.logout(session.refresh_token).catch(() => undefined);
+    ws.close();
+    setSession(null);
+  }
 
-// 后端 HTTP 根：显式 VITE_API_BASE 优先；否则同源。
-// 前端迁到 Netlify 而后端仍在源站时，构建期设 VITE_API_BASE=https://源站域名。
-export function resolveApiBase(): string {
-  const base = import.meta.env.VITE_API_BASE;
-  if (!base) return '';
-  try {
-    return new URL(base, location.href).origin;
-  } catch {
-    return '';
-  }
-}
-
-function resolveWsUrl(): string {
-  const explicit = import.meta.env.VITE_WS_URL;
-  if (explicit) return explicit;
-  // VITE_API_BASE 指定后端域名（前端与后端不同域时使用，如 Netlify + 源站）。
-  const base = resolveApiBase();
-  if (base) {
-    const scheme = base.startsWith('https:') ? 'wss:' : 'ws:';
-    return `${scheme}//${base.slice(base.indexOf('//') + 2)}/ws`;
-  }
-  if (typeof location === 'undefined') return 'ws://localhost:8080/ws';
-  if (import.meta.env.DEV) {
-    return `ws://${location.hostname}:8080/ws`;
-  }
-  const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
-  return `${scheme}://${location.host}/ws`;
+  const services: AppServices = {
+    http, auth, media, ws,
+    session: getSession, setSession, authenticate, logout,
+    connect: () => ws.connect(), disconnect: () => ws.close(),
+    sendMessage, retryMessage, editMessage, deleteMessage, recallMessage, forwardMessage,
+    sendRead, sendTyping, createConversation, selectConversation, syncConversation, upload,
+    handleFrame: handleFrameBound,
+  };
+  setAppServices(services);
+  return services;
 }
