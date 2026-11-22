@@ -154,10 +154,18 @@ jobs:
           echo "--- chatd boot log ---"; cat "$ROOT/chatd-boot.log"
           [ "$ok" -eq 1 ] || { echo "FAIL: real chatd did not become healthy"; exit 1; }
           echo "PASS: real chatd boot + healthz"
+          # Trigger a real write (guest login persists a user) so the lazy-
+          # opened SQLite DB file actually materializes with its migrated schema.
+          echo "=== bootstrap a real DB write (guest login) ==="
+          curl -sf --max-time 5 -X POST -H 'Content-Type: application/json' \
+            -d '{"nickname":"deploy-sim"}' http://127.0.0.1:8080/api/auth/guest \
+            -o "$ROOT/guest.json" && echo "guest login OK" || echo "guest login skipped (auth config)"
+          sleep 1
           sudo kill "$PID" 2>/dev/null || true
           wait "$PID" 2>/dev/null || true
           echo "=== real migrated DB size ==="
-          sudo ls -la "$UFOT_STATE"/*.db
+          sudo find "$UFOT_STATE" -maxdepth 2 -type f -printf '%s %p\n' | sort
+          echo "(if no DB yet, chatd uses lazy open; bootstrap a write below)"
           echo
           echo "=== FINAL footprint (with real binary, real migrated DB) ==="
           {
