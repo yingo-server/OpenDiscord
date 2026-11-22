@@ -299,7 +299,7 @@ export async function bootstrap(registry: HandlerRegistry): Promise<void> {
     engine,
     cache,
     client: net,
-    authApi: IS_MOCK ? createMockAuthApi() : createHttpAuthApi(),
+    authApi: IS_MOCK ? createMockAuthApi() : createHttpAuthApi(resolveApiBase()),
     authenticate,
     logout: () => {
       void doLogout();
@@ -322,9 +322,27 @@ export async function bootstrap(registry: HandlerRegistry): Promise<void> {
   if (stored) net.start();
 }
 
+// 后端 HTTP 根：显式 VITE_API_BASE 优先；否则同源。
+// 前端迁到 Netlify 而后端仍在源站时，构建期设 VITE_API_BASE=https://源站域名。
+export function resolveApiBase(): string {
+  const base = import.meta.env.VITE_API_BASE;
+  if (!base) return '';
+  try {
+    return new URL(base, location.href).origin;
+  } catch {
+    return '';
+  }
+}
+
 function resolveWsUrl(): string {
   const explicit = import.meta.env.VITE_WS_URL;
   if (explicit) return explicit;
+  // VITE_API_BASE 指定后端域名（前端与后端不同域时使用，如 Netlify + 源站）。
+  const base = resolveApiBase();
+  if (base) {
+    const scheme = base.startsWith('https:') ? 'wss:' : 'ws:';
+    return `${scheme}//${base.slice(base.indexOf('//') + 2)}/ws`;
+  }
   if (typeof location === 'undefined') return 'ws://localhost:8080/ws';
   if (import.meta.env.DEV) {
     return `ws://${location.hostname}:8080/ws`;

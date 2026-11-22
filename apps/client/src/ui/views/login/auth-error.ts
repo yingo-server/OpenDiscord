@@ -16,7 +16,9 @@ const KNOWN = new Set([
 export function authErrorText(error: unknown): string {
   if (error instanceof AuthError) {
     if (KNOWN.has(error.code)) return t(`auth.error.${error.code}`);
-    return error.message || t('auth.error.DEFAULT');
+    // 未知后端 code 一律显示通用文案：后端 message 可能含 driver / SQL /
+    // 协议等技术细节，不直接暴露给终端用户（"有的提示不该让用户看到"）。
+    return t('auth.error.DEFAULT');
   }
   if (error instanceof TypeError) {
     return t('auth.error.NETWORK');
