@@ -40,10 +40,10 @@ go_map() {
     }' "$GO" | sort -n -u
 }
 
-# 从 kinds.ts 提取 NAME: 数值
+# 从 kinds.ts 提取 NAME: 数值（每行可有多个键值对）
 ts_map() {
-  grep -oE '^[[:space:]]*[A-Z0-9_]+:[[:space:]]*[0-9]+,' "$TS" \
-    | sed -E 's/^[[:space:]]*([A-Z0-9_]+):[[:space:]]*([0-9]+),.*/\2 \1/' | sort -n -u
+  grep -oE '[A-Z0-9_]+:[[:space:]]*[0-9]+' "$TS" \
+    | sed -E 's/([A-Z0-9_]+):[[:space:]]*([0-9]+)/\2 \1/' | sort -n -u
 }
 
 go_map > "$tmp_go"
@@ -56,7 +56,7 @@ go_only=$(comm -23 "$tmp_go" "$tmp_ts")
 echo "== kinds.ts entries not in kinds.go =="
 # 401/402 在 kinds.go 有意保留双名注册（PRESENCE_ONLINE + SUBSCRIBE 别名，
 # 见 kinds.go 注释），TS 只用别名——不视为不一致。
-printf '%s\n' "$ts_only" | grep -v -E '^40[12] ' > "$tmp_bad"
+printf '%s\n' "$ts_only" | grep -v -E '^40[12] ' | grep -v '^[[:space:]]*$' > "$tmp_bad"
 if [ -s "$tmp_bad" ]; then
   sed 's/^/  /' "$tmp_bad"; fail=1
 else
