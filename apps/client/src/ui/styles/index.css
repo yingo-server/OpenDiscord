@@ -271,6 +271,20 @@
     border-color: rgb(var(--border-input));
   }
 
+  /* Fluent Button danger 变体：用官方组件的 CSS 自定义属性覆盖强调色 */
+  .ufot-danger-button {
+    --fuiButtonBackground: var(--danger-500);
+    --fuiButtonForegroundColor: var(--text-inverse);
+    --fuiButtonBackgroundHover: var(--danger-600);
+    --fuiButtonBackgroundPressed: var(--danger-700);
+  }
+  /* 官方 Input 错误态：边框 + 焦点环用危险色 */
+  .ufot-input-error {
+    --fuiInputBorderColor: rgb(var(--danger-500));
+    --fuiInputBorderColorHover: rgb(var(--danger-600));
+  }
+  .ufot-error-text { color: rgb(var(--danger-700)); }
+
   /* Fluent 统一焦点环：2px 强调色 + 2px 偏移。focus-visible 不依赖 outline:none 清零 */
   .fluent-focus {
     outline: 2px solid transparent;

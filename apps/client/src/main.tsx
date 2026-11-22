@@ -2,8 +2,13 @@
  * 入口只做三件事：注册 handlers + 注册 renderers + 挂载。
  * 任何业务逻辑/条件分支都不属于这里（接线在 app/bootstrap.ts）。
  */
-import { StrictMode } from 'react';
+import { StrictMode, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import {
+  FluentProvider,
+  webLightTheme,
+  webDarkTheme,
+} from '@fluentui/react-components';
 import './ui/styles/index.css';
 
 import { KINDS } from './net/protocol/kinds';
@@ -99,8 +104,26 @@ async function main(): Promise<void> {
   if (!container) throw new Error('#root not found');
   createRoot(container).render(
     <StrictMode>
-      <App />
+      <FluentApp />
     </StrictMode>,
+  );
+}
+
+/** Fluent 2 官方 Provider：把系统明暗主题同步给 Fluent 组件。 */
+function FluentApp() {
+  const [dark, setDark] = useState(
+    () => typeof matchMedia !== 'undefined' && matchMedia('(prefers-color-scheme: dark)').matches,
+  );
+  useEffect(() => {
+    const mq = matchMedia('(prefers-color-scheme: dark)');
+    const onChange = () => setDark(mq.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+  return (
+    <FluentProvider theme={dark ? webDarkTheme : webLightTheme} className="h-full">
+      <App />
+    </FluentProvider>
   );
 }
 

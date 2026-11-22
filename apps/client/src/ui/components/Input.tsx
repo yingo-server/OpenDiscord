@@ -1,18 +1,36 @@
 /**
- * Input（Fluent / WinUI 3）：label / error / hint / 前置图标 / 清除按钮。
- * Fluent TextBox：4px 圆角 + 强边框（--border-input，满足 3:1）+ focus 2px 强调环；
- * 错误态边框 + 文案双重提示（aria-invalid / aria-describedby）。
+ * Input —— 基于微软官方 @fluentui/react-components v9 的 Input / Label / Text。
+ * 保留本项目 API（label/error/hint/icon/onClear/onChange(value)），内部全用官方组件：
+ * 错误态用官方 Input 的 validationState="error" + 官方 Text 错误文案。
  */
-import { useId, type InputHTMLAttributes, type ReactNode } from 'react';
-import { CloseIcon } from './icons';
+import { useId, type ReactNode } from 'react';
+import {
+  Input as FluentInput,
+  Label,
+  Text,
+} from '@fluentui/react-components';
 
-export interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'onChange'> {
+export interface InputProps {
   label?: string;
   error?: string;
   hint?: ReactNode;
   icon?: ReactNode;
   onClear?: () => void;
   onChange?: (value: string) => void;
+  id?: string;
+  className?: string;
+  value?: string;
+  placeholder?: string;
+  type?: 'text' | 'password' | 'email' | 'tel' | 'number' | 'search' | 'url';
+  autoComplete?: string;
+  inputMode?: 'text' | 'numeric' | 'tel' | 'email' | 'url';
+  maxLength?: number;
+  disabled?: boolean;
+  onKeyDown?: (event: React.KeyboardEvent<HTMLInputElement>) => void;
+  onFocus?: (event: React.FocusEvent<HTMLInputElement>) => void;
+  onBlur?: (event: React.FocusEvent<HTMLInputElement>) => void;
+  'aria-label'?: string;
+  name?: string;
 }
 
 export function Input({
@@ -30,58 +48,24 @@ export function Input({
   const autoId = useId();
   const inputId = id ?? autoId;
   const errorId = `${inputId}-error`;
-  const describedBy = error ? errorId : undefined;
-
   return (
-    <div className="w-full">
-      {label && (
-        <label htmlFor={inputId} className="mb-1.5 block text-body-sm text-ink-secondary">
-          {label}
-        </label>
-      )}
-      <div className="relative">
-        {icon && (
-          <span className="pointer-events-none absolute inset-y-0 start-3 flex items-center text-ink-tertiary">
-            {icon}
-          </span>
-        )}
-        <input
-          id={inputId}
-          value={value}
-          onChange={(event) => onChange?.(event.target.value)}
-          aria-invalid={error ? true : undefined}
-          aria-describedby={describedBy}
-          className={[
-            'fluent-focus h-control-md w-full rounded-sm border bg-surface text-body text-ink',
-            'transition-[border-color,box-shadow] duration-micro placeholder:text-ink-tertiary',
-            icon ? 'ps-9 pe-3' : 'px-3',
-            onClear && value ? 'pe-10' : '',
-            error
-              ? 'border-danger-500 focus:border-danger-500'
-              : 'border-line-input hover:border-ink/40 focus:border-accent',
-            className,
-          ]
-            .filter(Boolean)
-            .join(' ')}
-          {...rest}
-        />
-        {onClear && value ? (
-          <button
-            type="button"
-            onClick={onClear}
-            aria-label="clear"
-            className="fluent-focus absolute inset-y-0 end-2 my-auto flex h-6 w-6 items-center justify-center rounded-sm text-ink-tertiary hover:bg-ink/[0.06] hover:text-ink"
-          >
-            <CloseIcon size={14} />
-          </button>
-        ) : null}
-      </div>
+    <div className={`w-full ${className}`}>
+      {label && <Label htmlFor={inputId}>{label}</Label>}
+      <FluentInput
+        id={inputId}
+        value={value}
+        onChange={(_, data) => onChange?.(data.value)}
+        contentBefore={icon ? (icon as React.ReactElement) : undefined}
+        contentAfter={onClear && value ? <button type="button" onClick={onClear} aria-label="clear">✕</button> : undefined}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={error ? errorId : undefined}
+        className={error ? 'ufot-input-error' : undefined}
+        {...rest}
+      />
       {error ? (
-        <p id={errorId} className="mt-1 text-caption text-danger-500">
-          {error}
-        </p>
+        <Text id={errorId} size={200} className="ufot-error-text">{error}</Text>
       ) : hint ? (
-        <p className="mt-1 text-caption text-ink-tertiary">{hint}</p>
+        <Text size={200}>{hint}</Text>
       ) : null}
     </div>
   );

@@ -1,49 +1,38 @@
 /**
- * IconButton（Fluent）：统一图标按钮外壳，收敛 40/44px 点击区、hover / active /
- * focus-visible / disabled 状态，避免每个视图重复手写圆形按钮。
- * 业务按钮只需传 aria-label、图标与 onClick。
+ * IconButton —— 基于微软官方 @fluentui/react-components v9 的 icon-only Button。
  */
-import type { ButtonHTMLAttributes, ReactNode } from 'react';
+import type { ReactElement, MouseEventHandler } from 'react';
+import { Button as FluentButton } from '@fluentui/react-components';
 
-export interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+export interface IconButtonProps {
   label: string;
-  icon: ReactNode;
+  icon: ReactElement;
   size?: 'sm' | 'md' | 'lg';
+  onClick?: MouseEventHandler<HTMLButtonElement>;
+  className?: string;
+  disabled?: boolean;
+  title?: string;
+  'aria-current'?: 'page' | undefined;
 }
 
-const SIZE: Record<NonNullable<IconButtonProps['size']>, string> = {
-  sm: 'h-9 w-9',
-  md: 'h-10 w-10',
-  lg: 'h-11 w-11',
-};
+const FSIZE = { sm: 'small', md: 'medium', lg: 'large' } as const;
 
 export function IconButton({
   label,
   icon,
   size = 'md',
   className = '',
-  type = 'button',
   ...rest
 }: IconButtonProps) {
   return (
-    <button
-      type={type}
+    <FluentButton
+      appearance="subtle"
+      size={FSIZE[size]}
+      icon={icon}
       aria-label={label}
       title={label}
-      className={[
-        'inline-flex shrink-0 items-center justify-center rounded-md text-ink-secondary',
-        'transition-colors duration-micro ease-out',
-        'hover:bg-ink/[0.06] hover:text-ink active:bg-ink/[0.1]',
-        'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus',
-        'disabled:cursor-not-allowed disabled:opacity-40',
-        SIZE[size],
-        className,
-      ]
-        .filter(Boolean)
-        .join(' ')}
+      className={className}
       {...rest}
-    >
-      {icon}
-    </button>
+    />
   );
 }
