@@ -6,6 +6,7 @@
 import { useRef, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import type { MessageStatus } from '../../core/types';
 import { t } from '../i18n';
+import { IconButton } from './IconButton';
 import { CheckIcon, DoubleCheckIcon, SpinnerIcon } from './icons';
 
 export interface BubbleProps {
@@ -117,12 +118,13 @@ export function Bubble({
           <span className="nums">{timeLabel}</span>
           {mine && status ? <StatusMark status={status} /> : null}
           {error ? (
-            <button
-              type="button"
-              onClick={onRetry}
+            <IconButton
+              label={t('chat.failed')}
               title={error || t('chat.failed')}
-              aria-label={t('chat.failed')}
-              className="fluent-focus ms-0.5 inline-flex h-3.5 w-3.5 rounded-full bg-danger-500 ring-2 ring-danger-500/20 transition-transform duration-micro hover:scale-110"
+              size="sm"
+              icon={<span className="block h-2 w-2 rounded-full bg-danger-500" />}
+              onClick={onRetry}
+              className="ms-0.5 h-3.5 w-3.5 rounded-full ring-2 ring-danger-500/20"
             />
           ) : null}
         </div>

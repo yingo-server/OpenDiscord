@@ -11,6 +11,7 @@ import { getAppServices } from '../../services/app-services';
 import { Avatar } from '../../components/Avatar';
 import { Button } from '../../components/Button';
 import { IconButton } from '../../components/IconButton';
+import { ToggleButton } from '@fluentui/react-components';
 import { BackIcon, LogoutIcon, MonitorIcon, MoonIcon, SunIcon, TrashIcon } from '../../components/icons';
 import { t } from '../../i18n';
 import { navigate } from '../../router';
@@ -156,24 +157,24 @@ export function Settings() {
 
         {/* 数据 */}
         <Card title={t('settings.data')}>
-          <button
-            type="button"
+          <Button
+            variant="danger"
+            icon={<TrashIcon size={18} />}
             onClick={() => setConfirm('clear')}
-            className="flex min-h-11 w-full items-center gap-2 rounded-md px-2 text-start text-body text-danger-500 transition-colors duration-micro hover:bg-danger-50"
+            className="w-full justify-start"
           >
-            <TrashIcon size={18} />
             {t('settings.clearCache')}
-          </button>
+          </Button>
         </Card>
 
-        <button
-          type="button"
+        <Button
+          variant="danger"
+          icon={<LogoutIcon size={18} />}
           onClick={() => setConfirm('logout')}
-          className="flex min-h-11 w-full items-center justify-center gap-2 rounded-md border border-line-input bg-surface text-body text-danger-500 transition-colors duration-micro hover:bg-danger-50"
+          className="w-full"
         >
-          <LogoutIcon size={18} />
           {t('settings.logout')}
-        </button>
+        </Button>
 
         <div className="pb-6 text-center text-caption text-ink-tertiary">
           <p>
@@ -237,17 +238,14 @@ function Segment({
   children: ReactNode;
 }) {
   return (
-    <button
-      type="button"
+    <ToggleButton
+      checked={active}
       onClick={onClick}
-      aria-pressed={active}
-      className={[
-        'inline-flex h-8 items-center justify-center rounded-sm px-3 text-body-sm transition-colors duration-micro',
-        active ? 'fluent-focus bg-surface text-ink shadow-sm' : 'text-ink-tertiary hover:text-ink',
-      ].join(' ')}
+      appearance="subtle"
+      className="h-8 justify-center gap-1.5 px-3 text-body-sm"
     >
       {children}
-    </button>
+    </ToggleButton>
   );
 }
 

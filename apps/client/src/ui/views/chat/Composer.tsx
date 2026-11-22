@@ -10,6 +10,7 @@ import { selectCanSendMessage } from '../../../core/selectors';
 import type { ChatMessage } from '../../../core/types';
 import { getAppServices } from '../../services/app-services';
 import { t } from '../../i18n';
+import { Textarea } from '@fluentui/react-components';
 import { AttachIcon, CloseIcon, SendIcon } from '../../components/icons';
 import { IconButton } from '../../components/IconButton';
 import { toast } from '../../components/Toast';
@@ -125,14 +126,11 @@ export function Composer({ convId, replyTo, replySenderName, onCancelReply, onSe
             <p className="text-caption text-accent">{t('chat.replyTo', { name: replySenderName ?? '' })}</p>
             <p className="truncate text-caption text-ink-tertiary">{previewOfMessage(replyTo)}</p>
           </div>
-          <button
-            type="button"
-            aria-label={t('chat.cancelReply')}
+          <IconButton
+            label={t('chat.cancelReply')}
+            icon={<CloseIcon size={14} />}
             onClick={onCancelReply}
-            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-ink-tertiary hover:bg-surface"
-          >
-            <CloseIcon size={14} />
-          </button>
+          />
         </div>
       ) : null}
 
@@ -162,12 +160,13 @@ export function Composer({ convId, replyTo, replySenderName, onCancelReply, onSe
               />
             </div>
           ) : null}
-          <textarea
+          <Textarea
             ref={textareaRef}
             value={text}
             rows={1}
             maxLength={maxLength}
-            onChange={(event) => setDraft(convId, event.target.value)}
+            resize="none"
+            onChange={(_, data) => setDraft(convId, data.value)}
             onKeyDown={(event) => {
               const isMobile = window.matchMedia('(max-width: 767px)').matches;
               if (event.key === 'Enter' && !event.shiftKey && !isMobile) {
@@ -177,7 +176,7 @@ export function Composer({ convId, replyTo, replySenderName, onCancelReply, onSe
             }}
             placeholder={t('chat.placeholder')}
             aria-label={t('chat.placeholder')}
-            className="fluent-focus max-h-[40vh] min-h-[44px] w-full resize-none overflow-y-auto rounded-md border border-line-input bg-surface ps-3 pe-14 py-2.5 text-body text-ink placeholder:text-ink-tertiary transition-colors duration-micro hover:border-ink/40 focus:border-accent"
+            className="max-h-[40vh] min-h-[44px] w-full overflow-y-auto ps-3 pe-14 py-2.5 text-body"
           />
           {showCounter ? (
             <span
@@ -190,15 +189,13 @@ export function Composer({ convId, replyTo, replySenderName, onCancelReply, onSe
           ) : null}
         </div>
 
-        <button
-          type="button"
+        <IconButton
+          label={t('chat.send')}
+          icon={<SendIcon size={20} />}
           onClick={send}
           disabled={!text.trim() || !canSend}
-          aria-label={t('chat.send')}
-          className="fluent-focus inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-accent text-accent-fg transition-colors duration-micro hover:bg-accent-hover active:bg-accent-pressed disabled:cursor-not-allowed disabled:bg-primary-100 disabled:text-ink/40 dark:disabled:bg-primary-50"
-        >
-          <SendIcon size={20} />
-        </button>
+          className="h-11 w-11 shrink-0"
+        />
       </div>
     </div>
   );

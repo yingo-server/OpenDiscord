@@ -3,6 +3,7 @@
  * 搜索、置顶/静音快捷操作、空状态与骨架屏。
  */
 import { memo, useMemo, useRef, useState } from 'react';
+import { Tab, TabList } from '@fluentui/react-components';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useConvStore } from '../../../core/stores/conv-store';
 import { usePresenceStore } from '../../../core/stores/presence-store';
@@ -13,6 +14,8 @@ import { NetworkBar } from '../../components/NetworkBar';
 import { ConvListSkeleton } from '../../components/Skeleton';
 import { MuteIcon, PinIcon, PlusIcon, SearchIcon, SettingsIcon } from '../../components/icons';
 import { IconButton } from '../../components/IconButton';
+import { Button } from '../../components/Button';
+import { Input } from '../../components/Input';
 import { t, type I18nKey } from '../../i18n';
 import { formatConvTime } from '../../utils/format';
 import { navigate } from '../../router';
@@ -94,16 +97,13 @@ export function ConvList({ className = '' }: { className?: string }) {
 
       <div className="shrink-0 px-3 py-2">
         <div className="relative">
-          <span className="pointer-events-none absolute inset-y-0 start-3 flex items-center text-ink-tertiary">
-            <SearchIcon size={16} />
-          </span>
-          <input
+          <Input
             type="search"
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={setQuery}
             placeholder={t('conv.search')}
             aria-label={t('conv.search')}
-            className="fluent-focus h-9 w-full rounded-sm border border-line-input bg-surface ps-9 pe-3 text-body-sm text-ink placeholder:text-ink-tertiary transition-colors duration-micro hover:border-ink/40 focus:border-accent"
+            icon={<SearchIcon size={16} />}
           />
         </div>
       </div>
@@ -195,30 +195,22 @@ const ConvRow = memo(function ConvRow({ convId }: { convId: number }) {
       </div>
 
       <div className="absolute end-2 top-1 hidden items-center gap-0.5 rounded-md border border-line bg-elevated p-0.5 shadow-md group-hover:flex">
-        <button
-          type="button"
+        <IconButton
+          label={conv.pinned ? t('conv.unpin') : t('conv.pin')}
+          icon={<PinIcon size={16} />}
           onClick={(event) => {
             event.stopPropagation();
             useConvStore.getState().togglePin(convId);
           }}
-          title={conv.pinned ? t('conv.unpin') : t('conv.pin')}
-          aria-label={conv.pinned ? t('conv.unpin') : t('conv.pin')}
-          className="inline-flex h-7 w-7 items-center justify-center rounded-sm text-ink-secondary hover:bg-surface-2"
-        >
-          <PinIcon size={16} />
-        </button>
-        <button
-          type="button"
+        />
+        <IconButton
+          label={conv.muted ? t('conv.unmute') : t('conv.mute')}
+          icon={<MuteIcon size={16} />}
           onClick={(event) => {
             event.stopPropagation();
             useConvStore.getState().toggleMute(convId);
           }}
-          title={conv.muted ? t('conv.unmute') : t('conv.mute')}
-          aria-label={conv.muted ? t('conv.unmute') : t('conv.mute')}
-          className="inline-flex h-7 w-7 items-center justify-center rounded-sm text-ink-secondary hover:bg-surface-2"
-        >
-          <MuteIcon size={16} />
-        </button>
+        />
       </div>
     </div>
   );
@@ -246,13 +238,9 @@ function EmptyConv({ search, onCreate }: { search: boolean; onCreate: () => void
         {t(search ? 'conv.searchEmpty.desc' : 'conv.empty.desc')}
       </p>
       {!search ? (
-        <button
-          type="button"
-          onClick={onCreate}
-          className="fluent-focus mt-4 rounded-md bg-accent px-4 py-2 text-body text-accent-fg transition-colors duration-micro hover:bg-accent-hover active:bg-accent-pressed"
-        >
+        <Button variant="primary" onClick={onCreate} className="mt-4">
           {t('conv.empty.action')}
-        </button>
+        </Button>
       ) : null}
     </div>
   );
@@ -320,57 +308,40 @@ function CreateConvDialog({ onClose }: { onClose: () => void }) {
         </h2>
         <p className="mt-1 text-body-sm text-ink-tertiary">{t('conv.create.hint')}</p>
 
-        <div className="mt-4 flex rounded-md bg-surface-2 p-0.5" role="tablist">
-          {([1, 2] as const).map((value) => (
-            <button
-              key={value}
-              type="button"
-              role="tab"
-              aria-selected={mode === value}
-              onClick={() => {
-                setMode(value);
-                setError('');
-              }}
-              className={[
-                'inline-flex h-8 flex-1 items-center justify-center rounded-sm text-body-sm transition-colors duration-micro',
-                mode === value
-                  ? 'fluent-focus bg-surface text-ink shadow-sm'
-                  : 'text-ink-tertiary hover:text-ink',
-              ].join(' ')}
-            >
-              {t(value === 1 ? 'conv.create.direct' : 'conv.create.group')}
-            </button>
-          ))}
-        </div>
+        <TabList
+          className="mt-4 rounded-md bg-surface-2 p-0.5"
+          selectedValue={mode}
+          onTabSelect={(_, data) => {
+            setMode(data.value as 1 | 2);
+            setError('');
+          }}
+        >
+          <Tab value={1} className="flex-1">{t('conv.create.direct')}</Tab>
+          <Tab value={2} className="flex-1">{t('conv.create.group')}</Tab>
+        </TabList>
 
-        <label className="mt-4 block text-body-sm text-ink-secondary" htmlFor="create-conv-uid">
-          {t('conv.create.uid')}
-        </label>
-        <input
+        <Input
           id="create-conv-uid"
+          label={t('conv.create.uid')}
           type="text"
           inputMode="numeric"
           value={uid}
-          onChange={(event) => setUid(event.target.value.replace(/[^0-9]/g, ''))}
+          onChange={(value) => setUid(value.replace(/[^0-9]/g, ''))}
           placeholder={t('conv.create.uidPlaceholder')}
-          className="fluent-focus mt-1.5 h-control-md w-full rounded-sm border border-line-input bg-surface px-3 text-body text-ink placeholder:text-ink-tertiary transition-colors duration-micro hover:border-ink/40 focus:border-accent"
+          className="mt-1.5"
         />
 
         {mode === 2 ? (
-          <>
-            <label className="mt-3 block text-body-sm text-ink-secondary" htmlFor="create-conv-title-input">
-              {t('conv.create.groupTitle')}
-            </label>
-            <input
-              id="create-conv-title-input"
-              type="text"
-              value={title}
-              maxLength={30}
-              onChange={(event) => setTitle(event.target.value)}
-              placeholder={t('conv.create.groupTitlePlaceholder')}
-              className="fluent-focus mt-1.5 h-control-md w-full rounded-sm border border-line-input bg-surface px-3 text-body text-ink placeholder:text-ink-tertiary transition-colors duration-micro hover:border-ink/40 focus:border-accent"
-            />
-          </>
+          <Input
+            id="create-conv-title-input"
+            label={t('conv.create.groupTitle')}
+            type="text"
+            value={title}
+            maxLength={30}
+            onChange={setTitle}
+            placeholder={t('conv.create.groupTitlePlaceholder')}
+            className="mt-3"
+          />
         ) : null}
 
         {error ? (
@@ -380,21 +351,12 @@ function CreateConvDialog({ onClose }: { onClose: () => void }) {
         ) : null}
 
         <div className="mt-6 flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="fluent-focus h-control-md rounded-md border border-line-input bg-surface px-4 text-body text-ink hover:bg-surface-2 active:bg-surface-2"
-          >
+          <Button variant="secondary" onClick={onClose}>
             {t('common.cancel')}
-          </button>
-          <button
-            type="button"
-            onClick={submit}
-            disabled={sending}
-            className="fluent-focus h-control-md rounded-md bg-accent px-4 text-body text-accent-fg hover:bg-accent-hover active:bg-accent-pressed disabled:opacity-60"
-          >
+          </Button>
+          <Button variant="primary" onClick={submit} loading={sending}>
             {t('conv.create.submit')}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

@@ -9,7 +9,9 @@ import { useEffect, useRef, useState } from 'react';
 import { useConvStore } from '../../../core/stores/conv-store';
 import { useSessionStore } from '../../../core/stores/session-store';
 import { t } from '../../i18n';
+import { Button as FluentButton } from '@fluentui/react-components';
 import { Avatar } from '../../components/Avatar';
+import { IconButton } from '../../components/IconButton';
 import { HangupIcon, MicIcon, MicOffIcon, PhoneIcon, SpeakerIcon, VideoIcon } from '../../components/icons';
 import { useCall } from './useCall';
 
@@ -210,31 +212,27 @@ interface ControlsProps {
 }
 
 function Controls({ state, isVideo, muted, onAccept, onReject, onHangup, onToggleMute }: ControlsProps) {
-  const round = 'inline-flex h-12 w-12 items-center justify-center rounded-full transition-colors';
+  const round = 'h-12 w-12 rounded-full';
 
   if (state === 'incoming') {
     return (
       <div className="flex items-center justify-center gap-16 px-6 pb-10">
         <div className="flex flex-col items-center gap-2">
-          <button
-            type="button"
+          <IconButton
+            label={t('call.reject')}
+            icon={<HangupIcon size={22} />}
             onClick={onReject}
-            aria-label={t('call.reject')}
-            className={`${round} bg-danger-500 text-white hover:bg-danger-600`}
-          >
-            <HangupIcon size={22} />
-          </button>
+            className={`${round} bg-danger-500 text-white`}
+          />
           <span className="text-caption text-white/70">{t('call.reject')}</span>
         </div>
         <div className="flex flex-col items-center gap-2">
-          <button
-            type="button"
+          <IconButton
+            label={t('call.accept')}
+            icon={isVideo ? <VideoIcon size={22} /> : <PhoneIcon size={22} />}
             onClick={onAccept}
-            aria-label={t('call.accept')}
-            className={`${round} bg-success-600 text-white hover:bg-success-500`}
-          >
-            {isVideo ? <VideoIcon size={22} /> : <PhoneIcon size={22} />}
-          </button>
+            className={`${round} bg-success-600 text-white`}
+          />
           <span className="text-caption text-white/70">{t('call.accept')}</span>
         </div>
       </div>
@@ -246,41 +244,37 @@ function Controls({ state, isVideo, muted, onAccept, onReject, onHangup, onToggl
     <div className="flex items-center justify-center gap-10 px-6 pb-10">
       {canMute ? (
         <div className="flex flex-col items-center gap-2">
-          <button
-            type="button"
-            onClick={onToggleMute}
+          <FluentButton
+            appearance="subtle"
             aria-label={muted ? t('call.unmute') : t('call.mute')}
+            title={muted ? t('call.unmute') : t('call.mute')}
             aria-pressed={muted}
-            className={`${round} ${muted ? 'bg-white text-[#0b0d12]' : 'bg-white/15 text-white hover:bg-white/25'}`}
-          >
-            {muted ? <MicOffIcon size={22} /> : <MicIcon size={22} />}
-          </button>
+            icon={muted ? <MicOffIcon size={22} /> : <MicIcon size={22} />}
+            onClick={onToggleMute}
+            className={`${round} ${muted ? 'bg-white text-[#0b0d12]' : 'bg-white/15 text-white'}`}
+          />
           <span className="text-caption text-white/70">{muted ? t('call.muted') : t('call.mute')}</span>
         </div>
       ) : null}
 
       {canMute && !isVideo ? (
         <div className="flex flex-col items-center gap-2">
-          <button
-            type="button"
-            aria-label={t('call.speaker')}
-            className={`${round} bg-white/15 text-white hover:bg-white/25`}
-          >
-            <SpeakerIcon size={22} />
-          </button>
+          <IconButton
+            label={t('call.speaker')}
+            icon={<SpeakerIcon size={22} />}
+            className={`${round} bg-white/15 text-white`}
+          />
           <span className="text-caption text-white/70">{t('call.speaker')}</span>
         </div>
       ) : null}
 
       <div className="flex flex-col items-center gap-2">
-        <button
-          type="button"
+        <IconButton
+          label={t('call.hangup')}
+          icon={<HangupIcon size={22} />}
           onClick={onHangup}
-          aria-label={t('call.hangup')}
-          className={`${round} bg-danger-500 text-white hover:bg-danger-600`}
-        >
-          <HangupIcon size={22} />
-        </button>
+          className={`${round} bg-danger-500 text-white`}
+        />
         <span className="text-caption text-white/70">{state === 'active' ? t('call.hangup') : t('call.cancel')}</span>
       </div>
     </div>

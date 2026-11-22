@@ -3,6 +3,7 @@
  * 各 Provider 只负责自己的表单，成功后统一走 services.authenticate。
  */
 import { useState, type ComponentType } from 'react';
+import { Tab, TabList } from '@fluentui/react-components';
 import { t } from '../../i18n';
 import { PhoneLogin } from './PhoneLogin';
 import { EmailLogin } from './EmailLogin';
@@ -34,29 +35,18 @@ export function LoginScreen() {
         </div>
 
         <div className="fluent-card p-4 tablet:p-6">
-          <div role="tablist" aria-label={t('auth.title')} className="mb-5 flex border-b border-line">
-            {TABS.map(({ id, labelKey }) => {
-              const active = id === tab;
-              return (
-                <button
-                  key={id}
-                  role="tab"
-                  aria-selected={active}
-                  type="button"
-                  onClick={() => setTab(id)}
-                  className={[
-                    'relative flex-1 whitespace-nowrap px-1 py-2.5 text-body-sm transition-colors duration-micro',
-                    active ? 'font-semibold text-accent' : 'text-ink-secondary hover:text-ink',
-                  ].join(' ')}
-                >
-                  {t(labelKey)}
-                  {active ? (
-                    <span className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-accent" aria-hidden="true" />
-                  ) : null}
-                </button>
-              );
-            })}
-          </div>
+          <TabList
+            aria-label={t('auth.title')}
+            className="mb-5 border-b border-line"
+            selectedValue={tab}
+            onTabSelect={(_, data) => setTab(data.value as TabId)}
+          >
+            {TABS.map(({ id, labelKey }) => (
+              <Tab key={id} value={id} className="flex-1 whitespace-nowrap">
+                {t(labelKey)}
+              </Tab>
+            ))}
+          </TabList>
 
           <div role="tabpanel">
             <Active />

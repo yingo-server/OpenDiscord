@@ -15,6 +15,7 @@ import { Avatar } from '../../components/Avatar';
 import { NetworkBar } from '../../components/NetworkBar';
 import { ChatSkeleton } from '../../components/Skeleton';
 import { BackIcon, MuteIcon, MoreIcon, PhoneIcon, PinIcon, SpinnerIcon, VideoIcon } from '../../components/icons';
+import { Button } from '../../components/Button';
 import { IconButton } from '../../components/IconButton';
 import { toast } from '../../components/Toast';
 import { navigate } from '../../router';
@@ -59,17 +60,14 @@ function ChatSession({ convId }: { convId: number }) {
     return (
       <section className="flex min-h-0 flex-1 flex-col bg-page">
         <div className="pt-safe flex h-14 items-center border-b border-line bg-surface px-3">
-          <button
-            type="button"
+          <IconButton
+            label={t('common.back')}
             onClick={() => {
               useConvStore.getState().setActive(null);
               navigate('/chats');
             }}
-            aria-label={t('common.back')}
-            className="fluent-focus inline-flex h-10 w-10 items-center justify-center rounded-md text-ink-secondary hover:bg-ink/[0.06] tablet:hidden"
-          >
-            <BackIcon size={22} />
-          </button>
+            icon={<BackIcon size={22} />}
+          />
           <span className="fluent-title">{t('chat.selectConv')}</span>
         </div>
         <div className="flex flex-1 items-center justify-center">
@@ -92,17 +90,14 @@ function ChatSession({ convId }: { convId: number }) {
   return (
     <section className="flex min-h-0 flex-1 flex-col bg-page" aria-label={title}>
       <header className="pt-safe flex h-14 shrink-0 items-center gap-2 border-b border-line bg-surface px-2 tablet:px-4">
-        <button
-          type="button"
+        <IconButton
+          label={t('common.back')}
           onClick={() => {
             useConvStore.getState().setActive(null);
             navigate('/chats');
           }}
-          aria-label={t('common.back')}
-          className="fluent-focus inline-flex h-10 w-10 items-center justify-center rounded-md text-ink-secondary hover:bg-ink/[0.06] tablet:hidden"
-        >
-          <BackIcon size={22} />
-        </button>
+          icon={<BackIcon size={22} />}
+        />
 
         <Avatar
           name={title}
@@ -221,24 +216,22 @@ function MoreMenu({ convId, pinned, muted }: { convId: number; pinned: boolean; 
             aria-label={t('common.more')}
             className="fluent-flyout absolute end-0 top-11 z-menu w-40 animate-scale-in py-1"
           >
-            <button
-              type="button"
-              role="menuitem"
+            <Button
+              variant="ghost"
+              icon={<PinIcon size={18} />}
               onClick={() => toggle(() => useConvStore.getState().togglePin(convId))}
-              className="flex h-10 w-full items-center gap-2.5 px-3 text-start text-body-sm text-ink transition-colors duration-micro hover:bg-surface-2"
+              className="h-10 w-full justify-start gap-2.5 text-start text-body-sm text-ink"
             >
-              <PinIcon size={18} />
               {pinned ? t('conv.unpin') : t('conv.pin')}
-            </button>
-            <button
-              type="button"
-              role="menuitem"
+            </Button>
+            <Button
+              variant="ghost"
+              icon={<MuteIcon size={18} />}
               onClick={() => toggle(() => useConvStore.getState().toggleMute(convId))}
-              className="flex h-10 w-full items-center gap-2.5 px-3 text-start text-body-sm text-ink transition-colors duration-micro hover:bg-surface-2"
+              className="h-10 w-full justify-start gap-2.5 text-start text-body-sm text-ink"
             >
-              <MuteIcon size={18} />
               {muted ? t('conv.unmute') : t('conv.mute')}
-            </button>
+            </Button>
           </div>
         </>
       ) : null}

@@ -21,8 +21,10 @@ import { useSessionStore } from '../../../core/stores/session-store';
 import { selectIsMine } from '../../../core/selectors';
 import type { ChatMessage, ConvRecord } from '../../../core/types';
 import { getRenderer, getRendererChrome } from '../../renderers/registry';
+import { Checkbox } from '@fluentui/react-components';
 import { Bubble } from '../../components/Bubble';
 import { Avatar } from '../../components/Avatar';
+import { Button } from '../../components/Button';
 import { SpinnerIcon, AlertIcon, CopyIcon, FlagIcon, ForwardIcon, ReplyIcon, SelectIcon, TrashIcon } from '../../components/icons';
 import { t } from '../../i18n';
 import { formatDayDivider, formatTime } from '../../utils/format';
@@ -302,16 +304,17 @@ export function MessageList({ convId, onReply, scrollSignal = 0 }: MessageListPr
       ) : null}
 
       {!atBottom && newCount > 0 ? (
-        <button
-          type="button"
+        <Button
+          variant="primary"
+          size="sm"
           onClick={() => {
             virtualizer.scrollToIndex(ids.length - 1, { align: 'end' });
             setNewCount(0);
           }}
-          className="fluent-focus absolute bottom-3 end-4 z-sticky inline-flex items-center gap-1.5 rounded-full bg-accent px-3 py-1.5 text-caption text-accent-fg shadow-md animate-slide-up hover:bg-accent-hover"
+          className="absolute bottom-3 end-4 z-sticky rounded-full shadow-md animate-slide-up"
         >
           ↓ {t('chat.newMessages', { count: newCount })}
-        </button>
+        </Button>
       ) : null}
 
       {menu ? (
@@ -374,24 +377,15 @@ function SelectBar({
       role="toolbar"
       aria-label={t('chat.selectMode.title', { count })}
     >
-      <button
-        type="button"
-        onClick={onCancel}
-        className="fluent-focus h-9 rounded-sm px-4 text-body-sm text-ink-secondary hover:bg-ink/[0.06]"
-      >
+      <Button variant="ghost" onClick={onCancel}>
         {t('chat.select.cancel')}
-      </button>
+      </Button>
       <span className="text-body-sm text-ink-tertiary">
         {t('chat.selectMode.title', { count })}
       </span>
-      <button
-        type="button"
-        onClick={onForward}
-        disabled={count === 0}
-        className="fluent-focus h-9 rounded-sm bg-accent px-4 text-body-sm text-accent-fg hover:bg-accent-hover disabled:opacity-40"
-      >
+      <Button variant="primary" onClick={onForward} disabled={count === 0}>
         {t('chat.select.forward')}
-      </button>
+      </Button>
     </div>
   );
 }
@@ -436,16 +430,16 @@ function ForwardPanel({
           const conv = convs[convId];
           if (!conv) return null;
           return (
-            <button
+            <Button
               key={convId}
-              type="button"
+              variant="ghost"
               onClick={() => void forward(convId)}
               disabled={sending}
-              className="flex h-12 w-full items-center gap-3 px-3 text-start transition-colors duration-micro hover:bg-surface-2 disabled:opacity-50"
+              icon={<Avatar name={conv.title} size="sm" />}
+              className="h-12 w-full justify-start gap-3 text-start"
             >
-              <Avatar name={conv.title} size="sm" />
               <span className="min-w-0 flex-1 truncate text-body-sm text-ink">{conv.title}</span>
-            </button>
+            </Button>
           );
         })}
       </div>
@@ -499,19 +493,12 @@ const MessageRow = memo(function MessageRow({
 
       <div className="flex items-center">
         {selectMode ? (
-          <button
-            type="button"
-            role="checkbox"
-            aria-checked={selected}
+          <Checkbox
+            checked={selected}
             aria-label={t('chat.select')}
-            onClick={() => onToggleSelect?.(id)}
-            className={[
-              'ms-2 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border transition-colors duration-micro',
-              selected ? 'border-accent bg-accent text-accent-fg' : 'border-line-input bg-surface text-ink-tertiary',
-            ].join(' ')}
-          >
-            {selected ? '✓' : ''}
-          </button>
+            onChange={() => onToggleSelect?.(id)}
+            className="ms-2 shrink-0"
+          />
         ) : null}
 
         {!Renderer ? null : plain ? (
@@ -724,19 +711,15 @@ function MessageMenu({
         onClick={(event) => event.stopPropagation()}
       >
         {items.map((item) => (
-          <button
+          <Button
             key={item.key}
-            type="button"
-            role="menuitem"
+            variant="ghost"
+            icon={<span className="text-current opacity-80">{item.icon}</span>}
             onClick={item.action}
-            className={[
-              'flex h-10 w-full items-center gap-2.5 px-3 text-start text-body-sm transition-colors duration-micro hover:bg-ink/[0.06]',
-              item.danger ? 'text-danger-500' : 'text-ink',
-            ].join(' ')}
+            className={`h-10 w-full justify-start gap-2.5 text-start text-body-sm ${item.danger ? 'text-danger-500' : 'text-ink'}`}
           >
-            <span className="text-current opacity-80">{item.icon}</span>
             {item.label}
-          </button>
+          </Button>
         ))}
       </div>
     </div>,
