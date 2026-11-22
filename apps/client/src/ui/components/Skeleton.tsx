@@ -1,5 +1,6 @@
 /**
- * Skeleton（§3.8）：形状与真实内容一一对应；300ms 延迟 + 最少 300ms（§5.3）。
+ * Skeleton（Fluent / WinUI 3）：形状与真实内容一一对应；300ms 延迟 + 最少 300ms（§5.3）。
+ * 骨架底色由 --bg-surface-2 / --bg-elevated 令牌驱动，暗色主题自动适配。
  */
 import { useSkeletonVisible } from '../hooks/useDelayedFlag';
 

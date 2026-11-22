@@ -26,14 +26,14 @@ export function LoginScreen() {
     <div className="flex min-h-[100dvh] flex-col items-center justify-center overflow-y-auto bg-page px-4 py-8">
       <div className="w-full max-w-[400px]">
         <div className="mb-8 flex flex-col items-center text-center">
-          <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-primary-500 text-title text-ink-inverse shadow-md">
-            OC
+          <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-accent text-accent-fg shadow-md" aria-hidden="true">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 2.6 21.8 20H2.2L12 2.6Z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"/><path d="M12 9.4 17.4 19H6.6L12 9.4Z" fill="currentColor" fillOpacity="0.4"/></svg>
           </div>
-          <h1 className="text-display text-ink">{t('auth.title')}</h1>
+          <h1 className="fluent-title">{t('auth.title')}</h1>
           <p className="mt-1 text-body-sm text-ink-tertiary">{t('auth.subtitle')}</p>
         </div>
 
-        <div className="rounded-xl border border-line bg-surface p-4 shadow-sm tablet:p-6">
+        <div className="fluent-card p-4 tablet:p-6">
           <div role="tablist" aria-label={t('auth.title')} className="mb-5 flex border-b border-line">
             {TABS.map(({ id, labelKey }) => {
               const active = id === tab;
@@ -46,12 +46,12 @@ export function LoginScreen() {
                   onClick={() => setTab(id)}
                   className={[
                     'relative flex-1 whitespace-nowrap px-1 py-2.5 text-body-sm transition-colors duration-micro',
-                    active ? 'font-semibold text-primary-500' : 'text-ink-secondary hover:text-ink',
+                    active ? 'font-semibold text-accent' : 'text-ink-secondary hover:text-ink',
                   ].join(' ')}
                 >
                   {t(labelKey)}
                   {active ? (
-                    <span className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-primary-500" aria-hidden="true" />
+                    <span className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-accent" aria-hidden="true" />
                   ) : null}
                 </button>
               );

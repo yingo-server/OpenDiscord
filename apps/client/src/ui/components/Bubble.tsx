@@ -1,6 +1,7 @@
 /**
- * Bubble（§3.3）：只负责气泡结构与状态角标，不含任何消息类型渲染。
- * 方向性圆角：自己右下 4px、对方左下 4px；失败红点在气泡右下。
+ * Bubble（Fluent / WinUI 3）：消息气泡使用 Fluent 圆角（8px，尾角 2px）、
+ * 低对比阴影（--shadow-card）与语义配色；发送中透明度、失败红点与状态角标保持不变。
+ * 只负责气泡结构与状态角标，不含任何消息类型渲染。
  */
 import { useRef, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import type { MessageStatus } from '../../core/types';
@@ -101,9 +102,11 @@ export function Bubble({
           onPointerCancel={clearPress}
           onPointerLeave={clearPress}
           className={[
-            'relative max-w-full rounded-lg text-body shadow-sm transition-opacity duration-normal',
+            'relative max-w-full rounded-lg text-body shadow-card transition-opacity duration-normal',
             flush ? 'overflow-hidden p-0' : 'px-3 py-2',
-            mine ? 'rounded-br-tail bg-primary-500 text-ink-inverse' : 'rounded-bl-tail bg-surface-2 text-ink',
+            mine
+              ? 'rounded-br-tail bg-accent text-accent-fg'
+              : 'rounded-bl-tail border border-line bg-surface text-ink',
             status === 'sending' ? 'opacity-60' : '',
           ].join(' ')}
         >
@@ -119,7 +122,7 @@ export function Bubble({
               onClick={onRetry}
               title={error || t('chat.failed')}
               aria-label={t('chat.failed')}
-              className="ms-0.5 inline-flex h-3 w-3 rounded-full bg-danger-500 ring-2 ring-danger-500/20 transition-transform duration-micro hover:scale-110"
+              className="fluent-focus ms-0.5 inline-flex h-3.5 w-3.5 rounded-full bg-danger-500 ring-2 ring-danger-500/20 transition-transform duration-micro hover:scale-110"
             />
           ) : null}
         </div>
@@ -136,7 +139,7 @@ function StatusMark({ status }: { status: MessageStatus }) {
     return <span className="h-2 w-2 rounded-full bg-danger-500" aria-label={t('chat.failed')} />;
   }
   if (status === 'read') {
-    return <DoubleCheckIcon size={14} className="text-primary-500" />;
+    return <DoubleCheckIcon size={14} className="text-accent" />;
   }
   if (status === 'delivered') {
     return <DoubleCheckIcon size={14} />;

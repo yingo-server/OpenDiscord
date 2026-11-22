@@ -13,7 +13,7 @@ import type { RendererProps } from './registry';
 type FileCategory = 'doc' | 'sheet' | 'slide' | 'archive' | 'other';
 
 const CATEGORY_STYLE: Record<FileCategory, string> = {
-  doc: 'bg-primary-100 text-primary-700',
+  doc: 'bg-accent/10 text-accent',
   sheet: 'bg-success-100 text-success-700',
   slide: 'bg-warning-100 text-warning-700',
   archive: 'bg-info-100 text-info-700',
@@ -67,9 +67,9 @@ export function FileMessage({ message }: RendererProps) {
         <span className="block">{body}</span>
       )}
       {uploading ? (
-        <span className="mt-2 block h-1 w-full overflow-hidden rounded-full bg-ink/15">
+        <span className="mt-2 block h-1 w-full overflow-hidden rounded-full bg-ink/[0.12]">
           <span
-            className="block h-full bg-primary-500 transition-[width] duration-normal"
+            className="block h-full bg-accent transition-[width] duration-normal"
             style={{ width: `${progress}%` }}
           />
         </span>

@@ -10,6 +10,11 @@ export default {
   content: ['./index.html', './src/**/*.{ts,tsx}'],
   theme: {
     screens: {
+      // 沿用阶段 1-2 的语义断点（tablet/desktop），补回 Tailwind 默认 xl/2xl 前缀；
+      // sm 保留给消息转发面板的移动端断点（<640px 贴底），避免与默认 sm 冲突。
+      sm: '640px',
+      xl: '1280px',
+      '2xl': '1536px',
       tablet: '768px',
       desktop: '1200px',
     },

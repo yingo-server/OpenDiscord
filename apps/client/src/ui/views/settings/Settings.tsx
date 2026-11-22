@@ -10,6 +10,7 @@ import { useConvStore } from '../../../core/stores/conv-store';
 import { getAppServices } from '../../services/app-services';
 import { Avatar } from '../../components/Avatar';
 import { Button } from '../../components/Button';
+import { IconButton } from '../../components/IconButton';
 import { BackIcon, LogoutIcon, MonitorIcon, MoonIcon, SunIcon, TrashIcon } from '../../components/icons';
 import { t } from '../../i18n';
 import { navigate } from '../../router';
@@ -66,24 +67,21 @@ export function Settings() {
   return (
     <section className="scroll-thin h-full overflow-y-auto bg-page">
       <header className="pt-safe sticky top-0 z-sticky flex h-14 items-center gap-2 border-b border-line bg-surface px-2 tablet:px-4">
-        <button
-          type="button"
+        <IconButton
+          label={t('common.back')}
           onClick={() => navigate('/chats')}
-          aria-label={t('common.back')}
-          className="inline-flex h-10 w-10 items-center justify-center rounded-full text-ink-secondary hover:bg-surface-2"
-        >
-          <BackIcon size={22} />
-        </button>
-        <h1 className="text-title text-ink">{t('settings.title')}</h1>
+          icon={<BackIcon size={22} />}
+        />
+        <h1 className="fluent-title">{t('settings.title')}</h1>
       </header>
 
       <div className="mx-auto w-full max-w-[720px] space-y-4 p-4">
         {/* 账号 */}
-        <div className="flex items-center gap-3 rounded-lg border border-line bg-surface p-4">
+        <div className="fluent-card flex items-center gap-3 p-4">
           <Avatar name={session.displayName} size="lg" userId={session.userId} presence="online" />
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <p className="truncate text-title text-ink">{session.displayName}</p>
+              <p className="truncate text-body font-semibold text-ink">{session.displayName}</p>
               {session.status === 'guest' ? (
                 <span className="rounded-full bg-warning-100 px-2 py-0.5 text-caption text-warning-700">
                   {t('settings.guest')}
@@ -161,7 +159,7 @@ export function Settings() {
           <button
             type="button"
             onClick={() => setConfirm('clear')}
-            className="flex min-h-11 w-full items-center gap-2 rounded-md px-1 text-start text-body text-danger-500 hover:bg-surface-2"
+            className="flex min-h-11 w-full items-center gap-2 rounded-md px-2 text-start text-body text-danger-500 transition-colors duration-micro hover:bg-danger-50"
           >
             <TrashIcon size={18} />
             {t('settings.clearCache')}
@@ -171,7 +169,7 @@ export function Settings() {
         <button
           type="button"
           onClick={() => setConfirm('logout')}
-          className="flex min-h-11 w-full items-center justify-center gap-2 rounded-md border border-line bg-surface text-body text-danger-500 hover:bg-surface-2"
+          className="flex min-h-11 w-full items-center justify-center gap-2 rounded-md border border-line-input bg-surface text-body text-danger-500 transition-colors duration-micro hover:bg-danger-50"
         >
           <LogoutIcon size={18} />
           {t('settings.logout')}
@@ -209,8 +207,8 @@ export function Settings() {
 
 function Card({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="rounded-lg border border-line bg-surface p-4">
-      <h2 className="mb-3 text-body-sm font-semibold text-ink-secondary">{title}</h2>
+    <div className="fluent-card p-4">
+      <h2 className="mb-3 text-body-sm font-semibold uppercase tracking-wide text-ink-secondary">{title}</h2>
       <div className="space-y-3">{children}</div>
     </div>
   );
@@ -226,7 +224,7 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 }
 
 function Segmented({ children }: { children: ReactNode }) {
-  return <div className="flex rounded-md bg-surface-2 p-0.5">{children}</div>;
+  return <div className="flex rounded-md border border-line bg-surface-2 p-0.5">{children}</div>;
 }
 
 function Segment({
@@ -245,7 +243,7 @@ function Segment({
       aria-pressed={active}
       className={[
         'inline-flex h-8 items-center justify-center rounded-sm px-3 text-body-sm transition-colors duration-micro',
-        active ? 'bg-surface text-ink shadow-sm' : 'text-ink-tertiary hover:text-ink',
+        active ? 'fluent-focus bg-surface text-ink shadow-sm' : 'text-ink-tertiary hover:text-ink',
       ].join(' ')}
     >
       {children}
@@ -267,15 +265,15 @@ function ConfirmDialog({
   onConfirm: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-modal flex items-center justify-center bg-scrim/40 p-4" onClick={onCancel}>
+    <div className="fixed inset-0 z-modal flex items-center justify-center bg-scrim/40 p-4 backdrop-blur-[2px]" onClick={onCancel}>
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="confirm-title"
-        className="w-full max-w-[400px] animate-scale-in rounded-xl bg-elevated p-6 shadow-lg"
+        className="fluent-flyout w-full max-w-[400px] animate-scale-in p-6"
         onClick={(event) => event.stopPropagation()}
       >
-        <h2 id="confirm-title" className="text-title text-ink">
+        <h2 id="confirm-title" className="fluent-title">
           {title}
         </h2>
         <p className="mt-2 text-body-sm text-ink-secondary">{message}</p>

@@ -11,6 +11,7 @@ import type { ChatMessage } from '../../../core/types';
 import { getAppServices } from '../../services/app-services';
 import { t } from '../../i18n';
 import { AttachIcon, CloseIcon, SendIcon } from '../../components/icons';
+import { IconButton } from '../../components/IconButton';
 import { toast } from '../../components/Toast';
 import {
   MediaUploadError,
@@ -119,9 +120,9 @@ export function Composer({ convId, replyTo, replySenderName, onCancelReply, onSe
   return (
     <div className="shrink-0 border-t border-line bg-surface pb-safe">
       {replyTo ? (
-        <div className="mx-3 mt-2 flex items-start gap-2 rounded-sm border-s-2 border-primary-500 bg-surface-2 px-2.5 py-1.5">
+        <div className="mx-3 mt-2 flex items-start gap-2 rounded-md border-s-[3px] border-s-accent bg-accent/[0.06] px-2.5 py-1.5">
           <div className="min-w-0 flex-1">
-            <p className="text-caption text-primary-500">{t('chat.replyTo', { name: replySenderName ?? '' })}</p>
+            <p className="text-caption text-accent">{t('chat.replyTo', { name: replySenderName ?? '' })}</p>
             <p className="truncate text-caption text-ink-tertiary">{previewOfMessage(replyTo)}</p>
           </div>
           <button
@@ -136,15 +137,12 @@ export function Composer({ convId, replyTo, replySenderName, onCancelReply, onSe
       ) : null}
 
       <div className="flex items-end gap-2 px-3 py-2">
-        <button
-          type="button"
+        <IconButton
+          label={t('chat.attach')}
           onClick={attach}
-          aria-label={t('chat.attach')}
           disabled={uploading}
-          className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-ink-secondary hover:bg-surface-2 disabled:opacity-50"
-        >
-          <AttachIcon size={22} />
-        </button>
+          icon={<AttachIcon size={22} />}
+        />
         <input
           ref={fileInputRef}
           type="file"
@@ -179,7 +177,7 @@ export function Composer({ convId, replyTo, replySenderName, onCancelReply, onSe
             }}
             placeholder={t('chat.placeholder')}
             aria-label={t('chat.placeholder')}
-            className="max-h-[40vh] min-h-[44px] w-full resize-none overflow-y-auto rounded-lg border border-line bg-surface-2 px-3 py-2.5 pe-14 text-base text-ink placeholder:text-ink-tertiary focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20 tablet:text-body"
+            className="fluent-focus max-h-[40vh] min-h-[44px] w-full resize-none overflow-y-auto rounded-md border border-line-input bg-surface ps-3 pe-14 py-2.5 text-body text-ink placeholder:text-ink-tertiary transition-colors duration-micro hover:border-ink/40 focus:border-accent"
           />
           {showCounter ? (
             <span
@@ -197,7 +195,7 @@ export function Composer({ convId, replyTo, replySenderName, onCancelReply, onSe
           onClick={send}
           disabled={!text.trim() || !canSend}
           aria-label={t('chat.send')}
-          className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary-500 text-ink-inverse transition-colors duration-micro hover:bg-primary-600 disabled:cursor-not-allowed disabled:bg-primary-100 disabled:text-ink/40"
+          className="fluent-focus inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-accent text-accent-fg transition-colors duration-micro hover:bg-accent-hover active:bg-accent-pressed disabled:cursor-not-allowed disabled:bg-primary-100 disabled:text-ink/40 dark:disabled:bg-primary-50"
         >
           <SendIcon size={20} />
         </button>

@@ -294,7 +294,7 @@ export function MessageList({ convId, onReply, scrollSignal = 0 }: MessageListPr
 
       {loadingHistory ? (
         <div className="pointer-events-none absolute inset-x-0 top-0 flex justify-center py-2">
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-elevated px-3 py-1 text-caption text-ink-tertiary shadow-sm">
+          <span className="fluent-flyout inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-caption text-ink-tertiary">
             <SpinnerIcon size={12} />
             {t('chat.loadingOlder')}
           </span>
@@ -308,7 +308,7 @@ export function MessageList({ convId, onReply, scrollSignal = 0 }: MessageListPr
             virtualizer.scrollToIndex(ids.length - 1, { align: 'end' });
             setNewCount(0);
           }}
-          className="absolute bottom-3 end-4 z-sticky inline-flex items-center gap-1.5 rounded-full bg-primary-500 px-3 py-1.5 text-caption text-ink-inverse shadow-md animate-slide-up"
+          className="fluent-focus absolute bottom-3 end-4 z-sticky inline-flex items-center gap-1.5 rounded-full bg-accent px-3 py-1.5 text-caption text-accent-fg shadow-md animate-slide-up hover:bg-accent-hover"
         >
           ↓ {t('chat.newMessages', { count: newCount })}
         </button>
@@ -370,14 +370,14 @@ function SelectBar({
 }) {
   return (
     <div
-      className="flex h-14 shrink-0 items-center justify-between border-t border-line bg-elevated px-4"
+      className="flex h-14 shrink-0 items-center justify-between border-t border-line bg-surface px-4"
       role="toolbar"
       aria-label={t('chat.selectMode.title', { count })}
     >
       <button
         type="button"
         onClick={onCancel}
-        className="h-9 rounded-sm px-4 text-body-sm text-ink-secondary hover:bg-surface-2"
+        className="fluent-focus h-9 rounded-sm px-4 text-body-sm text-ink-secondary hover:bg-ink/[0.06]"
       >
         {t('chat.select.cancel')}
       </button>
@@ -388,7 +388,7 @@ function SelectBar({
         type="button"
         onClick={onForward}
         disabled={count === 0}
-        className="h-9 rounded-sm bg-primary-500 px-4 text-body-sm text-ink-inverse disabled:opacity-40"
+        className="fluent-focus h-9 rounded-sm bg-accent px-4 text-body-sm text-accent-fg hover:bg-accent-hover disabled:opacity-40"
       >
         {t('chat.select.forward')}
       </button>
@@ -428,7 +428,7 @@ function ForwardPanel({
       <div
         role="dialog"
         aria-label={t('chat.forward.title')}
-        className="max-h-[60vh] w-80 overflow-y-auto rounded-t-md border border-line bg-elevated py-1 shadow-md sm:rounded-md"
+        className="fluent-flyout max-h-[60vh] w-80 overflow-y-auto py-1 sm:rounded-md"
         onClick={(event) => event.stopPropagation()}
       >
         <p className="px-3 py-2 text-caption text-ink-tertiary">{t('chat.forward.title')}</p>
@@ -507,7 +507,7 @@ const MessageRow = memo(function MessageRow({
             onClick={() => onToggleSelect?.(id)}
             className={[
               'ms-2 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border transition-colors duration-micro',
-              selected ? 'border-primary-500 bg-primary-500 text-ink-inverse' : 'border-line bg-surface text-ink-tertiary',
+              selected ? 'border-accent bg-accent text-accent-fg' : 'border-line-input bg-surface text-ink-tertiary',
             ].join(' ')}
           >
             {selected ? '✓' : ''}
@@ -562,9 +562,9 @@ function DayDivider({ timestamp }: { timestamp: number }) {
 function UnreadDivider() {
   return (
     <div className="flex items-center gap-3 px-6 py-2">
-      <span className="h-px flex-1 bg-primary-300" />
-      <span className="text-caption text-primary-500">{t('chat.unreadBelow')}</span>
-      <span className="h-px flex-1 bg-primary-300" />
+      <span className="h-px flex-1 bg-accent/40" />
+      <span className="text-caption text-accent">{t('chat.unreadBelow')}</span>
+      <span className="h-px flex-1 bg-accent/40" />
     </div>
   );
 }
@@ -719,7 +719,7 @@ function MessageMenu({
       <div
         role="menu"
         aria-label={t('menu.message')}
-        className="absolute w-52 animate-scale-in overflow-hidden rounded-md border border-line bg-elevated py-1 shadow-md"
+        className="fluent-flyout absolute w-52 animate-scale-in py-1"
         style={{ left: state.x, top: state.y }}
         onClick={(event) => event.stopPropagation()}
       >
@@ -730,7 +730,7 @@ function MessageMenu({
             role="menuitem"
             onClick={item.action}
             className={[
-              'flex h-10 w-full items-center gap-2.5 px-3 text-start text-body-sm transition-colors duration-micro hover:bg-surface-2',
+              'flex h-10 w-full items-center gap-2.5 px-3 text-start text-body-sm transition-colors duration-micro hover:bg-ink/[0.06]',
               item.danger ? 'text-danger-500' : 'text-ink',
             ].join(' ')}
           >

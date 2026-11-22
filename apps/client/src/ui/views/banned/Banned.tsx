@@ -16,7 +16,7 @@ export function Banned() {
       <div className="mb-5 flex h-32 w-32 items-center justify-center rounded-full bg-danger-50 text-danger-500">
         <AlertIcon size={56} />
       </div>
-      <h1 className="text-display text-ink">{t('banned.title')}</h1>
+      <h1 className="fluent-title">{t('banned.title')}</h1>
       <p className="mt-3 max-w-[420px] text-body text-ink-secondary">
         {t('banned.reason', { reason: ban?.reason || '-' })}
       </p>

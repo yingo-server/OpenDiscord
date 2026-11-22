@@ -31,7 +31,7 @@ export function GuestEntry() {
 
   return (
     <div className="space-y-4">
-      <div className="rounded-md border border-line bg-surface-2 p-3">
+      <div className="fluent-card bg-surface-2 p-3">
         <p className="text-body-sm text-ink">{t('auth.guestTitle')}</p>
         <p className="mt-1 text-caption text-ink-tertiary">{t('auth.guestHint')}</p>
       </div>
@@ -44,7 +44,7 @@ export function GuestEntry() {
         onClear={() => setNickname('')}
       />
       {error ? (
-        <p role="alert" className="text-body-sm text-danger-500">
+        <p role="alert" className="fluent-error">
           {error}
         </p>
       ) : null}

@@ -78,7 +78,7 @@ export function ImageMessage({ message }: RendererProps) {
           <span className="absolute inset-x-0 bottom-0 block">
             <span className="block h-1 w-full bg-ink/20">
               <span
-                className="block h-full bg-primary-300 transition-[width] duration-normal"
+                className="block h-full bg-accent transition-[width] duration-normal"
                 style={{ width: `${progress}%` }}
               />
             </span>
@@ -140,7 +140,7 @@ function ImageViewer({
         type="button"
         onClick={onClose}
         aria-label={t('common.close')}
-        className="pt-safe absolute end-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-full bg-ink/40 text-ink-inverse hover:bg-ink/60"
+        className="pt-safe absolute end-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-full bg-ink/50 text-ink-inverse hover:bg-ink/70"
       >
         <CloseIcon size={20} />
       </button>

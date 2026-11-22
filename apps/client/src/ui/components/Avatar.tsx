@@ -1,5 +1,6 @@
 /**
- * Avatar（§3.5）：首字符 + ID hash 色板兜底；presence 圆点。
+ * Avatar（Fluent / WinUI 3）：PersonPicture 风格——首字符 + ID hash 色板兜底，
+ * 头像裁切为圆形，presence 圆点带表面色描边，与 Fluent 状态点一致。
  */
 import { useState } from 'react';
 
@@ -25,10 +26,10 @@ const SIZE_CLASS: Record<AvatarSize, string> = {
 
 const DOT_CLASS: Record<AvatarSize, string> = {
   xs: 'h-2 w-2',
-  sm: 'h-2 w-2',
-  md: 'h-2.5 w-2.5',
-  lg: 'h-3 w-3',
-  xl: 'h-3.5 w-3.5',
+  sm: 'h-2.5 w-2.5',
+  md: 'h-3 w-3',
+  lg: 'h-3.5 w-3.5',
+  xl: 'h-4 w-4',
 };
 
 const FALLBACK_BG = [
@@ -57,13 +58,13 @@ export function Avatar({ name, src, size = 'md', userId = 0, presence, className
           loading="lazy"
           decoding="async"
           onError={() => setBroken(true)}
-          className={`${SIZE_CLASS[size]} rounded-full object-cover`}
+          className={`${SIZE_CLASS[size]} rounded-full object-cover ring-1 ring-line`}
         />
       ) : (
         <span
           role="img"
           aria-label={`${name}的头像`}
-          className={`${SIZE_CLASS[size]} ${palette} inline-flex items-center justify-center rounded-full font-medium text-ink-inverse`}
+          className={`${SIZE_CLASS[size]} ${palette} inline-flex items-center justify-center rounded-full font-semibold text-ink-inverse ring-1 ring-line`}
         >
           {initial}
         </span>

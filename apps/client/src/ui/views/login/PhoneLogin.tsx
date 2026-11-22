@@ -136,7 +136,7 @@ export function PhoneLogin() {
       )}
 
       {error ? (
-        <p role="alert" className="text-body-sm text-danger-500">
+        <p role="alert" className="fluent-error">
           {error}
         </p>
       ) : null}

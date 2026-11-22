@@ -1,5 +1,6 @@
 /**
- * NetworkBar（§6.1）：离线 / 重连中 / 已恢复，28px 细条，绝不弹窗打断输入。
+ * NetworkBar：离线 / 重连中 / 已恢复，28px 细条，绝不弹窗打断输入。
+ * Fluent 语义：InfoBar 的浅色底 + 状态色文字，细分隔线。
  */
 import { useEffect } from 'react';
 import { useConnStore } from '../../core/stores/conn-store';
@@ -21,10 +22,10 @@ export function NetworkBar({ className = '' }: { className?: string }) {
 
   const tone =
     banner === 'offline'
-      ? 'bg-danger-50 text-danger-700'
+      ? 'border-b border-line bg-danger-50 text-danger-700'
       : banner === 'restored'
-        ? 'bg-success-100 text-success-700'
-        : 'bg-warning-100 text-warning-700';
+        ? 'border-b border-line bg-success-50 text-success-700'
+        : 'border-b border-line bg-warning-50 text-warning-700';
 
   const label =
     banner === 'offline'
@@ -37,7 +38,7 @@ export function NetworkBar({ className = '' }: { className?: string }) {
     <div
       role="status"
       aria-live="polite"
-      className={`z-network-bar flex h-7 shrink-0 animate-fade-in items-center justify-center gap-2 px-3 text-caption ${tone} ${className}`}
+      className={`z-network-bar flex h-7 shrink-0 animate-fade-in items-center justify-center gap-2 border-y border-line/60 px-3 text-caption ${tone} ${className}`}
     >
       {banner === 'offline' ? (
         <WifiOffIcon size={14} />

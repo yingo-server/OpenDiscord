@@ -28,7 +28,7 @@ export function CallOverlay() {
 
   return (
     <div
-      className="fixed inset-0 z-modal flex flex-col bg-[#0b0d12] text-white"
+      className="fixed inset-0 z-modal flex flex-col bg-gradient-to-b from-[#15171d] to-[#0b0d12] text-white"
       role="dialog"
       aria-modal="true"
       aria-label={t('call.active')}
@@ -130,7 +130,7 @@ function VideoStage({ localStream, remoteStream, peerName }: VideoStageProps) {
         </div>
       )}
 
-      <div className="absolute start-4 top-4 rounded-full bg-black/40 px-3 py-1 text-caption text-white/80">
+      <div className="absolute start-4 top-4 rounded-full border border-white/10 bg-black/40 px-3 py-1 text-caption text-white/80 backdrop-blur-sm">
         {peerName}
       </div>
 

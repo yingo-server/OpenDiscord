@@ -1,6 +1,7 @@
 /**
- * Toast（§3.6）：单例队列、最多同时 1 条、3s（含操作 5s）自动消失。
- * 位置：移动端底部安全区上方，桌面右上角；不覆盖输入区。
+ * Toast（Fluent / WinUI 3 InfoBar 风格）：单例队列、最多同时 1 条、3s（含操作 5s）
+ * 自动消失。位置：移动端底部安全区上方，桌面右上角；不覆盖输入区。
+ * 使用 Acrylic 材质 + 语义色条 + 8px 圆角与 Fluent 阴影。
  */
 import { useEffect, useState, type ReactNode } from 'react';
 
@@ -64,6 +65,18 @@ export const toast = {
   dismiss,
 };
 
+const STRIPE: Record<ToastKind, string> = {
+  info: 'bg-accent',
+  success: 'bg-success-500',
+  danger: 'bg-danger-500',
+};
+
+const ICON: Record<ToastKind, string> = {
+  info: 'text-accent',
+  success: 'text-success-500',
+  danger: 'text-danger-500',
+};
+
 export function Toaster() {
   const [item, setItem] = useState<ToastItem | null>(current);
 
@@ -76,13 +89,6 @@ export function Toaster() {
 
   if (!item) return null;
 
-  const tone =
-    item.kind === 'danger'
-      ? 'bg-danger-600 text-ink-inverse'
-      : item.kind === 'success'
-        ? 'bg-success-600 text-ink-inverse'
-        : 'bg-ink text-ink-inverse';
-
   return (
     <div
       className="pointer-events-none fixed inset-x-4 bottom-4 z-toast flex justify-center desktop:inset-x-auto desktop:bottom-auto desktop:end-6 desktop:top-6"
@@ -91,13 +97,15 @@ export function Toaster() {
     >
       <div
         key={item.id}
-        className={`pointer-events-auto flex max-w-[calc(100vw-32px)] animate-slide-up items-center gap-3 rounded-md px-4 py-2.5 text-body-sm shadow-md ${tone}`}
+        className="acrylic pointer-events-auto flex max-w-[calc(100vw-32px)] animate-slide-up items-center gap-3 overflow-hidden rounded-lg py-2.5 pe-4 ps-3.5 text-body-sm text-ink shadow-md"
       >
+        <span className={`absolute inset-y-0 start-0 w-1 ${STRIPE[item.kind]}`} aria-hidden="true" />
+        <span className={`ms-1 inline-block h-2 w-2 shrink-0 rounded-full ${ICON[item.kind]}`} aria-hidden="true" />
         <span className="min-w-0 break-words">{item.message}</span>
         {item.actionLabel && (
           <button
             type="button"
-            className="shrink-0 font-medium underline underline-offset-2"
+            className="fluent-focus shrink-0 rounded-sm px-1 font-medium text-accent underline underline-offset-2"
             onClick={() => {
               item.onAction?.();
               dismiss();

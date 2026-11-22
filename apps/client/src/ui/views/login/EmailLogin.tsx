@@ -98,7 +98,7 @@ export function EmailLogin() {
       />
 
       {challenge ? (
-        <div className="space-y-3 rounded-md border border-line bg-surface-2 p-3">
+        <div className="fluent-card space-y-3 bg-surface-2 p-3">
           <p className="text-body-sm text-ink">{t('auth.linkSent', { email: normalizeEmail(email) })}</p>
           <p className="text-caption text-ink-tertiary">{t('auth.linkSentHint')}</p>
           <div className="flex flex-wrap gap-2">
@@ -128,7 +128,7 @@ export function EmailLogin() {
       )}
 
       {error ? (
-        <p role="alert" className="text-body-sm text-danger-500">
+        <p role="alert" className="fluent-error">
           {error}
         </p>
       ) : null}

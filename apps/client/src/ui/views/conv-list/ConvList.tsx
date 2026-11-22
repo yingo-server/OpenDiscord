@@ -12,6 +12,7 @@ import { Avatar } from '../../components/Avatar';
 import { NetworkBar } from '../../components/NetworkBar';
 import { ConvListSkeleton } from '../../components/Skeleton';
 import { MuteIcon, PinIcon, PlusIcon, SearchIcon, SettingsIcon } from '../../components/icons';
+import { IconButton } from '../../components/IconButton';
 import { t, type I18nKey } from '../../i18n';
 import { formatConvTime } from '../../utils/format';
 import { navigate } from '../../router';
@@ -67,34 +68,25 @@ export function ConvList({ className = '' }: { className?: string }) {
 
   return (
     <section className={`flex min-h-0 flex-col bg-surface ${className}`} aria-label={t('conv.title')}>
-      <header className="pt-safe flex h-14 shrink-0 items-center justify-between border-b border-line px-4">
-        <h1 className="text-title text-ink">{t('conv.title')}</h1>
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
+      <header className="pt-safe flex h-14 shrink-0 items-center justify-between border-b border-line bg-surface px-4">
+        <h1 className="fluent-title">{t('conv.title')}</h1>
+        <div className="flex items-center gap-0.5">
+          <IconButton
+            label={t('conv.create.title')}
             onClick={() => setCreateOpen(true)}
-            aria-label={t('conv.create.title')}
-            title={t('conv.create.title')}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-full text-ink-secondary hover:bg-surface-2"
-          >
-            <PlusIcon size={20} />
-          </button>
-          <button
-            type="button"
+            icon={<PlusIcon size={20} />}
+          />
+          <IconButton
+            label={t('common.search')}
             onClick={() => toast.info(t('common.comingSoon'))}
-            aria-label={t('common.search')}
-            className="hidden h-9 w-9 items-center justify-center rounded-full text-ink-secondary hover:bg-surface-2 desktop:inline-flex"
-          >
-            <SearchIcon size={20} />
-          </button>
-          <button
-            type="button"
+            icon={<SearchIcon size={20} />}
+            className="hidden desktop:inline-flex"
+          />
+          <IconButton
+            label={t('settings.title')}
             onClick={() => navigate('/settings')}
-            aria-label={t('settings.title')}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-full text-ink-secondary hover:bg-surface-2"
-          >
-            <SettingsIcon size={20} />
-          </button>
+            icon={<SettingsIcon size={20} />}
+          />
         </div>
       </header>
 
@@ -111,7 +103,7 @@ export function ConvList({ className = '' }: { className?: string }) {
             onChange={(event) => setQuery(event.target.value)}
             placeholder={t('conv.search')}
             aria-label={t('conv.search')}
-            className="h-9 w-full rounded-sm border border-line bg-surface-2 ps-9 pe-3 text-body-sm text-ink placeholder:text-ink-tertiary focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
+            className="fluent-focus h-9 w-full rounded-sm border border-line-input bg-surface ps-9 pe-3 text-body-sm text-ink placeholder:text-ink-tertiary transition-colors duration-micro hover:border-ink/40 focus:border-accent"
           />
         </div>
       </div>
@@ -165,8 +157,10 @@ const ConvRow = memo(function ConvRow({ convId }: { convId: number }) {
       }}
       aria-label={`${avatarName}${unread > 0 ? `，${t('conv.unread', { count: unread })}` : ''}`}
       className={[
-        'group relative flex h-row-conv-mobile cursor-pointer items-center gap-3 px-4 transition-colors duration-micro tablet:h-row-conv',
-        active ? 'bg-primary-50' : 'hover:bg-surface-2',
+        'group relative flex h-row-conv-mobile cursor-pointer items-center gap-3 border-b border-line/60 px-4 transition-colors duration-micro focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus',
+        active
+          ? 'border-s-[3px] border-s-accent bg-accent/[0.08] ps-[13px]'
+          : 'hover:bg-ink/[0.04] active:bg-ink/[0.08]',
       ].join(' ')}
     >
       <Avatar name={avatarName} src={conv.avatar} size="md" presence={presence} userId={otherId || conv.convId} />
@@ -200,7 +194,7 @@ const ConvRow = memo(function ConvRow({ convId }: { convId: number }) {
         )}
       </div>
 
-      <div className="absolute end-2 top-1 hidden items-center gap-1 rounded-md bg-elevated p-0.5 shadow-sm group-hover:flex">
+      <div className="absolute end-2 top-1 hidden items-center gap-0.5 rounded-md border border-line bg-elevated p-0.5 shadow-md group-hover:flex">
         <button
           type="button"
           onClick={(event) => {
@@ -247,7 +241,7 @@ function EmptyConv({ search, onCreate }: { search: boolean; onCreate: () => void
       <div className="mb-4 flex h-32 w-32 items-center justify-center rounded-full bg-surface-2 text-ink-tertiary">
         <SearchIcon size={48} />
       </div>
-      <p className="text-title text-ink">{t(search ? 'conv.searchEmpty.title' : 'conv.empty.title')}</p>
+      <p className="fluent-title">{t(search ? 'conv.searchEmpty.title' : 'conv.empty.title')}</p>
       <p className="mt-1 text-body-sm text-ink-tertiary">
         {t(search ? 'conv.searchEmpty.desc' : 'conv.empty.desc')}
       </p>
@@ -255,7 +249,7 @@ function EmptyConv({ search, onCreate }: { search: boolean; onCreate: () => void
         <button
           type="button"
           onClick={onCreate}
-          className="mt-4 rounded-md bg-primary-500 px-4 py-2 text-body text-ink-inverse hover:bg-primary-600"
+          className="fluent-focus mt-4 rounded-md bg-accent px-4 py-2 text-body text-accent-fg transition-colors duration-micro hover:bg-accent-hover active:bg-accent-pressed"
         >
           {t('conv.empty.action')}
         </button>
@@ -310,7 +304,7 @@ function CreateConvDialog({ onClose }: { onClose: () => void }) {
 
   return (
     <div
-      className="fixed inset-0 z-modal flex items-center justify-center bg-scrim/40 p-4"
+      className="fixed inset-0 z-modal flex items-center justify-center bg-scrim/40 p-4 backdrop-blur-[2px]"
       onClick={onClose}
       role="presentation"
     >
@@ -318,10 +312,10 @@ function CreateConvDialog({ onClose }: { onClose: () => void }) {
         role="dialog"
         aria-modal="true"
         aria-labelledby="create-conv-title"
-        className="w-full max-w-[400px] rounded-xl bg-elevated p-6 shadow-lg"
+        className="fluent-flyout w-full max-w-[400px] animate-scale-in p-6"
         onClick={(event) => event.stopPropagation()}
       >
-        <h2 id="create-conv-title" className="text-title text-ink">
+        <h2 id="create-conv-title" className="fluent-title">
           {t('conv.create.title')}
         </h2>
         <p className="mt-1 text-body-sm text-ink-tertiary">{t('conv.create.hint')}</p>
@@ -339,7 +333,9 @@ function CreateConvDialog({ onClose }: { onClose: () => void }) {
               }}
               className={[
                 'inline-flex h-8 flex-1 items-center justify-center rounded-sm text-body-sm transition-colors duration-micro',
-                mode === value ? 'bg-surface text-ink shadow-sm' : 'text-ink-tertiary hover:text-ink',
+                mode === value
+                  ? 'fluent-focus bg-surface text-ink shadow-sm'
+                  : 'text-ink-tertiary hover:text-ink',
               ].join(' ')}
             >
               {t(value === 1 ? 'conv.create.direct' : 'conv.create.group')}
@@ -357,7 +353,7 @@ function CreateConvDialog({ onClose }: { onClose: () => void }) {
           value={uid}
           onChange={(event) => setUid(event.target.value.replace(/[^0-9]/g, ''))}
           placeholder={t('conv.create.uidPlaceholder')}
-          className="mt-1.5 h-control-md w-full rounded-sm border border-line bg-surface px-3 text-body text-ink placeholder:text-ink-tertiary focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
+          className="fluent-focus mt-1.5 h-control-md w-full rounded-sm border border-line-input bg-surface px-3 text-body text-ink placeholder:text-ink-tertiary transition-colors duration-micro hover:border-ink/40 focus:border-accent"
         />
 
         {mode === 2 ? (
@@ -372,13 +368,13 @@ function CreateConvDialog({ onClose }: { onClose: () => void }) {
               maxLength={30}
               onChange={(event) => setTitle(event.target.value)}
               placeholder={t('conv.create.groupTitlePlaceholder')}
-              className="mt-1.5 h-control-md w-full rounded-sm border border-line bg-surface px-3 text-body text-ink placeholder:text-ink-tertiary focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
+              className="fluent-focus mt-1.5 h-control-md w-full rounded-sm border border-line-input bg-surface px-3 text-body text-ink placeholder:text-ink-tertiary transition-colors duration-micro hover:border-ink/40 focus:border-accent"
             />
           </>
         ) : null}
 
         {error ? (
-          <p role="alert" className="mt-2 text-body-sm text-danger-500">
+          <p role="alert" className="fluent-error mt-2 inline-flex">
             {error}
           </p>
         ) : null}
@@ -387,7 +383,7 @@ function CreateConvDialog({ onClose }: { onClose: () => void }) {
           <button
             type="button"
             onClick={onClose}
-            className="h-control-md rounded-md border border-line bg-surface px-4 text-body text-ink hover:bg-surface-2"
+            className="fluent-focus h-control-md rounded-md border border-line-input bg-surface px-4 text-body text-ink hover:bg-surface-2 active:bg-surface-2"
           >
             {t('common.cancel')}
           </button>
@@ -395,7 +391,7 @@ function CreateConvDialog({ onClose }: { onClose: () => void }) {
             type="button"
             onClick={submit}
             disabled={sending}
-            className="h-control-md rounded-md bg-primary-500 px-4 text-body text-ink-inverse hover:bg-primary-600 disabled:opacity-60"
+            className="fluent-focus h-control-md rounded-md bg-accent px-4 text-body text-accent-fg hover:bg-accent-hover active:bg-accent-pressed disabled:opacity-60"
           >
             {t('conv.create.submit')}
           </button>

@@ -126,7 +126,7 @@ function AudioBody({ media, mine, src }: { media: Media; mine: boolean; src?: st
         type="button"
         onClick={toggle}
         aria-label={playing ? t('media.pause') : t('media.play')}
-        className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-ink/10 transition-colors duration-micro hover:bg-ink/20"
+        className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-ink/[0.08] transition-colors duration-micro hover:bg-ink/[0.14]"
       >
         {playing ? <PauseIcon size={14} /> : <PlayIcon size={14} />}
       </button>

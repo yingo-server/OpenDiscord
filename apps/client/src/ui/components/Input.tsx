@@ -1,6 +1,7 @@
 /**
- * Input（§3.2）：label / error / hint / 前置图标 / 清除按钮；
- * focus 用 ring（box-shadow）不占布局，错误态 danger 边框 + aria-invalid。
+ * Input（Fluent / WinUI 3）：label / error / hint / 前置图标 / 清除按钮。
+ * Fluent TextBox：4px 圆角 + 强边框（--border-input，满足 3:1）+ focus 2px 强调环；
+ * 错误态边框 + 文案双重提示（aria-invalid / aria-describedby）。
  */
 import { useId, type InputHTMLAttributes, type ReactNode } from 'react';
 import { CloseIcon } from './icons';
@@ -51,13 +52,13 @@ export function Input({
           aria-invalid={error ? true : undefined}
           aria-describedby={describedBy}
           className={[
-            'h-control-md w-full rounded-sm border bg-surface text-body text-ink transition-colors duration-micro',
-            'placeholder:text-ink-tertiary focus:outline-none focus:ring-2',
+            'fluent-focus h-control-md w-full rounded-sm border bg-surface text-body text-ink',
+            'transition-[border-color,box-shadow] duration-micro placeholder:text-ink-tertiary',
             icon ? 'ps-9 pe-3' : 'px-3',
             onClear && value ? 'pe-10' : '',
             error
-              ? 'border-danger-500 focus:border-danger-500 focus:ring-danger-500/25'
-              : 'border-line focus:border-primary-500 focus:ring-primary-500/25',
+              ? 'border-danger-500 focus:border-danger-500'
+              : 'border-line-input hover:border-ink/40 focus:border-accent',
             className,
           ]
             .filter(Boolean)
@@ -69,7 +70,7 @@ export function Input({
             type="button"
             onClick={onClear}
             aria-label="clear"
-            className="absolute inset-y-0 end-2 my-auto flex h-6 w-6 items-center justify-center rounded-full text-ink-tertiary hover:bg-surface-2 hover:text-ink"
+            className="fluent-focus absolute inset-y-0 end-2 my-auto flex h-6 w-6 items-center justify-center rounded-sm text-ink-tertiary hover:bg-ink/[0.06] hover:text-ink"
           >
             <CloseIcon size={14} />
           </button>

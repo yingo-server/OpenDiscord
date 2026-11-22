@@ -1,5 +1,7 @@
 /**
- * Button（§3.1）：4 变体 × 3 尺寸；loading 200ms 延迟 + 宽度锁定。
+ * Button（Fluent / WinUI 3）：primary / secondary / ghost / danger 四变体 × 三尺寸。
+ * 视觉走语义令牌（--accent-* / --bg-surface / --border-input），
+ * 状态覆盖：hover / active / focus-visible / disabled / loading（宽度锁定）。
  */
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
 import { SpinnerIcon } from './icons';
@@ -18,19 +20,19 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 const VARIANTS: Record<ButtonVariant, string> = {
   primary:
-    'bg-primary-500 text-ink-inverse hover:bg-primary-600 active:bg-primary-700 disabled:bg-primary-100 disabled:text-ink/40',
+    'bg-accent text-accent-fg border border-transparent shadow-sm hover:bg-accent-hover active:bg-accent-pressed disabled:bg-primary-100 dark:disabled:bg-primary-50 disabled:text-ink/40',
   secondary:
-    'bg-surface text-ink border border-line hover:bg-surface-2 active:bg-surface-2 disabled:text-ink-tertiary',
+    'bg-surface text-ink border border-line-input hover:bg-surface-2 hover:border-ink/30 active:bg-surface-2 active:border-ink/40 disabled:text-ink-tertiary disabled:border-line',
   ghost:
-    'bg-transparent text-primary-500 hover:bg-surface-2 active:bg-surface-2 disabled:text-ink-tertiary',
+    'bg-transparent text-accent border border-transparent hover:bg-accent/[0.06] active:bg-accent/[0.12] disabled:text-ink-tertiary',
   danger:
-    'bg-danger-500 text-ink-inverse hover:bg-danger-600 active:bg-danger-700 disabled:bg-danger-100 disabled:text-danger-900/60',
+    'bg-danger-500 text-ink-inverse border border-transparent hover:bg-danger-600 active:bg-danger-700 disabled:bg-danger-100 disabled:text-danger-900/60',
 };
 
 const SIZES: Record<ButtonSize, string> = {
   sm: 'h-control-sm px-2 text-body-sm rounded-sm gap-1',
   md: 'h-control-md px-4 text-body rounded-md gap-2',
-  lg: 'h-control-lg px-6 text-title rounded-md gap-2',
+  lg: 'h-control-lg px-6 text-body rounded-md gap-2',
 };
 
 export function Button({
@@ -52,7 +54,8 @@ export function Button({
       disabled={disabled || loading}
       aria-busy={loading || undefined}
       className={[
-        'inline-flex select-none items-center justify-center font-medium transition-colors duration-micro ease-out',
+        'fluent-focus inline-flex select-none items-center justify-center font-medium',
+        'transition-[background-color,border-color,box-shadow] duration-micro ease-out',
         'disabled:cursor-not-allowed',
         VARIANTS[variant],
         SIZES[size],

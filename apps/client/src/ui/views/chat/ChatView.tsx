@@ -15,6 +15,7 @@ import { Avatar } from '../../components/Avatar';
 import { NetworkBar } from '../../components/NetworkBar';
 import { ChatSkeleton } from '../../components/Skeleton';
 import { BackIcon, MuteIcon, MoreIcon, PhoneIcon, PinIcon, SpinnerIcon, VideoIcon } from '../../components/icons';
+import { IconButton } from '../../components/IconButton';
 import { toast } from '../../components/Toast';
 import { navigate } from '../../router';
 import { MessageList } from './MessageList';
@@ -65,11 +66,11 @@ function ChatSession({ convId }: { convId: number }) {
               navigate('/chats');
             }}
             aria-label={t('common.back')}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-full text-ink-secondary hover:bg-surface-2 tablet:hidden"
+            className="fluent-focus inline-flex h-10 w-10 items-center justify-center rounded-md text-ink-secondary hover:bg-ink/[0.06] tablet:hidden"
           >
             <BackIcon size={22} />
           </button>
-          <span className="text-title text-ink">{t('chat.selectConv')}</span>
+          <span className="fluent-title">{t('chat.selectConv')}</span>
         </div>
         <div className="flex flex-1 items-center justify-center">
           <SpinnerIcon size={24} className="text-ink-tertiary" />
@@ -98,7 +99,7 @@ function ChatSession({ convId }: { convId: number }) {
             navigate('/chats');
           }}
           aria-label={t('common.back')}
-          className="inline-flex h-10 w-10 items-center justify-center rounded-full text-ink-secondary hover:bg-surface-2 tablet:hidden"
+          className="fluent-focus inline-flex h-10 w-10 items-center justify-center rounded-md text-ink-secondary hover:bg-ink/[0.06] tablet:hidden"
         >
           <BackIcon size={22} />
         </button>
@@ -112,9 +113,9 @@ function ChatSession({ convId }: { convId: number }) {
         />
 
         <div className="min-w-0 flex-1">
-          <h2 className="truncate text-title text-ink">{title}</h2>
+          <h2 className="fluent-title truncate">{title}</h2>
           {subtitle ? (
-            <p className={`truncate text-caption ${typingCount > 0 ? 'text-primary-500' : 'text-ink-tertiary'}`}>
+            <p className={`truncate text-caption ${typingCount > 0 ? 'text-accent' : 'text-ink-tertiary'}`}>
               {subtitle}
             </p>
           ) : null}
@@ -172,31 +173,21 @@ function CallButtons({
   direct: boolean;
   onStart: (media: 'audio' | 'video') => void;
 }) {
-  const base =
-    'inline-flex h-10 w-10 items-center justify-center rounded-full text-ink-secondary hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-40';
   const tooltip = direct ? undefined : t('call.groupUnsupported');
   return (
     <>
-      <button
-        type="button"
+      <IconButton
+        label={direct ? t('call.startAudio') : t('call.groupUnsupported')}
         onClick={() => onStart('audio')}
         disabled={!direct}
-        title={tooltip}
-        aria-label={direct ? t('call.startAudio') : t('call.groupUnsupported')}
-        className={base}
-      >
-        <PhoneIcon size={20} />
-      </button>
-      <button
-        type="button"
+        icon={<PhoneIcon size={20} />}
+      />
+      <IconButton
+        label={direct ? t('call.startVideo') : t('call.groupUnsupported')}
         onClick={() => onStart('video')}
         disabled={!direct}
-        title={tooltip}
-        aria-label={direct ? t('call.startVideo') : t('call.groupUnsupported')}
-        className={base}
-      >
-        <VideoIcon size={20} />
-      </button>
+        icon={<VideoIcon size={20} />}
+      />
     </>
   );
 }
@@ -216,22 +207,19 @@ function MoreMenu({ convId, pinned, muted }: { convId: number; pinned: boolean; 
   };
   return (
     <div className="relative">
-      <button
-        type="button"
+      <IconButton
+        label={t('common.more')}
         onClick={() => setOpen((value) => !value)}
-        aria-label={t('common.more')}
         aria-expanded={open}
-        className="inline-flex h-10 w-10 items-center justify-center rounded-full text-ink-secondary hover:bg-surface-2"
-      >
-        <MoreIcon size={20} />
-      </button>
+        icon={<MoreIcon size={20} />}
+      />
       {open ? (
         <>
           <div className="fixed inset-0 z-menu" onClick={() => setOpen(false)} />
           <div
             role="menu"
             aria-label={t('common.more')}
-            className="absolute end-0 top-11 z-menu w-40 animate-scale-in overflow-hidden rounded-md border border-line bg-elevated py-1 shadow-md"
+            className="fluent-flyout absolute end-0 top-11 z-menu w-40 animate-scale-in py-1"
           >
             <button
               type="button"
@@ -264,7 +252,7 @@ export function ChatPlaceholder() {
       <div className="mb-4 flex h-32 w-32 items-center justify-center rounded-full bg-surface-2 text-ink-tertiary">
         <MoreIcon size={48} />
       </div>
-      <p className="text-title text-ink">{t('chat.selectConv')}</p>
+      <p className="fluent-title">{t('chat.selectConv')}</p>
       <p className="mt-1 text-body-sm text-ink-tertiary">{t('chat.selectConvDesc')}</p>
     </section>
   );
