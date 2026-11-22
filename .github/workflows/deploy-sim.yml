@@ -215,7 +215,7 @@ jobs:
           CPID=$!
           ok=0
           for i in $(seq 1 40); do
-            curl -sf --max-time 1 http://127.0.0.1:8080/healthz >/dev/null 2>&1 && { ok=1; break; }
+            curl -sf --max-time 1 http://127.0.0.1:18080/healthz >/dev/null 2>&1 && { ok=1; break; }
             sleep 0.5
           done
           [ "$ok" -eq 1 ] || { echo "FAIL: chatd not healthy for load"; cat "$ROOT/chatd-load.log"; exit 1; }
