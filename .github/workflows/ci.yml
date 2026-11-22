@@ -160,8 +160,12 @@ jobs:
             exit 0
           fi
           if [ -n "$CC" ] && ! command -v "$CC" >/dev/null 2>&1; then
-            echo "::error::cross compiler $CC missing but is required for $GOOS/$GOARCH"
-            exit 1
+            # Runner 偶发缺交叉编译器（riscv64 常见）。非生产架构缺工具链时
+            # 优雅跳过该 target，不阻塞其余 8 个产物与 release；amd64 绝不会
+            # 走到这里（其 CC 是 gcc，runner 自带）。
+            echo "::warning::cross compiler $CC missing for $GOOS/$GOARCH; skipping this optional target"
+            mkdir -p dist
+            exit 0
           fi
           CGO_ENABLED=1 GOOS=$GOOS GOARCH=$GOARCH CC=$CC \
             go build -trimpath -ldflags "-s -w" -o "stage/chatd$([ "$GOOS" = windows ] && echo .exe)" ./server/cmd/chatd
