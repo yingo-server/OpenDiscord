@@ -275,12 +275,32 @@ func (r *Runner) applyOne(ctx context.Context, m Migration) error {
 	}
 	defer tx.Rollback() // no-op after commit
 
-	if _, err := tx.ExecContext(ctx, m.SQL); err != nil {
+	// PostgreSQL (pgx) does not accept a whole multi-statement SQL file as one
+	// ExecContext the way mattn/sqlite3 does, and uses $n (not ?) placeholders.
+	// Split on semicolons and execute each statement individually. Comments
+	// lines are kept attached to the following statement (harmless to PG).
+	if r.Dialect == DialectPostgres {
+		for _, stmt := range strings.Split(m.SQL, ";") {
+			if strings.TrimSpace(stmt) == "" {
+				continue
+			}
+			if _, err := tx.ExecContext(ctx, stmt); err != nil {
+				return fmt.Errorf("migrate: exec %s: %w", m.Name, err)
+			}
+		}
+	} else if _, err := tx.ExecContext(ctx, m.SQL); err != nil {
 		return fmt.Errorf("migrate: exec %s: %w", m.Name, err)
 	}
-	ins := fmt.Sprintf("INSERT INTO %s (domain, version, name, applied_at, checksum) VALUES (?, ?, ?, ?, ?)",
-		r.quote(migrTable))
-	if _, err := tx.ExecContext(ctx, ins, m.Domain, m.Version, m.Name, timeNowUnix(), m.Checksum); err != nil {
+	// Placeholder style is dialect-specific: SQLite accepts ?, PostgreSQL
+	// only $n. Using ? on PG is the classic "syntax error near ," source.
+	vals := []any{m.Domain, m.Version, m.Name, timeNowUnix(), m.Checksum}
+	ins := ""
+	if r.Dialect == DialectPostgres {
+		ins = fmt.Sprintf("INSERT INTO %s (domain, version, name, applied_at, checksum) VALUES ($1, $2, $3, $4, $5)", r.quote(migrTable))
+	} else {
+		ins = fmt.Sprintf("INSERT INTO %s (domain, version, name, applied_at, checksum) VALUES (?, ?, ?, ?, ?)", r.quote(migrTable))
+	}
+	if _, err := tx.ExecContext(ctx, ins, vals...); err != nil {
 		return fmt.Errorf("migrate: record %s: %w", m.Name, err)
 	}
 	return tx.Commit()
