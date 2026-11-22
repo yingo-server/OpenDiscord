@@ -172,12 +172,13 @@ jobs:
           fi
           CGO_ENABLED=1 GOOS=$GOOS GOARCH=$GOARCH CC=$CC \
             go build -trimpath -ldflags "-s -w" -o "stage/chatd$([ "$GOOS" = windows ] && echo .exe)" ./server/cmd/chatd
-          # chatd-pg: cold-store (PostgreSQL) variant that registers the
-          # "postgres" driver (the main binary intentionally carries none).
-          # Deployers with a cold DB use this binary instead of chatd.
+          # chatd-pg: SAME chatd source built with -tags pgdriver, which blank-
+          # imports pgx/v5/stdlib so the "pgx" driver is registered in-process
+          # and assemble.go step 8 opens the cold store. The default chatd
+          # build stays driver-free (architecture red line).
           if [ "$GOOS" != windows ]; then
             CGO_ENABLED=1 GOOS=$GOOS GOARCH=$GOARCH CC=$CC \
-              go build -trimpath -ldflags "-s -w" -o "stage/chatd-pg" ./server/cmd/chatd-pg
+              go build -tags pgdriver -trimpath -ldflags "-s -w" -o "stage/chatd-pg" ./server/cmd/chatd
           fi
           mkdir -p stage/docs stage/deploy
           cp README.md LICENSE stage/

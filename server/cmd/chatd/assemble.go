@@ -227,16 +227,40 @@ func newAssembly(cfg *config, lg *log.Logger) (*assembly, error) {
 	// driver 由部署层注入). If the DSN is configured but no driver named
 	// "postgres" is registered, we log a loud ERROR and continue hot-only —
 	// skeleton deployments must start, not panic (docs/deploy.md 附录 A).
+	// env 覆盖 toml：部署密钥不入配置文件，DSN 由 UFOT_COLD_DSN 注入（install.sh
+	// 把它写进 /etc/ufot/env，0600）。toml 里的 cold_dsn 仅作占位/文档用途。
+	if dsn := os.Getenv("UFOT_COLD_DSN"); dsn != "" {
+		cfg.ColdDSN = dsn
+	}
+	// 依次尝试已注册的 PostgreSQL driver 名：
+	//   - "postgres"  : lib/pq 或某些 pgx 集成注册的名
+	//   - "pgx"       : pgx/v5/stdlib 实际注册的名（chatd-pg 变体使用）
+	// 主二进制按架构红线不 import 任何 driver；冷库变体 chatd-pg 通过 blank
+	// import 注入 pgx/v5/stdlib，本段即可打开真正的冷库连接。
 	var coldDB *pg.ColdDB
 	if cfg.ColdDSN != "" {
-		db, err := sql.Open("postgres", cfg.ColdDSN) // sql.Open never dials
-		if err != nil {
-			// Only a bad driver name / unregistered driver lands here.
-			lg.Error("cold store disabled: driver not registered — 需在部署层 import pgx/stdlib 或 lib/pq 注册 driver（本二进制按架构约定不携带 postgres driver）",
-				"err", err.Error())
-		} else {
-			coldDB = &pg.ColdDB{DB: db, DriverName: "postgres"}
-			lg.Info("cold store handle opened (lazy connect on first use)", "driver", coldDB.DriverName)
+		for _, drv := range []string{"postgres", "pgx"} {
+			has := false
+			for _, name := range sql.Drivers() {
+				if name == drv {
+					has = true
+					break
+				}
+			}
+			if !has {
+				continue
+			}
+			db, err := sql.Open(drv, cfg.ColdDSN) // sql.Open never dials
+			if err != nil {
+				lg.Error("cold store driver open failed", "driver", drv, "err", err.Error())
+				continue
+			}
+			coldDB = &pg.ColdDB{DB: db, DriverName: drv}
+			lg.Info("cold store handle opened (lazy connect on first use)", "driver", drv)
+			break
+		}
+		if coldDB == nil {
+			lg.Error("cold store disabled: no postgres driver registered — 需在部署层用 chatd-pg 变体（内含 pgx/stdlib）或注册 lib/pq，本二进制按架构约定不携带 driver")
 		}
 	}
 	a.cold = coldDB
