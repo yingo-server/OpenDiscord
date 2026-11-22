@@ -30,7 +30,7 @@ CREATE INDEX IF NOT EXISTS idx_messages_text_trgm ON msg.messages_text USING gin
 CREATE INDEX IF NOT EXISTS idx_messages_text_cid   ON msg.messages_text (cid, sent_at);
 
 -- Monthly partition creation; works even on PG13 (no CREATE PROCEDURE needed).
-CREATE OR REPLACE FUNCTION msg.ensure_month_partition(p_month TIMESTAMP)
+CREATE OR REPLACE FUNCTION msg.ensure_month_partition(p_month TIMESTAMPTZ)
 RETURNS TEXT AS $$
 DECLARE
     s TIMESTAMP := date_trunc('month', p_month);
