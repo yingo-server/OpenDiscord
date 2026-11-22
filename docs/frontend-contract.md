@@ -68,6 +68,15 @@ access_token 也存内存（需要 Bearer 的场合），但不要放 localStora
 独立管理 SPA 用（TOTP 登录），仅监听回环地址，外网 403。本项目用户端不调用它们。
 端点：auth/login、metrics、users、messages、reports、flags、audit、archive、broadcast、login-history
 
+### 2.6 资料更新（无 HTTP 端点，走 WebSocket）
+服务端 **没有** /api/profile/update 这个 HTTP 端点（不要猜）。
+唯一路径：WS kind 940 IDENTITY_REQUEST，payload：
+  {"op":1,"userId":<当前 uid>,"body":"<base64 的 store.User JSON>"}
+- op=1 = OpUpsertUser；body 是 store.User 的 JSON（字段以 server/internal/data/store/api.go 的 User 定义为准）
+- op=2 = OpGetUser（读回资料，body 同格式）
+- 服务端回 kind 941 IDENTITY_RESULT，payload {"op":N,"ok":bool,"error":"...","body":"<base64>","requestId":""}
+- 失败时 ok=false，必须提示用户并撤销本地乐观更新
+
 ## 3. WebSocket 协议（ws://.../ws）
 - 单连接，一切皆帧。文本帧 = JSON UTF-8。
 - 帧结构：{"kind":<int>,"id":"<request id>","conv_id":<int>,"payload":<any>,"target":{...},"ack_id":<int>}
