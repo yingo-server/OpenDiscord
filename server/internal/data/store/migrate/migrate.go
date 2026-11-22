@@ -275,31 +275,13 @@ func (r *Runner) applyOne(ctx context.Context, m Migration) error {
 	}
 	defer tx.Rollback() // no-op after commit
 
-	// PostgreSQL (pgx) does not accept a whole multi-statement SQL file as one
-	// ExecContext the way mattn/sqlite3 does, and uses $n (not ?) placeholders.
-	// Split on semicolons and execute each statement individually. Comments
-	// lines are kept attached to the following statement (harmless to PG).
-	if r.Dialect == DialectPostgres {
-		// Strip -- line comments first: a semicolon inside a comment (e.g.
-		// "indexable; full-text") must not split a statement. Then split on
-		// semicolons and run each statement in the same transaction.
-		clean := strings.Builder{}
-		for _, line := range strings.Split(m.SQL, "\n") {
-			if idx := strings.Index(line, "--"); idx >= 0 {
-				line = line[:idx]
-			}
-			clean.WriteString(line)
-			clean.WriteString("\n")
-		}
-		for _, stmt := range strings.Split(clean.String(), ";") {
-			if strings.TrimSpace(stmt) == "" {
-				continue
-			}
-			if _, err := tx.ExecContext(ctx, stmt); err != nil {
-				return fmt.Errorf("migrate: exec %s: %w", m.Name, err)
-			}
-		}
-	} else if _, err := tx.ExecContext(ctx, m.SQL); err != nil {
+	// pgx 的 extended protocol 不接受「整段多语句 + $n 占位符」混用，而
+	// 按分号拆分又会被 SQL 注释/字符串/$$ 函数体里的分号破坏。正解：让 pgx
+	// 用 simple protocol（Migrate 打开的连接 DSN 加了
+	// default_query_exec_mode=simple_protocol），整段 SQL 一次 Exec，由
+	// PostgreSQL 服务端解析多语句。SQLite 驱动原生支持整段多语句。
+	_, err = tx.ExecContext(ctx, m.SQL)
+	if err != nil {
 		return fmt.Errorf("migrate: exec %s: %w", m.Name, err)
 	}
 	// Placeholder style is dialect-specific: SQLite accepts ?, PostgreSQL

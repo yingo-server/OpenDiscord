@@ -250,18 +250,17 @@ func newAssembly(cfg *config, lg *log.Logger) (*assembly, error) {
 			if !has {
 				continue
 			}
-			db, err := sql.Open(drv, cfg.ColdDSN) // sql.Open never dials
+			coldDB, err = pg.OpenDriver(drv, cfg.ColdDSN)
 			if err != nil {
 				lg.Error("cold store driver open failed", "driver", drv, "err", err.Error())
 				continue
 			}
-			coldDB = &pg.ColdDB{DB: db, DriverName: drv}
 			// 冷库开句柄后必须建 schema（审计/归档表），否则 cold:true 但
 			// 审计写不进 PG（实测：sys.audit_log 不存在）。迁移幂等且失败
 			// 即 fail-fast：生产冷库不可用时不该假装可用。
 			if merr := coldDB.Migrate(context.Background()); merr != nil {
 				lg.Error("cold store migration FAILED — audit/archive disabled", "driver", drv, "err", merr.Error())
-				_ = db.Close()
+				_ = coldDB.Close()
 				coldDB = nil
 				continue
 			}

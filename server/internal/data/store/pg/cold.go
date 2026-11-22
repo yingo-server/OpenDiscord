@@ -48,6 +48,9 @@ type ColdDB struct {
 
 	// DriverName records which registration the DB was opened with (diagnostics).
 	DriverName string
+	// dsn is retained so Migrate can open a short-lived connection with the
+	// pgx simple-protocol parameter (needed for multi-statement SQL files).
+	dsn string
 }
 
 // Open opens the cold database with driverName "postgres". The driver must be
@@ -60,17 +63,33 @@ func OpenDriver(driverName, dsn string) (*ColdDB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("pg: open: %w", err)
 	}
-	return &ColdDB{DB: db, DriverName: driverName}, nil
+	return &ColdDB{DB: db, DriverName: driverName, dsn: dsn}, nil
 }
 
 // Migrate applies the embedded cold (PostgreSQL) migration tree. Called by the
 // assembly layer once the cold store is opened — without it the audit journal
 // and archive tables are missing even though cold:true is reported.
 func (c *ColdDB) Migrate(ctx context.Context) error {
+	// pgx 用 simple protocol 才能一次执行含 $$ 函数体的多语句迁移文件；
+	// 通过 per-connection SearchPath/RunAs 无法切换协议，只能建一个专用
+	// 短连接（同 DSN + default_query_exec_mode 参数）执行迁移。
+	dsn := c.dsn
+	if dsn != "" && !strings.Contains(dsn, "default_query_exec_mode") {
+		sep := "?"
+		if strings.Contains(dsn, "?") {
+			sep = "&"
+		}
+		dsn += sep + "default_query_exec_mode=simple_protocol"
+	}
+	migDB, err := sql.Open(c.DriverName, dsn)
+	if err != nil {
+		return fmt.Errorf("cold migrate: open: %w", err)
+	}
+	defer migDB.Close()
 	r := &migrate.Runner{
 		Dialect: migrate.DialectPostgres,
 		Dir:     migrations.FS,
-		DB:      c.DB,
+		DB:      migDB,
 		Root:    migrate.DirCold,
 	}
 	return r.Up(ctx)
