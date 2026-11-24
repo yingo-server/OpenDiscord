@@ -1,6 +1,8 @@
 # 总线与桥接层设计
 
 > 设计总纲：Do One Thing Well ／ Composability ／ Everything is a Frame ／ Crash-Only ／ Text-First Observability ／ Signals as API
+> 对齐版本：v2.1.0（embedded 单进程为唯一已部署形态；`chatd-bridge`/`chatd-ctl` 等 split 命名为设计期遗留，
+> 实际二进制只有 `chatd`、`chatd-pg`、`adminctl`、`ufotctl`）。
 
 ## 1. Unix 哲学映射表
 
@@ -43,7 +45,7 @@
 | 组件 | 包 | 唯一职责 | 明确不做的（禁令） |
 |------|-----|------|---|
 | **FrameRW** | `bridge/framerw` | 字节流 ↔ `Frame` 编解码；连接读写循环 | 不看 kind 语义、不鉴权、不限流、不路由 |
-| **Verifier** | `bridge/verifier` | 校验帧是否允许转发：连接已 HELLO、kind 在能力范围内、HMAC/重放（仅重连首帧） | 不路由、不做用户权限、不解析 payload |
+| **Verifier** | `bridge/verifier` | 校验帧是否允许转发：层能力表（`LayerCaps`：layer → kind 集合）、来源层注册 | 不路由、不做用户权限、不解析 payload |
 | **Router** | `bridge/router` | 纯函数查表：`(kind, header) → []Target` | 不发帧、不记状态、不知道 Bus 存在 |
 | **Bus** | `internal/bus` | topic 订阅表 + 扇出 | 不落盘、不去重、不背压决策 |
 | **Egress** | `bridge/egress` | 每连接有界发送队列 + 水位检测 + kind 分级溢出策略 | 不解析帧内容、不重试 |
@@ -102,24 +104,24 @@ type Frame struct {
 ```
 chatd/
 ├── cmd/
-│   ├── chatd/main.go              # embedded：装配 4 层模块（只装配，零逻辑）
-│   ├── chatd-bridge/main.go       # split: Bridge 流水线装配
-│   ├── chatd-user/  chatd-data/  chatd-admin/
-│   └── chatd-ctl/                 # 管理工具
+│   ├── chatd/main.go              # embedded：装配 4 层模块（只装配，零逻辑）—— 唯一服务形态
+│   ├── chatd-pg/                  # 冷库变体（v1.4+）：blank import pgx/v5/stdlib 注入 driver
+│   ├── adminctl/  ufotctl/        # CLI 两件套（管理面 API 客户端）
+│   └── opchat/                    # 内部工具
 ├── internal/
-│   ├── proto/                     # 唯一契约层
+│   ├── proto/                     # 唯一契约层（kinds.go 为 kind 唯一真源）
 │   ├── pipedef/                   # 流水线 channel 接口类型
 │   ├── transport/
-│   │   ├── remote/                # UDS/TCP + BUS_SOCKET 编解码
-│   │   └── embedded/              # 进程内 chan *Frame 直连
+│   │   ├── remote/                # UDS/TCP + BUS_SOCKET 编解码（split 预留）
+│   │   └── embedded/              # 进程内 chan *Frame 直连（v2.1 实际形态）
 │   ├── bridge/
-│   │   ├── framerw/ verifer/ router/ egress/ ack/ session/ adminapi/ supervisor/
+│   │   ├── framerw/ verifier/ router/ egress/ ack/ session/ adminapi/ supervisor/
 │   │   └── pipeline.go            # 装配文件（唯一允许 import 全部组件的地方）
-│   ├── bus/                       # topic trie + 扇出
+│   ├── bus/                       # topic 分片 + 尾通配(.>)扇出
 │   ├── user/  data/  admin/
 │   └── pkg/{log, signalset, featureflags, exitcodes}
 ├── config/chatd.toml
-└── deploy/systemd/chatd{,-bridge,-user,-data,-admin}.service
+└── deploy/systemd/ufot.service    # Type=simple（chatd 不发 sd_notify）
 ```
 
 **禁令清单（CI import-lint，已落地 `scripts/importlint.sh`，挂 `make lint` 与 CI；豁免仅限 `internal/bridge` 根包装配级测试）**：
@@ -142,7 +144,7 @@ chatd/
 
 退出码契约：0 优雅退出；1 配置不可用；2 装配失败；70 不变量破坏（必须重启清状态）；75 临时失败（端口占用）。
 
-systemd unit：`Type=notify`（流水线装配完成才 READY）、`ExecReload=/bin/kill -HUP $MAINPID`、`Restart=always` + `RestartSec=1`、`WatchdogSec=15`、`LimitNOFILE=16384`。
+systemd unit：`Type=simple`（chatd 不发 sd_notify，`deploy/systemd/ufot.service` 实际值）、`ExecReload=/bin/kill -HUP $MAINPID`、`Restart=always` + `RestartSec=1`、`LimitNOFILE=16384`。
 
 ## 6. 文本可观测：stdout + journald
 

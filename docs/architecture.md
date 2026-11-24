@@ -1,6 +1,10 @@
 # 架构总纲
 
-UFOT 由四个服务层级与一个桥接枢纽组成。所有层间通信走内部 socket（UDS/TCP），唯独管理层到桥接使用 HTTP API；前端到用户层使用 WebSocket。
+> 对齐版本：v2.1.0。前端已完全重写（apps/client，20 文件分层 platform/domain/net/state/ui，黑白极简 React SPA），
+> 前端契约见 [frontend-contract.md](frontend-contract.md)。
+
+UFOT 由四个服务层级与一个桥接枢纽组成。embedded 模式下层间为进程内 channel（EmbeddedTransport）；
+管理面到桥接使用 HTTP API；前端到用户层使用 WebSocket。
 
 ## 总体架构
 
@@ -12,6 +16,7 @@ UFOT 由四个服务层级与一个桥接枢纽组成。所有层间通信走内
 │ acceptor→codec→limiter→router→forwarder    │  │ middleware 链   │
 │ (管道组件, channel 串联)                    │  │ handler/service│
 │ HTTP 面(同端口): /api/auth/* /api/media/*  │  └───────┬────────┘
+│                 /api/push/* /healthz / SPA │          │
 └───────────────┬────────────────────────────┘          │
           socket ══╗ (内部长连接)                 HTTP API ══╗
                    ║   socket ═══════╗                 ║ (唯一例外)
@@ -32,18 +37,18 @@ UFOT 由四个服务层级与一个桥接枢纽组成。所有层间通信走内
 
 管理层指令经 AdminAPI 翻译成 5xx 帧注入总线，与 socket 帧同构：管理指令的审计日志即帧日志。
 
-> 说明（P2-1）：用户层 usergw 除 WS 用户通道外，还在**同一监听端口**上提供两个 HTTP 面——`/api/auth/*`（登录/刷新/登出，须在 WS 握手前完成鉴权）与 `/api/media/*`（媒体上传/下载；帧编解码上限 64KB，媒体字节不走 WS 通道，security-spec §2.3/§4.3 有出处）。此为前端→用户层入口，不构成「绕过 Envelope」的红线违反。
+> 说明（P2-1）：用户层 usergw 除 WS 用户通道外，还在**同一监听端口**上提供 HTTP 面——`/api/auth/*`（登录/刷新/登出，须在 WS 握手前完成鉴权）、`/api/media/*`（媒体上传/下载；帧编解码上限 64KB，媒体字节不走 WS 通道）、`/api/push/*`（Web Push 订阅）与 `/healthz`。此为前端→用户层入口，不构成「绕过 Envelope」的红线违反。
 
 ## 统一 kind 号段（全局唯一真相源，定义于 proto/）
 
 | 号段 | 归属 | 内容 |
 |---|---|---|
-| 0-99 | 系统层 | HELLO/AUTH/PING/PONG/RESUME/SYNC/ERROR/KICKED/FEATURE_FLAGS/RATE_LIMITED |
+| 0-99 | 系统层 | HELLO/AUTH/PING/PONG/RESUME/SYNC/ERROR/KICKED/FEATURE_FLAGS/RATE_LIMITED/WATERMARK(14)/MAILBOX_ACK/PAUSE/RESUME(15-17)/CLIENT_CAPS(18) |
 | 100-199 | 消息层 | MSG_SEND/NEW/ACK/READ/DELIVERED/EDIT/DELETE/RECALL/FORWARD/SYNC/SEARCH |
 | 200-299 | 会话层 | CONV_CREATE/UPDATE/MEMBER_*/ROLE/MUTE/PIN/TYPING/DRAFT |
-| 300-349 | 媒体层 | MEDIA_PRESIGN/READY/EXPIRE/THUMB（其中 300-304：v1.0 未启用——媒体走 HTTP 直传，presign 为 1.1 预留，P2-2） |
+| 300-349 | 媒体层 | MEDIA_PRESIGN/READY/EXPIRE/THUMB（300-304 未接 handler——媒体一律走 HTTP 直传） |
 | 350-399 | 通话预留 | CALL_OFFER/ANSWER/CANDIDATE/BUSY/HANGUP（flag 关闭） |
-| 400-449 | presence | PRESENCE_UPDATE/SUBSCRIBE/UNSUBSCRIBE |
+| 400-449 | presence | PRESENCE_UPDATE(400)/ONLINE(401)/OFFLINE(402)（401/402 为服务端产生的连接生命周期事件，旧名 SUBSCRIBE/UNSUBSCRIBE 仅是别名） |
 | 450-499 | 用户层 | PROFILE_UPDATE/BLOCK/UNBLOCK/REPORT |
 | 500-599 | 管理下行 | ADMIN_BROADCAST/ANNOUNCE/MAINTENANCE + AdminAPI 注入的管理指令帧 |
 | 600-899 | 全预留 | 未来业务（投票/卡片/支付/小程序…） |
@@ -95,8 +100,8 @@ adminctl users ban 123 / 后台按钮 ─HTTPS─► admin: authn→rbac→csrf�
 ├─ server/
 │  ├─ cmd/
 │  │  ├─ chatd/          # embedded 单进程装配(只装配、零业务规则)
-│  │  ├─ chatd-bridge/ chatd-user/ chatd-data/ chatd-admin/   # split 多进程 —— 见下方 ⚠️(v1.0 未实现)
-│  │  └─ ufotctl/ adminctl/          # 两件CLI(ufotctl=系统级运维, adminctl=管理面API; 均API客户端,非旁路)
+│  │  ├─ chatd-pg/         # 冷库变体（内嵌 pgx driver，OPS-1）
+│  │  └─ ufotctl/ adminctl/ opchat/   # 两件CLI + 终端管理台(API客户端,非旁路)
 │  ├─ internal/
 │  │  ├─ proto/ pipedef/            # Frame契约 + Stage接口
 │  │  ├─ transport/remote|embedded/ # 层间socket双形态(同代码两部署)
@@ -107,14 +112,19 @@ adminctl users ban 123 / 后台按钮 ─HTTPS─► admin: authn→rbac→csrf�
 │  │  ├─ admin/{middleware,handler,service,bridgeproxy,auditshim}
 │  │  └─ pkg/{log,signalset,featureflags,exitcodes}
 │  └─ store/migrations/{hot,cold,admin}/{域}/{NNNN}.sql   # 分域编号迁移
-├─ apps/client/                    # 用户前端 ui→core→net
-│  └─ src/{net/{transport,proto,protocol,sync,auth,cache},core/{stores,selectors},ui/{views,renderers,components}}
+├─ apps/client/                    # 用户前端（v2.1 重写：React + TS，黑白极简，20 文件分层）
+│  └─ src/{app/{bootstrap,frames,services,mock},   # 装配 + 帧处理
+│         domain/{types,parse,backoff},            # 纯类型与逻辑（含单测）
+│         net/{http/{client,auth,push},ws/{client,identity,requests,call},protocol/{frame,kinds}},
+│         platform/{env,session,theme},            # 环境变量/会话存储/主题
+│         state/{chat,session},                    # store
+│         ui/{views/{Login,Settings},components/{ConvList,MessageList,Composer,CallOverlay,Toast,ErrorBoundary,BrandMark},i18n,lib,styles}}
 ├─ apps/admin/                     # 管理后台前端
 ├─ config/chatd.toml policy.json
 └─ deploy/systemd/ Caddyfile release.sh backup.sh
 ```
 
-> ⚠️ 未实现（v1.0）：`chatd` 仅 embedded 模式——`server/cmd` 实际只有 `chatd`、`ufotctl`、`adminctl` 三个二进制，`server/cmd/chatd/main.go` 对非 embedded 的 `[mode]` 直接报错（this build is embedded-only），不存在 `chatd-bridge/chatd-user/chatd-data/chatd-admin`。`deploy/systemd/ufot-{bridge,user,data,admin}.service` 的 `ExecStart` 指向不存在的 `bin/chatd-*`，split 的 4 个 systemd unit 为 1.1 预留，**启用会启动失败** — 计划 v1.1（P1-5/P1-6）。
+> ⚠️ 未实现（split）：`server/cmd` 实际只有 `chatd`（embedded 单进程）、`chatd-pg`（冷库变体，内嵌 pgx/v5/stdlib driver）、`adminctl`/`ufotctl`（CLI）与 `opchat`（内部工具），不存在 `chatd-bridge/chatd-user/chatd-data/chatd-admin`。`server/cmd/chatd/main.go` 对非 embedded 的 `[mode]` 直接报错（this build is embedded-only）。split 的 systemd unit 为扩展期预留，**启用会启动失败**。
 
 ## 贯穿全系统的设计律（CI 强制）
 
@@ -128,7 +138,7 @@ adminctl users ban 123 / 后台按钮 ─HTTPS─► admin: authn→rbac→csrf�
 ## 部署形态
 
 - **embedded**（2C2G 起步）：单 `chatd` 二进制，四层进程内流水线+EmbeddedTransport（chan 直连），一个 systemd unit
-- **split**（扩展期，⚠️ v1.0 未实现，见上方目录结构注记）：同代码编译出 5 个二进制分机部署，层间改走 UDS/TCP socket——只改配置 `[mode]` 段
+- **split**（扩展期，未实现）：同代码编译出多个二进制分机部署，层间改走 UDS/TCP socket（`transport/remote` 已就绪）——只改配置 `[mode]` 段
 - 冷库 Postgres 始终在外部，本机内存与用户量增长解耦
 
 ## 实施顺序
@@ -139,4 +149,4 @@ adminctl users ban 123 / 后台按钮 ─HTTPS─► admin: authn→rbac→csrf�
 3. usergw + 前端 sync 引擎（消息闭环）
 4. 媒体直传 + admin 层 + 审计
 5. 归档/备份 job + 冷库 + CLI 两件套（`ufotctl` + `adminctl`）
-6. 压测（`ufotctl bench`，v1.0 未实现 P3-4）→ 2C2G 调优（GOMEMLIMIT、journald 限速、SQLite cache）
+6. 压测（`scripts/stress`，CI 压测管线）→ 2C2G 调优（GOMEMLIMIT、journald 限速、SQLite cache）

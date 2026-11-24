@@ -33,36 +33,41 @@
 统一响应头 Content-Type: application/json; charset=utf-8，Cache-Control: no-store。
 错误响应体统一为 {"code":"<机器码>","message":"<可展示文案>"}；message 面向终端用户，不得含 driver/SQL/栈信息。
 
-### 2.1 认证 /api/auth/*
+### 2.1 认证 /api/auth/*（错误体实测为 {"error":"<文案>","code":"<机器码>"}）
 | 端点 | 请求体 | 成功响应 |
 |---|---|---|
-| POST /api/auth/phone/code | {"phone":"+8613800138000","captcha_token":"..."?} | {"sent":true,"expires_in":300,"resend_after":60} |
-| POST /api/auth/phone/verify | {"phone":"...","code":"123456","device_id":"..."?} | 会话对象（见 2.3） |
-| POST /api/auth/email/link | {"email":"a@b.c","captcha_token":"..."?} | {"sent":true,"expires_in":900,"poll_after":5} |
-| POST /api/auth/email/poll | {"email":"a@b.c","device_id":"..."?} | {"status":"pending"} 或 会话对象 |
+| POST /api/auth/phone/code | {"phone":"+8613800138000","captcha_token":"..."?} | {"ok":true,"challenge_id":"...","channel":"sms","expires_in":300,"resend_after":60} |
+| POST /api/auth/phone/verify | {"phone":"...","code":"123456","challenge_id":"...","device_id":"..."?} | 会话对象（见 2.3） |
+| POST /api/auth/email/link | {"email":"a@b.c","captcha_token":"..."?} | {"ok":true,"challenge_id":"...","channel":"email","expires_in":600,"resend_after":60} |
+| POST /api/auth/email/poll | {"email":"a@b.c","challenge_id":"...","device_id":"..."?} | 链接未点 → 409 {"error":"pending","code":"PENDING","status":"pending"}；已点 → 会话对象 |
 | POST /api/auth/password | {"account":"手机/邮箱/用户名","password":"...","device_id":"..."?} | 会话对象 |
 | POST /api/auth/guest | {"nickname":"可选","device_id":"..."?} | 会话对象 |
-| POST /api/auth/refresh | {"refresh_token":"...","device_id":"..."?} | 会话对象 |
-| POST /api/auth/logout | {"refresh_token":"..."} | {"ok":true} |
-| POST /api/auth/password/set | {"password":"..."}（需登录） | {"ok":true} |
+| POST /api/auth/refresh | {"refresh_token":"...","device_id":"..."?} | 会话对象（轮换） |
+| POST /api/auth/logout | {} | {"ok":true,"revoked":bool} |
+| POST /api/auth/password/set | {"password":"..."}（需登录，≥10 字符） | {"ok":true} |
 
-### 2.2 媒体 /api/media/*
-- POST /api/media/upload：multipart 文件上传，字段名 file，返回 {"id":"...","size":123,"mime":"image/png"}
-- GET /api/media/{id}：取文件（需登录 Cookie），支持 Range
-- 更优流程（预签名）：WS kind 300 MEDIA_PRESIGN_REQUEST → 301 MEDIA_PRESIGN_RESULT（含 upload_url）→ 直传 → 302 MEDIA_READY
+### 2.2 媒体 /api/media/*（实测 2026-11-23）
+- POST /api/media/upload：multipart 字段名 file，返回 **201** {"media_id":"...","mime":"image/png","mtype":1,"size":208}
+- GET /api/media/{id}：取文件（需登录 Cookie），200 字节流（实测 Content-Type: image/png）；未登录 401 {"code":"UNAUTHORIZED","error":"unauthorized"}
+- 上限：图片 8MB / 音频 2MB / 文件 20MB；魔数白名单（JPEG/PNG/WEBP/GIF/OGG/MP3）；每日 50 次
+- WS presign（kind 300-304）未实现，媒体一律走本 HTTP 面
 
-### 2.3 会话对象（登录成功返回）
-{"user_id":123,"device_id":"...","access_token":"...","token":"...","refresh_token":"...",
- "expires_at":1700000000,"expires_at_unix":1700000000,"session_id":"...","guest":false,
- "is_new_user":true,"profile":{"display_name":"...","avatar_url":"...","status":"..."}}
+### 2.3 会话对象（登录成功返回，实测于 v2.1.0 生产 2026-11-23）
+{"user_id":123,"device_id":"g_...","access_token":"<JWT>","token":"<== access_token>",
+ "refresh_token":"<JWT>","expires_at":1795533858563,"expires_at_unix":1795533858,
+ "session_id":"g_...","guest":true,"is_new_user":true,"profile":{"display_name":"游客xxxx…"}}
+
+源码真源：authsvc/tokens.go sessionPayload（display_name 之外的字段 omitempty 时可能缺省）。
+注意 expires_at 是毫秒、expires_at_unix 是秒（与早期文档相反，以实测为准）。
 
 鉴权方式：登录后服务端下发 Set-Cookie: access_token=...; HttpOnly; Path=/。
 后续 HTTP 请求带 Cookie 即可；WebSocket 握手也用 Cookie（浏览器自动带）。
 access_token 也存内存（需要 Bearer 的场合），但不要放 localStorage。
 
-### 2.4 推送 /api/push/*
-- POST /api/push/subscribe  body {"endpoint":"https://...","keys":{"p256dh":"...","auth":"..."}}  成功 204
-- POST /api/push/test  body {}  仅推给自己，204
+### 2.4 推送 /api/push/*（实测 2026-11-23）
+- POST /api/push/subscribe  body {"subscription":{"endpoint":"https://...","keys":{"p256dh":"<base64url 65B>","auth":"<base64url 16B>"}}}  成功 **204 无 body**
+- POST /api/push/test  带 Cookie，无 body → {"sent":N}（200）；无有效订阅时 sent:0
+- 错误体为 {"code":"BAD_REQUEST","error":"invalid p256dh"}（注意是 error 字段承载文案）
 
 ### 2.5 管理面 /api/admin/v1/*
 独立管理 SPA 用（TOTP 登录），仅监听回环地址，外网 403。本项目用户端不调用它们。

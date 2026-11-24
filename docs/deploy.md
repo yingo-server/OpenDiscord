@@ -23,7 +23,7 @@ sudo ./deploy/install.sh
 # 2) 改三个值：域名、冷库 DSN；监听地址保持 127.0.0.1
 sudoedit /etc/ufot/ufot.toml
 
-# 3) 起服务（骨架阶段先按附录 A.1 把 Type=notify 改为 Type=exec）
+# 3) 起服务（unit 为 Type=simple：chatd 不发 sd_notify，无需改 exec）
 sudo systemctl enable --now ufot
 systemctl is-active ufot && ss -lntp | grep -E ':(8080|7780|9090)'
 
@@ -57,7 +57,8 @@ curl -s  https://chat.example.com/admin/ | grep -o '<title>[^<]*'
 | 地址 | 用途 | 谁能访问 |
 |---|---|---|
 | `127.0.0.1:8080` | 用户层 HTTP + WebSocket + 内嵌 SPA（`listen`） | Caddy |
-| `127.0.0.1:7780` | 管理 API（`admin_listen`） | Caddy + IP 白名单 |
+| `127.0.0.1:7780` | 帧注入 AdminAPI（`admin_listen`） | Caddy + IP 白名单 |
+| `127.0.0.1:7781` | 管理 RBAC REST `/api/v1/*`（`admin_rest_listen` 默认值） | Caddy + IP 白名单 |
 | `127.0.0.1:9090` | Prometheus 指标（`metrics_listen`，当前版本未监听，见附录 A.2） | 本机/内网 |
 | `22 / 80 / 443` | SSH / ACME / HTTPS | 公网（22 建议源 IP 白名单） |
 
@@ -147,10 +148,10 @@ sudo ./deploy/install.sh --prefix /opt/ufot --etc /etc/ufot --state /var/lib/ufo
 | `admin_listen` | `"127.0.0.1:7780"` | 管理 API 监听（Caddy 仅对白名单 IP 反代 `/api/admin/*`） |
 | `metrics_listen` | `"127.0.0.1:9090"` | Prometheus `/metrics` 监听（契约字段，见下方「消费进度」） |
 | `public_origin` | `"https://chat.example.com"` | 对外站点，用于绝对 URL、CORS、Cookie 域；**不带尾斜杠**，必须与实际域名一致（否则 WS 握手 401） |
-| `hot_db` | `"/var/lib/ufot/chatd.db"` | 热库 SQLite（WAL）。文件 0600，目录 0700 |
+| `hot_db` | `"/var/lib/ufot/chatd.db"` | 热库 SQLite（WAL）。文件 0600，目录 0700；v2.1 写批量化（group commit） |
 | `admin_db` | `"/var/lib/ufot/admin.db"` | 管理库（管理员/会话），独立文件做最小权限隔离 |
 | `media_dir` | `"/var/lib/ufot/media"` | 媒体根（LUKS 卷挂载点），0750 |
-| `jwt_key_path` | `"/etc/ufot/keys/jwt_sign_key.pem"` | 用户 token 签名私钥（Ed25519 PKCS#8，0640 root:ufot） |
+| `jwt_key_path` | `"/etc/ufot/keys/jwt_sign_key.pem"` | 用户 token 签名私钥（Ed25519 PKCS#8，0640 **ufot:ufot** —— install.sh `chown ufot:ufot`，属主必须是服务账号，root 属主 0600 会让 chatd 启动失败） |
 | `pii_hmac_key_path` | `"/etc/ufot/keys/phone_lookup_key"` | 手机号/邮箱 HMAC 索引密钥（32B hex，0600） |
 | `cold_dsn` | `postgres://ufot@db.internal:5432/ufot?sslmode=require` | 冷库 DSN；`sslmode=require` 为底线，内网也建议 `verify-full` |
 | `policy_path` | `"/etc/ufot/policy.json"` | 策略唯一真源（保留期/cron/限流）；SIGHUP 热载 |
@@ -260,8 +261,8 @@ curl -s  http://127.0.0.1:8080/admin/ | grep -o '<title>[^<]*'
 curl -s  http://127.0.0.1:8080/healthz               # 期望 ok/200
 ```
 
-> 骨架阶段 `Type=notify` 未实现 `sd_notify`，会 `start operation timed out`。
-> 先按 **附录 A.1** 临时改 `Type=exec`（上线前恢复并实现 notify + watchdog）。
+> unit 已是 `Type=simple`（chatd 不发 sd_notify，见 `deploy/systemd/ufot.service`），
+> 正常 `systemctl start` 即 active；不存在 `Type=notify` 超时问题。
 
 ### 4.3 先堵抢注，再开放公网
 
@@ -934,7 +935,7 @@ sudo -u ufot env $(grep -v '^#' /etc/ufot/env | xargs) \
 | `status=2/FAILURE`，日志 `assembly failed` | 层装配失败（kind 冲突/配置缺项） | 回滚上一版本，保留 `journalctl` 现场 |
 | `status=203/EXEC` | 二进制不存在/无执行位 | `ls -l /opt/ufot/current/bin/chatd`；确认 `current` 链接 |
 | `status=226/NAMESPACE` | `ReadWritePaths` 指向的目录不存在 | `install -d -o ufot -g ufot /var/lib/ufot` |
-| `start operation timed out` + 反复重启 | `Type=notify` 未收到 `READY=1` | 见附录 A.1（临时 `Type=exec`） |
+| `start operation timed out` + 反复重启 | 下游依赖阻塞启动（冷库 fail-fast、密钥缺失） | `journalctl -u ufot -n 100`；冷库不可用且 `require_audit_store=true` 时启动即失败是预期行为 |
 | `address already in use` | 旧进程/别的服务占用 8080/7780/9090 | `ss -lntp \| grep :8080`，`systemctl stop` 冲突单元 |
 | `permission denied` 打开 DB | 文件 owner/mode 被改（曾用 root 跑过） | 按 §6 恢复：`chown ufot:ufot`、`chmod 0600` |
 
@@ -1098,17 +1099,15 @@ adminctl --server http://127.0.0.1:7780 audit --since-id $((N-5)) --limit 11 --o
 
 | # | 差异 | 现象 | 临时绕过 / 上线前要求 |
 |---|---|---|---|
-| A.1 | 未实现 `sd_notify(READY=1)`，但 unit 是 `Type=notify` + `WatchdogSec=15` | `start operation timed out`，`Restart=always` 反复重启 | **仅联调**：`sudo systemctl edit --full ufot`，把 `Type=notify` 改 `Type=exec`、`WatchdogSec=15` 改 `WatchdogSec=0`；**上线前必须恢复**并实现 notify + watchdog 心跳 |
 | A.2 | Prometheus `/metrics` 与 `metrics_listen` 未实现（管理 API 只有 `/api/v1/metrics` 摘要） | Caddy `/metrics` 对白名单内来源 502、对公网 404 | 先从管理 API 取指标；上线前接入 Prometheus handler 并监听 9090 |
 | A.3 | `install.sh` 只安装 `chatd`，不安装 `adminctl` / `ufotctl` | `command not found` | 按 §9.1 从 `current/bin` 或源码 `install` 到 `/usr/local/bin` |
 | A.4 | 管理 REST 已挂载：`/api/v1/*` 在 `admin_rest_listen`（默认 `127.0.0.1:7781`） | 启动日志出现 `rest_layer="admin_rest_listen"`，管理 API 由该监听提供（不再有 `not_wired`） | 无需绕过；本机/内网按 §4.4 验证。注意 REST 端口与 `admin_listen`（7780，帧注入）是两个监听 |
 | A.5 | `deploy/ufot.toml` 中部分契约字段当前二进制未消费 | 改了 `metrics_listen`/上传上限等无效果 | 见 §3.1 表后的「消费进度」注记 |
 | A.6 | SPA 已内嵌（`server/web`，`go:embed`），`chatd` 在 `listen` 为 TCP 时同时托管 `/` 与 `/admin/` | 发布包无需额外 web 目录；从源码构建若未执行 `make web`，前端资源为空，访问返回 503 `UI is not embedded` | 用发布包，或 `make web && make release`；不要手改 `server/web/*`，它由 `make web` 整目录替换 |
-| A.7 | 冷库与归档作业已接线（jobber 按 `policy.archive.cron` 调度），但 Postgres driver 需部署层注册 | `cold_dsn` 已配置但 driver 未注册时，启动日志报 `cold store disabled: driver not registered`；归档作业仅 dry-run/报错，审计降级为「只写日志不落盘」 | 部署层 import `github.com/lib/pq`（注册 `postgres` driver，匹配 `sql.Open("postgres", …)`）或注册同名 driver 的 pgx 包装（二进制按架构约定不携带 driver）；未注册前不要开启归档，审计按 security-spec §5.5 补接 |
+| A.7 | 冷库与归档作业已接线（jobber 按 `policy.archive.cron` 调度），Postgres driver 由部署层注入 | 主二进制 `chatd` 不携带 driver（架构红线）；`cold_dsn`/`UFOT_COLD_DSN` 已配置但 driver 未注册时，启动日志报 `cold store disabled: no postgres driver registered`，归档仅 dry-run、审计降级为「只写日志不落盘」 | 用冷库变体 **`chatd-pg`**（`make build-pg`，内嵌 pgx/v5/stdlib，见 `server/cmd/chatd-pg/`），或自行注册 `postgres`/`pgx` driver；`UFOT_COLD_DSN` 经 `/etc/ufot/env`（0600）注入，覆盖 toml 的 `cold_dsn`；未接冷库前不要开启 `require_audit_store` |
 | A.8 | 媒体上传/下载已提供（MVP，无会话 ACL） | `POST /api/media/upload` 与 `GET /api/media/{id}` 可用；下载只校验登录态 + 不可枚举 `media_id`，无会话级 ACL，无异步病毒扫描 | 1.0 可用于可信小规模部署，勿把 `media_id` 外传给非会话成员；1.1 补会话 ACL 与 ClamAV |
 
-**发布前必须关闭的临时措施**：A.1 的 `Type=exec`/`WatchdogSec=0`（改回 notify 前先确认
-`READY=1` 与 `WATCHDOG=1` 已实现）。A.7 的 driver 注册与审计落盘、A.8 的媒体会话 ACL 属于生产
+**发布前必须关闭的临时措施**：A.7 的 driver 注册与审计落盘、A.8 的媒体会话 ACL 属于生产
 安全基线，上线前必须补齐或明确接受风险；其余项只影响功能完整性。
 
 ---

@@ -1,6 +1,7 @@
-# UFOT WebSocket 协议参考（1.0）
+# UFOT WebSocket 协议参考
 
-> 只描述 `proto/chat.proto`、`server/internal/proto/kinds/kinds.go`、`server/internal/user/net/frame/codec.go`、`server/internal/user/net/ws/acceptor.go`、`server/internal/data/pipe/wire/wire.go` 中**真实存在**的帧结构与语义。kind 号段逐条取自 `kinds.go`（共 **84** 个常量；客户端真源 `apps/client/src/net/protocol/kinds.ts` 与之一一对应），状态列标注是否已有处理分支。本文描述 v1.4.0 行为。
+> 只描述 `proto/chat.proto`、`server/internal/proto/kinds/kinds.go`、`server/internal/user/net/frame/codec.go`、`server/internal/user/net/ws/acceptor.go`、`server/internal/data/pipe/wire/wire.go` 中**真实存在**的帧结构与语义。kind 号段逐条取自 `kinds.go`（共 **85** 个常量，含 401/402 两个旧别名；客户端真源 `apps/client/src/net/protocol/kinds.ts` 与之一一对应），状态列标注是否已有处理分支。本文描述 v2.1.0 行为。
+> 传输与帧格式的生产实测样例见 `api-reference.md §7`（实测于 v2.1.0 生产 2026-11-23）。
 
 ---
 
@@ -54,7 +55,7 @@
 
 ---
 
-## 4. kind 号段总表（84 个常量）
+## 4. kind 号段总表（85 个常量）
 
 > 唯一真源：`server/internal/proto/kinds/kinds.go`。「状态」依据是否有实际处理分支（网关本地 / 数据 pipe / 下行投递）。
 
@@ -150,7 +151,7 @@
 | 450 | PROFILE_UPDATE | user | ⚠️ 未实现 |
 | 451 | BLOCK | user | ⚠️ 未实现 |
 | 452 | UNBLOCK | user | ⚠️ 未实现 |
-| 453 | REPORT | user | **上行链路未实现（规划中，v1.5 步骤 3 打通）**：数据层处理分支在位（`data/pipe/msgdomain.go` `onReport`→`sys_reports`，`msg_domain_v2_enabled` 门控），但用户层上行白名单未放行 453，前端举报按钮保持占位 |
+| 453 | REPORT | user | 实现（`msg_domain_v2_enabled` 门控：`data/pipe/msgdomain.go` `onReport`→`sys_reports`；关闭时丢弃） |
 
 **500–599 管理下行**
 
@@ -380,6 +381,6 @@ payload 在 JSON 线格式下是 base64；解析后按下列结构（`wire.go` �
 - 会话类 `212 MEMBER_UPDATE`、`213 ROLE_SET`、`220 MUTE`、`221 PIN`、`231 DRAFT`：无翻译/处理分支（230 TYPING 已实现）。
 - 媒体 WS `300–304`：媒体一律走 HTTP，WS presign 未接。
 - 通话 `350–354`：处理分支已实现但由 `call_enabled` 门控，默认关闭（上行回 403 "calls disabled"）。
-- 用户 `450 PROFILE_UPDATE / 451 BLOCK / 452 UNBLOCK`：常量已定义，无处理器；`453 REPORT` 上行链路未放行（规划中，v1.5 步骤 3）。
+- 用户 `450 PROFILE_UPDATE / 451 BLOCK / 452 UNBLOCK`：常量已定义，无处理器；`453 REPORT` 已实现（`msg_domain_v2_enabled` 门控）。
 - 管理下行 `501 ANNOUNCE`、`502 MAINTENANCE`：无生产者（仅 `500 ADMIN_BROADCAST` 有注入链路）。
 - 高风险：以上未实现 kind 若客户端上行，网关会因"能力外/无 handler"被丢弃或转 `ERROR`——**客户端不应假设其可用**。

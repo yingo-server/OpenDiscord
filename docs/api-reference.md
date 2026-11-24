@@ -1,9 +1,13 @@
-# UFOT API 参考（1.0）
+# UFOT API 参考
 
-> 描述版本：v1.4.0（2026-11 复核）。本文档只描述**代码中真实存在**的接口。
-> 所有字段名、路径、错误码均取自源码（见每节"源码"行）。凡代码未实现的能力一律标注 **⚠️ 未实现**。
+> 描述版本：v2.1.0。本文档只描述**代码中真实存在**的接口；每个端点的响应示例均为
+> **生产服务器实测真实输出**（实测于 v2.1.0 生产 2026-11-23，示例中的 token 已脱敏，
+> 但结构与字段名保持原样）。字段真源为源码 struct 的 json tag（见每节"源码"行）；
+> 与源码 struct 不一致处以实测为准并在文中标注。
 >
-> 验收基线：`server/cmd/chatd/api_contract_test.go` 跑出 **PASS=53 / FAIL=0 / SKIP=0**（2026-10-31 复核）。
+> 路由真源：`server/cmd/chatd/assemble.go buildHTTP()`（用户面 mux）、
+> `server/internal/authsvc/authsvc.go routes()`、`server/internal/mediasvc/mediasvc.go Routes()`、
+> `server/internal/pushsvc/pushsvc.go Routes()`。
 
 ---
 
@@ -58,6 +62,60 @@ UFOT 有 **两个 HTTP 面 + 一个 WebSocket 面**，全部由同一个 `chatd`
 | `is_new_user` | bool | 是否新建用户 |
 | `profile` | object | `{display_name}`，可选 |
 
+### 2.0 游客登录（真实会话对象）
+
+`POST /api/auth/guest`，请求体 `{}`（可选 `device_id`、`nickname`）。
+
+**实测于 v2.1.0 生产 2026-11-23**（token 截断脱敏）：
+
+```json
+HTTP 200
+{
+  "user_id": 20,
+  "device_id": "g_53d196d74f6ba71e0a245c5deaa4d82e",
+  "access_token": "eyJhbGciOiJFZERTQSIsImtpZCI6ImsxIiwidHlwIjoiSldUIn0.…",
+  "token": "eyJhbGciOiJFZERTQSIsImtpZCI6ImsxIiwidHlwIjoiSldUIn0.…",
+  "refresh_token": "eyJhbGciOiJFZERTQSIsImtpZCI6ImsxIiwidHlwIjoicmVmcmVzaCJ9.…",
+  "expires_at": 1795533858563,
+  "expires_at_unix": 1795533858,
+  "session_id": "g_53d196d74f6ba71e0a245c5deaa4d82e",
+  "guest": true,
+  "is_new_user": true,
+  "profile": { "display_name": "游客ba13fc5c…" }
+}
+```
+
+> 实测差异标注：源码 `tokens.go` 中 `expires_at` 注释为 unix 秒、`expires_at_unix` 为"冗余兼容"，
+> 实测 `expires_at` 是 **毫秒**（1795533858563），`expires_at_unix` 才是秒 —— 以实测为准。
+> 成功同时下发 `Set-Cookie: access_token=…`（HttpOnly），后续端点与 WS 握手都用它。
+
+### 2.0a refresh（真实轮换响应）
+
+`POST /api/auth/refresh`，body `{"refresh_token":"…"}`。**实测**：返回与 guest 相同结构的会话对象，
+`guest:false, is_new_user:false`，access/refresh 均轮换为新值，`session_id`（device_id）不变；HTTP 200。
+缺 `refresh_token` → 400 `{"error":"refresh_token required","code":"BAD_REQUEST"}`。
+
+### 2.0b logout（实测）
+
+`POST /api/auth/logout`（带 Cookie），body `{}` → **实测** `{"ok":true,"revoked":false}`，HTTP 200。
+（guest 设备无密码凭证可吊销，`revoked:false` 为正常输出。）
+
+### 2.0c 错误路径实测
+
+```json
+// POST /api/auth/password {"account":"x@y.z","password":"wrongwrong1"}
+HTTP 400  {"error":"account must be a phone number, an email or a username","code":"BAD_REQUEST"}
+
+// POST /api/auth/phone/code {}（缺手机号）
+HTTP 400  {"error":"invalid phone number","code":"BAD_REQUEST"}
+
+// POST /api/auth/phone/verify {"phone":"+8613800000000","code":"000000","challenge_id":"353d…"}
+HTTP 401  {"error":"authentication failed","code":"OTP_INVALID"}
+
+// POST /api/auth/password/set {"password":"short"}（带 Cookie）
+HTTP 400  {"error":"password must be at least 10 characters","code":"WEAK_PASSWORD"}
+```
+
 ### 2.1 手机验证码
 
 | 方法 | 路径 | 鉴权 | 请求体 | 成功响应 |
@@ -76,6 +134,22 @@ UFOT 有 **两个 HTTP 面 + 一个 WebSocket 面**，全部由同一个 `chatd`
 | POST | /api/auth/email/poll | 无 | `email`、`challenge_id?`（别名 `token?`）、`device_id?` | 200 会话对象；**未点链接 → 409 `{status:"pending", code:"PENDING", error:"pending"}`** |
 
 > `email/poll` 用 **409 Conflict**（不是 202）表达"pending"，因为客户端 `EmailAuthProvider.verify` 把 `code=PENDING` 当作可重试信号（`authsvc/otp.go:410`）。
+
+**实测于 v2.1.0 生产 2026-11-23**：
+
+```json
+// POST /api/auth/phone/code {"phone":"+8613800000000"}
+HTTP 200
+{"ok":true,"challenge_id":"353d50ae0b2911eaf3817b9ae370a690","channel":"sms","expires_in":300,"resend_after":60}
+
+// POST /api/auth/email/link {"email":"a@b.co"}
+HTTP 200
+{"ok":true,"challenge_id":"e69508bbd00c976603dda8a59dca0453","channel":"email","expires_in":600,"resend_after":60}
+
+// POST /api/auth/email/poll {"email":"a@b.co","challenge_id":"deadbeef"}（链接未点击）
+HTTP 409
+{"error":"pending","code":"PENDING","status":"pending"}
+```
 
 ### 2.3 账户密码 / 游客 / 密码设置 / 刷新 / 登出
 
@@ -101,6 +175,21 @@ UFOT 有 **两个 HTTP 面 + 一个 WebSocket 面**，全部由同一个 `chatd`
 | POST | /api/media/upload | access_token | `multipart/form-data`，字段名 **`file`** | 201 `{media_id, size, mime, mtype}` |
 | GET | /api/media/{id} | access_token | — | 200 二进制字节流（`Content-Type` = 存储 mime） |
 
+**实测于 v2.1.0 生产 2026-11-23**：
+
+```json
+// POST /api/media/upload （208 字节真 PNG，字段 file=@t.png;type=image/png，带 Cookie）
+HTTP 201
+{"media_id":"e5zJzrwbMgupb2sapED-OOCM6gcDYxob","mime":"image/png","mtype":1,"size":208}
+
+// GET /api/media/e5zJzrwbMgupb2sapED-OOCM6gcDYxob （带 Cookie）
+HTTP 200  Content-Type: image/png  （字节流）
+
+// 未带 Cookie 上传：
+HTTP 401  {"code":"UNAUTHORIZED","error":"unauthorized"}
+// 未带 Cookie 下载：同上 401 UNAUTHORIZED
+```
+
 **上传约束**（`mediasvc/mediasvc.go`）：
 
 - 大小上限：图片 `8MiB`、音频 `2MiB`、其它文件 `20MiB`；整体硬顶 `maxFileBytes = 20MiB`。
@@ -114,6 +203,48 @@ UFOT 有 **两个 HTTP 面 + 一个 WebSocket 面**，全部由同一个 `chatd`
 ---
 
 ## 4. 健康检查
+
+**用户面 /healthz 实测于 v2.1.0 生产 2026-11-23**：
+
+```json
+// GET /healthz
+HTTP 200
+{"conns":0,"db":"ok","mode":"embedded","ok":true,"uptime_ms":145081572}
+
+// GET /api/nope （未知 API 路径，buildHTTP catch-all）
+HTTP 404
+{"code":"NOT_FOUND","error":"unknown api path"}
+```
+
+注意字段序为 map 编码序（字母序）；`uptime_ms` 为进程启动以来的毫秒数。
+
+---
+
+## 4a. Web Push 域 `/api/push/*`（2 端点，已实现）
+
+源码：`server/internal/pushsvc/pushsvc.go Routes()`。鉴权与 media/authsvc 同契约：`access_token` HttpOnly Cookie。
+订阅保存在内存（重启丢失，浏览器会重新订阅）；无 VAPID 环境变量时 Sender 降级为 no-op（订阅照常登记）。
+
+| 方法 | 路径 | 鉴权 | 请求体 | 成功响应 |
+|------|------|------|--------|---------|
+| POST | /api/push/subscribe | access_token | `{"subscription":{"endpoint","keys":{"p256dh","auth"}}}` | **204 无响应体** |
+| POST | /api/push/test | access_token | 无 | 200 `{"sent":N}` |
+
+**实测于 v2.1.0 生产 2026-11-23**：
+
+```json
+// POST /api/push/subscribe（p256dh 必须是 base64url 可解码的 65 字节非压缩 P-256 公钥，auth 16 字节）
+HTTP 204  （无 body）
+
+// p256dh 非法（长度/编码不符）：
+HTTP 400  {"code":"BAD_REQUEST","error":"invalid p256dh"}
+
+// POST /api/push/test（带 Cookie，无订阅或订阅者离线）
+HTTP 200
+{"sent":0}
+```
+
+> 4xx/5xx 时客户端 fail-closed：只记日志不重试（`apps/client/src/net/push`）。
 
 | 方法 | 路径 | 面 | 鉴权 | 成功响应 |
 |------|------|----|------|---------|
@@ -297,19 +428,47 @@ UFOT 有 **两个 HTTP 面 + 一个 WebSocket 面**，全部由同一个 `chatd`
 
 ---
 
-## 7. 验收状态
+## 7. WS 帧协议实测（v2.1.0 生产 2026-11-23）
 
-`server/cmd/chatd/api_contract_test.go` 用真实装配（真 SQLite 热库、真 admin 库、真传输、真 WS acceptor、真 REST 监听器）驱动全部 1.0 面：
+握手：`GET /ws`，带 `Cookie: access_token=…`（也接受 `?token=`，但浏览器客户端只用 Cookie）。
+`HTTP/1.1 101 Switching Protocols` 即建连成功（实测响应含 `Server: Caddy`，生产经 Caddy 反代）。
 
-- **PASS=53 / FAIL=0 / SKIP=0**。
-- 覆盖：`/healthz`、auth 9 端点（含 wrong/replay/409 边界）、media 6 探测（png/.bin/>20MB/no-auth/uploader/other-user）、admin 全业务路由（含 review 角色 403、broadcast 幂等重放、archive dry_run）、WS 握手（无/有 cookie）、CONV_CREATE→CONV_DATA_RESULT(931)+CONV_PAYLOAD(202)、PING→PONG、MSG_SEND→MSG_ACK、SYNC_REQUEST→MSG_NEW、非成员 MSG_SEND→ERROR 403、`>20 msg/s` 触发 RATE_LIMITED 或断连。
+帧格式（`server/internal/user/net/frame/codec.go`）：首字节 `{` = JSON 形态，否则 protobuf。
+JSON 形态字段：`id, ack_id, kind, version, request_id, flags, sent_at, conv_id, user_id, payload`；
+**`payload` 为 base64**（protobuf bytes 的 JSON 编码；客户端把 payload JSON 序列化后再 base64）。
+`conv_id` 与 `user_id` 互斥（同设 → bad frame 断连）；未知 JSON 字段 → `DisallowUnknownFields` 拒绝。
 
-复跑命令：
+**实测回包（全部为真实生产输出）**：
 
+```text
+① PING(kind=4, payload=protobuf Ping{client_ms=1795533159802})
+→ 文本帧 {"kind":5,"ack_id":<发送帧id>,"payload":"CXq9HQ6iAQAAEeS4HQ6iAQAA"}
+  payload 解出 protobuf Pong{client_ms=1795533159802, server_ms=1795533158628}
+  （ack_id 回显发送帧的 id；不回 request_id）
+
+② 发送 {"kind":4,"bogus":1}（未知字段）
+→ {"kind":10,"payload":"CKAfEj5iYWQgZnJhbWU6IGZyYW1lOiBiYWQgZnJhbWU6IGpzb246IGpzb246IHVua25vd24gZmllbGQgImJvZ3VzIg=="}
+  payload = protobuf Error{code:4000, reason:"bad frame: frame: bad frame: json: unknown field \"bogus\""}
+  随后连接以 1003 关闭（资源立即回收，acceptor readLoop）。
+
+③ 发送 payload 非法 base64
+→ kind 10, Error{code:4000, reason:"bad frame: … json: illegal base64 data at input byte 0"} + 1003 断连
+
+④ CONV_CREATE(kind=200) / MSG_SEND(kind=101)（非成员会话）
+→ 实测无任何回帧（见下方"投递条件"说明），连接保持打开。
 ```
-export GOCACHE=/tmp/gocache GOTMPDIR=/tmp TMPDIR=/tmp GOMODCACHE=/tmp/gomod GOFLAGS=-mod=mod GOPROXY=direct
-go test ./server/cmd/chatd/ -run TestAPIContract -count=1 -v
-```
+
+> **实测差异标注**：非成员/无效会话的 MSG_SEND 按源码 `data/pipe/msg.go` 应回
+> `ERROR{code:403, reason:"not a member of conversation"}`（kind 10，按 user_id 寻址），
+> 但生产实测未收到回帧。下行投递按 `user_id` 定位连接（`router.deliver`），回包
+> 形状以本节 ①② 的真实输出为准；CONV_CREATE 的正常应答为 kind 931
+> `{"op","ok","error?","body?","requestId"}`（源码 `data/pipe/pipe.go onConvData`，
+> 见 `api_contract_test.go` 的 PASS 用例）。
+>
+> 服务端主动心跳：acceptor 每 HeartbeatInterval 发 WS Ping 控制帧；客户端 Pong 续读超时。
+> 限流超限（kind 13 RATE_LIMITED / 4290 断连）与 ERROR{503,"SHUTDOWN"} 排空广播见源码。
+
+**WS kind 全表（85 个，真源 `server/internal/proto/kinds/kinds.go`）见 `docs/ws-protocol.md`。**
 
 ---
 
@@ -321,11 +480,11 @@ go test ./server/cmd/chatd/ -run TestAPIContract -count=1 -v
 | 管理面 RBAC REST 挂在 `/api/admin/*` 的旧设计 | ⚠️ 未实现 | 旧注释说返回 `501 NOT_IMPLEMENTED`，实际已改为 `/api/v1/*` 且已实现；此处仅记录历史差异。 |
 | 冷库 Postgres 读路径 | ⚠️ 未实现 | `cold_dsn=""` 默认不连接；读退化为纯热库（`chatd/config.go` 注释）。 |
 | WS 媒体 presign（kinds 300/301 MEDIA_PRESIGN_*） | ⚠️ 未实现 | 常量已定义，但数据层/网关未接处理；媒体走 HTTP `/api/media/*`。 |
-| 消息编辑/删除/转发/搜索/回执类 WS kind（106/107/109/110/111 等） | ⚠️ 未实现（除下述例外） | kind 已注册、能力表列出；106/107/108/104/105/109 在 `data/pipe` 有处理分支，**但 106/109（及 453 举报）由 `msg_domain_v2_enabled` 门控、107/108 召回为持久化处理**；110/111 仍无 handler 分支。 |
-| 用户举报 453 REPORT 上行链路 | ⚠️ 规划中（v1.5 步骤 3 实现） | 数据层 `onReport` 处理分支与 `sys_reports` 入库代码在位（`data/pipe/msgdomain.go`，`msg_domain_v2_enabled` 门控），但用户层上行白名单未放行 453，前端举报按钮保持占位。 |
+| 消息编辑/删除/转发/搜索/回执类 WS kind（106/107/109/110/111 等） | ⚠️ 部分 | 106/107/108/104/105/109 在 `data/pipe` 有处理分支；106/109（及 453 举报）由 `msg_domain_v2_enabled` 门控（编译默认 true，pipe 层回退 false，DB flag 值优先——生产实际行为以 sys_feature_flags 为准）；110/111 仍无 handler 分支。 |
+| 用户举报 453 REPORT 上行链路 | ⚠️ 部分（flag 门控） | 数据层 `onReport` 处理分支与 `sys_reports` 入库代码在位（`data/pipe/msgdomain.go`，`msg_domain_v2_enabled` 门控，编译默认 true / pipe 回退 false）。 |
 | 通话 kinds 350–354 | ⚠️ 默认关闭（flag 门控） | 处理分支已实现（`data/pipe/call.go` `onCall`），由 `call_enabled` 门控，**默认 false**；开启前上行回 403 "calls disabled"。 |
 | Presence kinds 400–402 | ⚠️ 部分 | 400 由客户端上报、数据层处理；401/402 为**服务端产生的连接生命周期事件**（连接建立/断开向同会话对端广播，上行发送回 `ERROR 4003`），非客户端订阅机制（`kinds.go` 注释）。 |
 | SMS 短信发送（`SMSSender`） | ⚠️ 未实现 | `authsvc/otp.go` 注释：未接线；dev 用固定码，生产经 v1.4 webhook 适配器下发（未配置时 fail-closed）。 |
-| 推送订阅端点（前端 `net/push` 期望的订阅上行） | ⚠️ 未实现（规划中，v1.5 步骤 3 实现） | 前端 `apps/client/src/net/push/index.ts` 的 VAPID 订阅封装已就位，但服务端尚无对应订阅接收端点与 push 事件下发；推送 fail-closed。 |
+| 推送订阅端点 `/api/push/subscribe`、`/api/push/test` | ✅ 已实现（v1.5） | 见 §4a；Notify 钩子已接数据层 flusher，VAPID 未配置时 fail-closed no-op。 |
 | 媒体异步病毒扫描（ClamAV） | ⚠️ 未实现 | `mediasvc` 注释：MVP 行出厂即用（status=1），1.1 才有扫描流水线。 |
 | Captcha 强制校验 | ⚠️ 未实现 | `authsvc/handlers.go` 注释：字段接受但未强制（TODO-CAPTCHA）。 |

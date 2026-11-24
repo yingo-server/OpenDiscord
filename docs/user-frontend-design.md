@@ -1,6 +1,9 @@
 # 用户层与前端设计
 
 > 总纲：每个组件只做一件事并做好；机制与策略分离；组合优于集成；帧流作为统一接口；crash-only + 快速恢复。
+> 对齐版本：v2.1.0。前端部分（§前端）已完全重写为 apps/client（React + TS，黑白极简，
+> 20 文件分层 app/domain/net/platform/state/ui），**契约真源是 [frontend-contract.md](frontend-contract.md)**，
+> 本文件保留用户层网关（Go）的设计说明。
 
 ## 1. 用户层：组件化管道设计
 
@@ -71,69 +74,27 @@ usergw/
 - 策略（router+policy 包）：哪些 kind 免限流、超限几次断连、KICKED 排空几秒——数据驱动，SIGHUP 可换
 - WS 生命周期状态机由 acceptor 持有状态、router 判定迁移：状态是数据，转移表在 policy 可配（HELLO 超时从 10s 调 3s 无需改代码）
 
-## 2. 前端：组合式设计
+## 2. 前端（已重写，见契约）
 
-### 2.1 目录结构（net→core→ui 分层）
+> **本节原设计（net→core→ui 三层、IndexedDB sync 引擎、双注册表、消息渲染器注册表等）已被 v2.1 前端重写取代。**
+> 现状：apps/client 为 React + TypeScript，黑白极简，20 文件分层：
 
 ```
 src/
-├─ net/                  # 只懂字节与协议，零 React 依赖
-│  ├─ transport/         # ws-connection.ts（纯WS封装）、backoff.ts
-│  ├─ proto/             # gen/（protobuf-ts 生成物）、codec.ts
-│  ├─ protocol/          # registry.ts（kind→handler 注册表）、dispatch.ts（<50行）
-│  ├─ sync/              # engine.ts（last_seq 收敛引擎）、per-conv.ts、outbox.ts
-│  ├─ auth/              # token-store.ts、providers/（phone/email/password/wechat/apple/onetap/guest 各一文件）
-│  └─ cache/             # idb.ts（messages/convs/mediaUrls 三库）、media-lru.ts
-├─ core/                 # 领域状态，不依赖 React
-│  ├─ stores/            # conn/session/conv/message/presence 各一 store，禁互相 import（eventbus 通信）
-│  └─ selectors/         # 派生计算
-├─ ui/                   # React，只 import core/net 类型
-│  ├─ views/             # login/ conv-list/ chat/ media-viewer/ settings/ banned/
-│  ├─ renderers/         # ★ 消息渲染器注册表
-│  └─ components/
-└─ main.tsx              # 只做注册 handlers + renderers + 挂载
+├─ app/       # bootstrap（装配+服务注册）、frames（下行帧处理）、services（对上接口）、mock
+├─ domain/    # types / parse / backoff（含单测）
+├─ net/       # http/{client,auth,push}、ws/{client,identity,requests,call}、protocol/{frame,kinds}
+├─ platform/  # env（Vite 环境变量）、session（会话存储）、theme（亮/暗主题）
+├─ state/     # chat（会话/消息/typing/draft store）、session
+└─ ui/        # views/{Login,Settings}、components/{ConvList,MessageList,Composer,CallOverlay,Toast,ErrorBoundary,BrandMark}、i18n、lib、styles
 ```
 
-依赖方向：`ui → core → net`，与后端镜像。
+- 帧编解码：`net/protocol/frame.ts`（JSON 线格式，snake_case envelope + base64 payload）——与服务端 `frame/codec.go` 对称
+- kind 常量：`net/protocol/kinds.ts`（与服务端 `kinds.go` 一一对应）
+- 无 IndexedDB 持久化：状态存内存 store + 本地会话；离线补拉走 SYNC_REQUEST(8)
+- **功能契约、HTTP/WS 帧形状、环境变量：唯一真源是 [frontend-contract.md](frontend-contract.md)**
 
-### 2.2 双注册表：机制与策略分离（核心）
-
-**协议 handler 注册表**——dispatch.ts 等价于 shell 的 execvp：查表，调用，零分支：
-
-```
-handler = registry.get(env.kind)
-if (!handler) { log(`unhandled kind=${kind}`); return }   // 未知 kind 静默丢弃+计数
-handler(env, ctx)
-```
-
-各模块自注册：MSG→sync.ingest、ACK→applyAck、DELIVERED/READ→applyReceipt、RESUME_RESULT→applyBackfill、FEATURE_FLAGS→setFlags、KICKED→kick、RATE_LIMITED→toast。
-
-**新增 kind（如 350 通话段启用）= 新文件 + 一行 import，dispatch.ts 永不修改。**
-
-**消息渲染器注册表**：
-
-```
-registerRenderer('image', ImageMsg)      // blurhash→缩略图→viewer 三段渐进
-registerRenderer('audio', AudioMsg)      // 波形24段SVG + 播放进度高亮
-registerRenderer('text',  TextMsg)
-registerRenderer(999,     UnknownMsg)    // "暂不支持的消息类型"（旧客户端向前兼容）
-```
-
-聊天窗消息列表组件只持有位置与交互（虚拟滚动/长按菜单/气泡布局），不含任何一种消息的渲染逻辑。新增"投票"消息=新文件注册，聊天窗不重发版。
-
-### 2.3 sync 引擎：rsync 模型
-
-| rsync | 本设计 |
-|---|---|
-| 两端校验和对比 | 客户端 last_seq ↔ 服务端当前 seq |
-| 只传差异块 | RESUME 只拉 gap 增量 |
-| 旧块可复用 | IndexedDB 历史免拉取，分页按需 |
-| 目标持有一致副本 | IndexedDB 是渲染唯一数据源，内存窗口是投影 |
-
-- **启动 hydrate**：UI 立即从 IndexedDB 渲染（离线可用），conn-store 显示"同步中"
-- **收敛引擎是唯一写者**：下行经 sync engine 校验（seq 连续性/去重）后先写 IndexedDB 再进内存 store
-- 服务端删除/撤回=下发 tombstone（同 rsync delete 语义）
-- 全量重建=分页重放，与增量共用同一 ingest 入口，**没有第二套写入路径**
+（原 §2.1–2.3 的 sync 引擎与渲染器注册表设计仅存档于 git 历史，不再描述现状。）
 
 ## 3. Unix 细节落实
 
@@ -171,10 +132,9 @@ usergw-ctl conn show --user U
 
 ```ini
 [Service]
-Type=notify          # sd_notify READY/WATCHDOG
+Type=simple          # chatd 不发 sd_notify（deploy/systemd/ufot.service 实际值）
 Restart=always       # crash-only
 RestartSec=1
-WatchdogSec=30       # 所有管道 stage 定期喂狗
 TimeoutStopSec=15
 LimitNOFILE=65536
 ```
@@ -184,10 +144,10 @@ LimitNOFILE=65536
 | 原则 | 落点 |
 |---|---|
 | Do one thing well | 七组件职责表，每项列"不做什么"；main 只接线 |
-| 机制与策略分离 | policy 包数据驱动；前端双注册表，dispatch/消息列表零分支 |
+| 机制与策略分离 | policy 包数据驱动；前端 kind 分发表见 apps/client/src/app/frames.ts |
 | 管道与组合 | channel 串联 stage，上行 `accept→codec→limiter→router→forwarder` |
 | 一切皆流 | Envelope 帧是统一数据单元；内部帧再包路由头 |
-| 分层不许扁平 | 后端 net←core←app←cmd、前端 net←core←ui，CI 强制 |
+| 分层不许扁平 | 后端 net←core←app←cmd；前端 app/domain/net/platform/state/ui 分层 |
 | 优雅退出 | SIGTERM 七步排空 + TimeoutStopSec 兜底 |
 | 日志交 journal | stdout 单行结构化 |
 | crash-only | 无本地持久状态 + Restart=always + RESUME 恢复 |
