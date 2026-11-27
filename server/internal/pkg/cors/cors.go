@@ -18,6 +18,7 @@
 package cors
 
 import (
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -41,18 +42,30 @@ type Policy struct {
 	Origins []string
 }
 
+// ErrUnknownMode is returned by New when the configured mode is not one of
+// the known values. A security switch must not silently fall back to the
+// most permissive mode on a typo: an operator who writes "of" instead of
+// "off" must see the mistake at startup, not discover it via a breach.
+var ErrUnknownMode = fmt.Errorf("cors: unknown mode (known: %q, %q, %q; empty = %q)",
+	ModeAllowAny, ModeAllowList, ModeOff, ModeAllowAny)
+
 // New resolves a policy from the raw configuration values. An empty mode
-// means allow_any (the standalone-client default).
-func New(mode, publicOrigin string, origins []string) Policy {
+// means allow_any (the standalone-client default). An UNKNOWN mode is an
+// error, not a fallback.
+func New(mode, publicOrigin string, origins []string) (Policy, error) {
 	switch strings.ToLower(strings.TrimSpace(mode)) {
-	case ModeOff:
-		mode = ModeOff
+	case "":
+		mode = ModeAllowAny
+	case ModeAllowAny:
+		mode = ModeAllowAny
 	case ModeAllowList:
 		mode = ModeAllowList
+	case ModeOff:
+		mode = ModeOff
 	default:
-		mode = ModeAllowAny
+		return Policy{}, fmt.Errorf("%w: got %q", ErrUnknownMode, mode)
 	}
-	return Policy{Mode: mode, PublicOrigin: publicOrigin, Origins: origins}
+	return Policy{Mode: mode, PublicOrigin: publicOrigin, Origins: origins}, nil
 }
 
 // Allows reports whether the given Origin may receive CORS headers.

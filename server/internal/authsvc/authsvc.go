@@ -205,6 +205,9 @@ type Service struct {
 
 	// methodsLimiter rate limits the public discovery endpoint per IP.
 	methodsLimiter *ipLimiter
+
+	// cors is the CORS policy resolved once at construction.
+	cors cors.Policy
 }
 
 // New validates the dependency set and builds the router.
@@ -251,6 +254,11 @@ func New(deps Deps, cfg Config) (*Service, error) {
 		captcha:  deps.Captcha,
 		lg:       lg,
 	}
+	corsPol, cerr := cors.New(s.cfg.CORSMode, s.cfg.PublicOrigin, s.cfg.CORSOrigins)
+	if cerr != nil {
+		return nil, fmt.Errorf("authsvc: %w", cerr)
+	}
+	s.cors = corsPol
 	s.methodsLimiter = newIPLimiter(methodsRateWindow)
 	s.mux = s.routes()
 	if !s.methodState().AnyEnabled() {
@@ -465,9 +473,11 @@ const (
 	CORSModeOff       = cors.ModeOff
 )
 
-// corsPolicy resolves the effective CORS policy (default: allow_any).
+// corsPolicy returns the policy resolved at construction time (New fails
+// fast on an unknown mode, so a typo in cors_mode aborts startup instead of
+// silently widening the surface).
 func (s *Service) corsPolicy() cors.Policy {
-	return cors.New(s.cfg.CORSMode, s.cfg.PublicOrigin, s.cfg.CORSOrigins)
+	return s.cors
 }
 
 // applyCORS writes the CORS headers for the public auth surface.

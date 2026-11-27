@@ -11,7 +11,7 @@ BIN           := chatd
 VERSION ?= $(shell git describe --tags --always 2>/dev/null || date -u +%Y%m%d%H%M%S)
 ARCH    ?= $(shell go env GOARCH 2>/dev/null || echo amd64)
 
-.PHONY: proto build test lint release release-all clean importlint
+.PHONY: proto build test lint kinds release release-all clean importlint
 
 # importlint: enforce docs/bridge-design.md §4.1 import red lines (P0-1).
 # Included in lint (therefore CI). Runs standalone too.

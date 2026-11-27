@@ -394,10 +394,15 @@ func newAssembly(cfg *config, lg *log.Logger) (*assembly, error) {
 	userCfg.ListenAddr = cfg.Listen
 	userCfg.PublicOrigin = cfg.PublicOrigin
 	userCfg.AllowAnyOrigin = cfg.AllowAnyOrigin
+	userCfg.CORSOrigins = cfg.CORSOrigins
 	userCfg.BridgeAddr = "embedded"
 	userCfg.LogLevel = cfg.LogLevel
 	userCfg.EnableRateLimit = cfg.RateLimitEnabled
-	userCfg.ExtraRoutes = a.buildHTTP(authSvc.Routes())
+	httpFace, herr := a.buildHTTP(authSvc.Routes())
+	if herr != nil {
+		return nil, herr
+	}
+	userCfg.ExtraRoutes = httpFace
 	userCfg.Flags = a.flags
 
 	srv, err := app.New(userCfg, func(token string) (*ws.Identity, error) {
@@ -527,8 +532,9 @@ func (a *assembly) bootstrapFlags(ctx context.Context) error {
 }
 
 // buildHTTP is the single user-facing mux: everything the browser talks to
-// lives on one port (Caddy proxies one upstream).
-func (a *assembly) buildHTTP(auth http.Handler) http.Handler {
+// lives on one port (Caddy proxies one upstream). An invalid cors_mode
+// aborts startup (fail-fast: a security switch must not fall back open).
+func (a *assembly) buildHTTP(auth http.Handler) (http.Handler, error) {
 	mux := http.NewServeMux()
 	mux.Handle("/api/auth/", auth)
 	// media plane: same port as the gateway (bytes never ride the 64KB WS
@@ -571,8 +577,11 @@ func (a *assembly) buildHTTP(auth http.Handler) http.Handler {
 	// how the cross-origin surface silently rots: auth, media and push must
 	// all answer a browser preflight the same way, and the /api fallback
 	// must not leak a 405 to the preflight.
-	policy := cors.New(a.cfg.CORSMode, a.cfg.PublicOrigin, a.cfg.CORSOrigins)
-	return policy.Middleware(mux)
+	policy, cerr := cors.New(a.cfg.CORSMode, a.cfg.PublicOrigin, a.cfg.CORSOrigins)
+	if cerr != nil {
+		return nil, fmt.Errorf("chatd: cors config: %w", cerr)
+	}
+	return policy.Middleware(mux), nil
 }
 
 // serviceRoot answers the root path with the service descriptor.

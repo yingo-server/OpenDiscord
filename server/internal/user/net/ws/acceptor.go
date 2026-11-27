@@ -44,7 +44,11 @@ type Config struct {
 	ListenAddr   string
 	PublicOrigin string // 同源校验白名单，如 https://chat.example.com
 	// AllowAnyOrigin 放行任意合法 Origin（独立前端部署的默认姿态）。
-	AllowAnyOrigin    bool
+	AllowAnyOrigin bool
+	// CORSOrigins 与 HTTP 面的 cors_origins 列表共用（allow_list 模式下
+	// HTTP 能过的 Origin，WS 握手也必须能过——两套判据不一致会让
+	// "XHR 正常但 WS 连不上"这类问题无法排查）。
+	CORSOrigins       []string
 	CookieName        string // 默认 access_token
 	HeartbeatInterval time.Duration
 	ReadTimeout       time.Duration
@@ -383,6 +387,11 @@ func (a *Acceptor) checkOrigin(r *http.Request) bool {
 	}
 	if a.cfg.PublicOrigin != "" && strings.EqualFold(origin, a.cfg.PublicOrigin) {
 		return true
+	}
+	for _, o := range a.cfg.CORSOrigins {
+		if o != "" && strings.EqualFold(origin, o) {
+			return true
+		}
 	}
 	// 同源：scheme + host 与请求 Host 一致。
 	return strings.EqualFold(u.host, r.Host)

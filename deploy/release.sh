@@ -106,18 +106,22 @@ fi
 
 # ---------------------------------------------------------------------------
 # 2. 打包（tar.gz + SHA256SUMS）
+#    包布局必须与 install.sh 的查找顺序一致：二进制在包根（chatd、chatd-pg），
+#    deploy/ 需含 install.sh 实际引用的全部子目录（systemd/journald/keygen/lib）。
 # ---------------------------------------------------------------------------
 STAGE="dist/pkg-$VERSION"
 rm -rf "$STAGE"
-mkdir -p "$STAGE/bin" "$STAGE/deploy"
+mkdir -p "$STAGE/deploy"
 
-for f in dist/chatd; do
-  [ -f "$f" ] && install -m 0755 "$f" "$STAGE/bin/"
+# 二进制放包根（install.sh 依次找包根/chatd 与 dist/chatd —— 见 install.sh §6）
+for f in dist/chatd dist/chatd-pg; do
+  [ -f "$f" ] && install -m 0755 "$f" "$STAGE/"
 done
 
-# 部署件随包发布，保证「发布即自包含」
-cp -R deploy/systemd deploy/policy.json deploy/ufot.toml deploy/Caddyfile "$STAGE/deploy/"
-cp deploy/install.sh "$STAGE/deploy/install.sh"
+# 部署件随包发布，保证「发布即自包含」——必须包含 install.sh 无条件引用的
+# 全部路径（journald/ 缺失会让安装第 7 步硬失败）。
+cp -R deploy/systemd deploy/journald deploy/keygen deploy/lib deploy/policy.json deploy/ufot.toml deploy/Caddyfile "$STAGE/deploy/"
+cp deploy/install.sh deploy/release.sh deploy/backup.sh deploy/install-interactive deploy/logrotate.conf "$STAGE/deploy/" 2>/dev/null || true
 chmod 0755 "$STAGE/deploy/install.sh"
 
 TARBALL="dist/ufot-$VERSION-linux-$(go env GOARCH 2>/dev/null || echo amd64).tar.gz"

@@ -115,6 +115,7 @@ func New(cfg Config, authn AuthnFunc, peer transport.Peer) (*Server, error) {
 		ListenAddr:        cfg.ListenAddr,
 		PublicOrigin:      cfg.PublicOrigin,
 		AllowAnyOrigin:    cfg.AllowAnyOrigin,
+		CORSOrigins:       cfg.CORSOrigins,
 		CookieName:        cfg.CookieName,
 		HeartbeatInterval: cfg.HeartbeatInterval,
 		ReadTimeout:       cfg.ReadTimeout,

@@ -1,5 +1,10 @@
 package authsvc
 
+// The login-method switches: runtime semantics beyond the static 403 table.
+// The hot-flip test is the operationally critical one: an operator disables a
+// method in policy.json mid-day — what happens to sessions that are already
+// logged in?
+
 import (
 	"encoding/json"
 	"net/http"
@@ -134,5 +139,69 @@ func TestMethodFlagsAnyEnabled(t *testing.T) {
 	}
 	if !(MethodFlags{Guest: true}).AnyEnabled() {
 		t.Fatalf("guest-only switch set must report an enabled method")
+	}
+}
+
+// Hot flip: the switch flips from enabled to disabled WHILE a session exists.
+// Fact asserted: new logins get 403; the ALREADY-ISSUED access token keeps
+// working (the switch gates the login entry points, not the session lifetime).
+// An operator can log everyone out by other means; the switch alone is not
+// a session killer — that is the documented behaviour, and this test pins it.
+func TestMethodHotFlipKeepsExistingSessions(t *testing.T) {
+	flags := MethodFlags{Guest: true}
+	env := newTestEnv(t, func(c *Config) {
+		c.Methods = func() MethodFlags { return flags }
+	})
+
+	status, body := env.post(t, "/api/auth/guest", `{}`, nil)
+	if status != http.StatusOK {
+		t.Fatalf("pre-flip guest login = %d, want 200", status)
+	}
+	var sess struct {
+		AccessToken string `json:"access_token"`
+		Cookie      string `json:"-"`
+	}
+	if err := json.Unmarshal([]byte(body), &sess); err != nil {
+		t.Fatalf("decode session: %v (%s)", err, body)
+	}
+
+	// Flip the switch off (same service, live closure — the SIGHUP path).
+	flags = MethodFlags{}
+	status, body = env.post(t, "/api/auth/guest", `{}`, nil)
+	if status != http.StatusForbidden {
+		t.Fatalf("post-flip guest login = %d, want 403; body=%s", status, body)
+	}
+
+	// The pre-flip access token still authenticates a token-bearing endpoint.
+	req, _ := http.NewRequest(http.MethodPost, env.srv.URL+"/api/auth/password/set",
+		strings.NewReader(`{"password":"new-password-123"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+sess.AccessToken)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("token check: %v", err)
+	}
+	defer resp.Body.Close()
+	// 200 (set) or 400 (weak per policy) both prove authentication SUCCEEDED;
+	// 401 would mean the switch killed the session, which it must not.
+	if resp.StatusCode == http.StatusUnauthorized {
+		t.Fatalf("post-flip token check = 401: the login switch must not revoke existing sessions")
+	}
+}
+
+// probe budget edge: a policy value of 0 falls back to the built-in default
+// (the endpoint stays usable), not to "disabled".
+func TestProbeBudgetZeroFallsBackToDefault(t *testing.T) {
+	env := newTestEnv(t, func(c *Config) {
+		c.Methods = func() MethodFlags { return MethodFlags{Guest: true} }
+		c.MethodsProbeBudget = func() int { return 0 }
+	})
+	resp, err := http.Get(env.srv.URL + "/api/auth/methods")
+	if err != nil {
+		t.Fatalf("GET methods: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("budget=0 -> status %d, want 200 (0 means default, not disabled)", resp.StatusCode)
 	}
 }

@@ -26,6 +26,8 @@ type Config struct {
 	// AllowAnyOrigin 放行任意合法 Origin（独立前端部署默认 true）；
 	// false 时回退到 PublicOrigin / 同 Host 校验。
 	AllowAnyOrigin bool
+	// CORSOrigins 与 HTTP 面 cors_origins 同源（WS 握手白名单对齐 HTTP 判据）。
+	CORSOrigins []string
 	// BridgeAddr 桥接地址（TCP/UDS）。本批次 Peer 由装配层注入，仅记录与健康展示。
 	BridgeAddr string
 	// CookieName 承载 access token 的 Cookie 名，默认 access_token。
