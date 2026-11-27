@@ -57,7 +57,7 @@ jobs:
   # 全平台/全 CPU 架构构建（后端产物矩阵，无任何前端步骤）。
   # ---------------------------------------------------------------------------
   build-matrix:
-    if: startsWith(github.ref, 'refs/tags/v*')
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -151,7 +151,7 @@ jobs:
 
   # 源码包（FFmpeg 惯例）
   src-package:
-    if: startsWith(github.ref, 'refs/tags/v*')
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
