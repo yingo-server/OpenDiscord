@@ -41,10 +41,35 @@ UFOT 有 **两个 HTTP 面 + 一个 WebSocket 面**，全部由同一个 `chatd`
 
 ---
 
-## 2. 认证域 `/api/auth/*`（9 端点）
+## 2. 认证域 `/api/auth/*`（10 端点）
 
 挂载在用户面（`listen`）同一 mux；`POST` only，预检走 `OPTIONS`（不 405）。
 成功统一返回**会话对象**（除非另有说明），失败返回 `{error, code, status?, retry_after_ms?}`。
+
+### 2.0z 登录方式开关（公开查询）
+
+`GET /api/auth/methods` —— **不鉴权**（客户端尚未登录也要能问），但**按源 IP 限流**
+（60 次/分钟/IP，超限 429 `{"error":"too many requests","code":"RATE_LIMITED"}`，
+带 `retry_after_ms`；`Cache-Control: no-store`）。
+
+```json
+HTTP 200
+{ "methods": { "phone": false, "email": false, "password": true, "guest": true } }
+```
+
+开关来源是 `policy.json` 的 `auth.methods` 段，**四项默认全部 false**（fail-closed）：
+
+```json
+"auth": { "methods": { "phone": false, "email": false, "password": false, "guest": false } }
+```
+
+- 被关闭的登录方式，其端点在**解析任何参数之前**直接返回
+  `403 {"error":"<method> login is disabled","code":"METHOD_DISABLED"}`；
+  `POST /api/auth/password/set`（已登录后改密）不受开关约束。
+- `policy.json` 热更（SIGHUP）即时生效，无需重启。
+- 前端据此只渲染可用的登录方式，避免用户点了必然 403 的 tab。
+
+
 
 **会话对象字段**（`authsvc/tokens.go` sessionPayload）：
 

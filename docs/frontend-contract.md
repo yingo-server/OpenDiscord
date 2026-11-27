@@ -34,6 +34,12 @@
 错误响应体统一为 {"code":"<机器码>","message":"<可展示文案>"}；message 面向终端用户，不得含 driver/SQL/栈信息。
 
 ### 2.1 认证 /api/auth/*（错误体实测为 {"error":"<文案>","code":"<机器码>"}）
+
+**登录方式开关**：四种登录方式各有一个开关（policy.json 的 `auth.methods`，默认全部 false）。
+前端应先调用 `GET /api/auth/methods`（公开、不鉴权、按 IP 限流 60/min）拿到
+`{"methods":{"phone":b,"email":b,"password":b,"guest":b}}`，只渲染可用方式；
+被关闭的方式会返回 `403 {"error":"...","code":"METHOD_DISABLED"}`。
+
 | 端点 | 请求体 | 成功响应 |
 |---|---|---|
 | POST /api/auth/phone/code | {"phone":"+8613800138000","captcha_token":"..."?} | {"ok":true,"challenge_id":"...","channel":"sms","expires_in":300,"resend_after":60} |

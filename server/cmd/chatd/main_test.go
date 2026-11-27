@@ -62,7 +62,13 @@ func testConfig(t *testing.T) *config {
 	cfg.DevOTP = false
 	cfg.ShutdownTimeout = 5
 
-	body, err := json.Marshal(policy.Default())
+	pol := policy.Default()
+	// The login-method switches default to OFF (fail-closed). These tests
+	// log in as guests (and exercise the password path), so the test policy
+	// must opt in explicitly — exactly like a real deployment does.
+	pol.Auth.Methods.Guest = true
+	pol.Auth.Methods.Password = true
+	body, err := json.Marshal(pol)
 	if err != nil {
 		t.Fatalf("marshal policy: %v", err)
 	}

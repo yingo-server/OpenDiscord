@@ -333,6 +333,18 @@ func newAssembly(cfg *config, lg *log.Logger) (*assembly, error) {
 		DevOTP:        cfg.DevOTP,
 		SecureCookies: strings.HasPrefix(cfg.PublicOrigin, "https://"),
 		Logger:        log.For("authsvc"),
+		// The login-method switches live in policy.json ("auth.methods").
+		// The closure reads the LIVE snapshot, so a policy reload (SIGHUP)
+		// flips a login method without a restart.
+		Methods: func() authsvc.MethodFlags {
+			m := a.policy.Current().Policy.Auth.Methods
+			return authsvc.MethodFlags{
+				Phone:    m.Phone,
+				Email:    m.Email,
+				Password: m.Password,
+				Guest:    m.Guest,
+			}
+		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("chatd: auth service: %w", err)

@@ -121,6 +121,39 @@ type Config struct {
 	MaxBodyBytes int
 	Now          func() time.Time
 	Logger       *log.Logger
+
+	// Methods returns the LIVE login-method switch set. The assembler injects
+	// a closure over the policy snapshot so a policy reload (SIGHUP) takes
+	// effect without a restart.
+	//
+	// nil means "no switch source wired" -> every method is enabled (the
+	// library default). Deployments always inject a reader; the deployment
+	// default is "every method off" (fail-closed).
+	Methods func() MethodFlags
+}
+
+// MethodFlags is the authentication surface switch set.
+//
+// Each login method can be turned off independently. A disabled method
+// rejects its requests with 403 METHOD_DISABLED BEFORE parsing any
+// parameter, so a disabled method reveals nothing about its internals.
+type MethodFlags struct {
+	Phone    bool
+	Email    bool
+	Password bool
+	Guest    bool
+}
+
+// AllMethodsEnabled returns the permissive set. It is the fallback when no
+// switch source is wired (library use); every DEPLOYMENT injects the live
+// policy snapshot instead, where the default is "everything off".
+func AllMethodsEnabled() MethodFlags {
+	return MethodFlags{Phone: true, Email: true, Password: true, Guest: true}
+}
+
+// AnyEnabled reports whether at least one login method is usable.
+func (m MethodFlags) AnyEnabled() bool {
+	return m.Phone || m.Email || m.Password || m.Guest
 }
 
 // Deps is the injected dependency set. In embedded mode DB, Identity and Sys
@@ -156,6 +189,9 @@ type Service struct {
 	lg       *log.Logger
 
 	mux *http.ServeMux
+
+	// methodsLimiter rate limits the public discovery endpoint per IP.
+	methodsLimiter *ipLimiter
 }
 
 // New validates the dependency set and builds the router.
@@ -202,7 +238,12 @@ func New(deps Deps, cfg Config) (*Service, error) {
 		captcha:  deps.Captcha,
 		lg:       lg,
 	}
+	s.methodsLimiter = newIPLimiter(methodsMaxPerWindow, methodsRateWindow)
 	s.mux = s.routes()
+	if !s.methodState().AnyEnabled() {
+		lg.Warn("no login method is enabled; every /api/auth/* login will answer 403 METHOD_DISABLED",
+			"hint", "set auth.methods in policy.json (phone/email/password/guest)")
+	}
 	return s, nil
 }
 
@@ -290,6 +331,10 @@ func (s *Service) routes() *http.ServeMux {
 	// Extension (not part of the client contract): set/replace a password for
 	// the authenticated account. Requires an access token.
 	m.HandleFunc("POST /api/auth/password/set", s.handler(s.handlePasswordSet))
+	// Public discovery endpoint: which login methods are currently enabled.
+	// Unauthenticated by design (a client must ask before it has a session)
+	// but rate limited per IP like every other login-adjacent endpoint.
+	m.HandleFunc("GET /api/auth/methods", s.handler(s.handleMethods))
 	return m
 }
 

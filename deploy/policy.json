@@ -25,6 +25,14 @@
     "msg_per_user_per_min": 60,
     "login_per_ip_per_min": 10
   },
+  "auth": {
+    "methods": {
+      "phone": false,
+      "email": false,
+      "password": true,
+      "guest": true
+    }
+  },
   "write_path": {
     "batch_size": 1000,
     "flush_interval_ms": 50

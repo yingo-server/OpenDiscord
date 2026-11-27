@@ -35,6 +35,14 @@ type Policy struct {
 	// Validate and treated as disabled by consumers.
 	Capacity CapacityConfig `json:"capacity"`
 
+	// Auth holds the authentication surface switches.
+	//
+	// Every login method is DISABLED by default (Go zero value = false): a
+	// deployment must opt in explicitly. The public endpoint
+	// GET /api/auth/methods (unauthenticated, but rate limited) reports the
+	// live state so a client can render only the tabs that actually work.
+	Auth AuthConfig `json:"auth"`
+
 	// Group holds the group-conversation limits.
 	//
 	// MaxMembers is the hard ceiling on the member count of a group
@@ -44,6 +52,44 @@ type Policy struct {
 	// frame larger than the 64KB WS frame limit and the codec REJECTS it.
 	// The ceiling keeps the snapshot inside the frame budget.
 	Group GroupConfig `json:"group"`
+}
+
+// AuthConfig holds the authentication surface switches.
+//
+// The four login methods are independent. A disabled method rejects its
+// requests with 403 METHOD_DISABLED before any parameter is parsed, so a
+// disabled method leaks nothing about its internals.
+type AuthConfig struct {
+	// Methods gates the login entry points.
+	Methods AuthMethodsConfig `json:"methods"`
+}
+
+// AuthMethodsConfig is the per-method login switch set.
+//
+// All four default to false: a deployment that ships without an explicit
+// "auth" section has NO usable login method. That is deliberate — the
+// surface is opt-in, not opt-out (fail-closed).
+//
+// NOTE: the built-in defaults used when policy.json is missing also leave
+// every method off. The shipped configuration templates enable guest and
+// password so a fresh install is not locked out of its own server.
+type AuthMethodsConfig struct {
+	// Phone gates POST /api/auth/phone/code and /api/auth/phone/verify.
+	Phone bool `json:"phone"`
+	// Email gates POST /api/auth/email/link and /api/auth/email/poll.
+	Email bool `json:"email"`
+	// Password gates POST /api/auth/password (login; it does NOT gate
+	// /api/auth/password/set, which is an authenticated operation).
+	Password bool `json:"password"`
+	// Guest gates POST /api/auth/guest.
+	Guest bool `json:"guest"`
+}
+
+// AnyEnabled reports whether at least one login method is usable. The
+// assembler logs a prominent warning when it is false: the server is up but
+// nobody can log in.
+func (m AuthMethodsConfig) AnyEnabled() bool {
+	return m.Phone || m.Email || m.Password || m.Guest
 }
 
 // ArchiveConfig is the archive job policy.
