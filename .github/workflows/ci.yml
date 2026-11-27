@@ -19,8 +19,7 @@ env:
 
 jobs:
   # ---------------------------------------------------------------------------
-  # Go：不依赖前端产物。server/web/{client,admin} 里始终有 .gitkeep，
-  # 因此未执行 make web 时 go:embed 仍可编译（Handler 在运行时返回 503）。
+  # Go：后端仓库，没有任何前端构建步骤。
   # protoc 可选：make proto 在缺少 protoc 时保留仓库内已提交的 chatpb 实现。
   # ---------------------------------------------------------------------------
   go:
@@ -50,105 +49,15 @@ jobs:
       - name: Test
         run: make test
 
-      # 显式验证「没有前端产物也能构建」——go job 不得依赖 web job。
+      # 后端无前端依赖：go job 自包含。
       - name: Build (no frontend artifacts)
         run: make build
 
   # ---------------------------------------------------------------------------
-  # 前端：client 与 admin 各自独立 npm ci + build（矩阵，任一失败不掩盖另一个）。
-  # 两个应用都有 package-lock.json，必须用 npm ci 保证可复现。
-  # ---------------------------------------------------------------------------
-  web:
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        app: [client, admin]
-    defaults:
-      run:
-        working-directory: apps/${{ matrix.app }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: apps/${{ matrix.app }}/package-lock.json
-
-      - name: Install
-        run: npm ci --prefer-offline
-
-      - name: Build
-        run: npm run build
-
-      - name: Test
-        run: npm run test --if-present
-
-      - name: Upload dist
-        uses: actions/upload-artifact@v4
-        with:
-          name: web-${{ matrix.app }}
-          path: apps/${{ matrix.app }}/dist
-          retention-days: 3
-          if-no-files-found: error
-
-  # 前端产物分支：供 Netlify 直接部署（client 为根，admin 在 /admin）。
-  # 每个 SPA 都需要 index.html fallback，故写 _redirects（Netlify 原生支持）。
-  frontend:
-    needs: [web]
-    if: github.event_name == 'push'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/download-artifact@v4
-        with:
-          name: web-client
-          path: site
-
-      - uses: actions/download-artifact@v4
-        with:
-          name: web-admin
-          path: site/admin
-
-      - name: SPA redirects + no-cache on hashed assets
-        run: |
-          # Netlify: rewrite all unknown paths to the client SPA, except /admin/*
-          printf '/*    /index.html   200\n' > site/_redirects
-          # Admin is a separate SPA under /admin — override its own deep links.
-          printf '/admin/*  /admin/index.html  200\n' | cat - site/_redirects > site/_redirects.new
-          mv site/_redirects.new site/_redirects
-          # Let Netlify cache fingerprinted assets forever, but never the HTML.
-          printf '/*assets/*  Cache-Control: public, max-age=31536000, immutable\n' > site/_headers
-          printf '/*.html     Cache-Control: no-cache\n' >> site/_headers
-          echo "=== site tree ==="
-          find site -maxdepth 2 -type f | sort | head -25
-
-      - name: Publish to frontend branch
-        run: |
-          set -euo pipefail
-          cd site
-          git init -q -b frontend
-          git config user.name  "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git commit -qm "frontend dist from ${GITHUB_SHA::7} (client + admin)"
-          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" frontend
-          echo "published frontend branch"
-
-  # ---------------------------------------------------------------------------
-  # 全平台/全 CPU 架构构建（v1.1：对标 FFmpeg 的产物矩阵）
-  # Linux × {amd64,386,arm64,arm(ARMv7),riscv64} + Windows × {amd64,386,arm64,arm}
-  # + 源码包。CGO(SQLite) 交叉编译需要对应 gcc；windows/arm* 用 mingw/llvm-mingw，
-  # 装不上则该格标记 SKIP（不阻塞其余产物）。
-  # 与 go 测试 job 相互独立：test 红不影响产物构建。
+  # 全平台/全 CPU 架构构建（后端产物矩阵，无任何前端步骤）。
   # ---------------------------------------------------------------------------
   build-matrix:
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: [web]
+    if: startsWith(github.ref, 'refs/tags/v*')
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -180,13 +89,6 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: |
-            apps/client/package-lock.json
-            apps/admin/package-lock.json
 
       - name: Install cross toolchain
         if: matrix.apt != ''
@@ -194,8 +96,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ${{ matrix.apt }} zip
 
-      - name: Build embedded web assets
-        run: make web
 
       - name: Cross-build package
         env:
@@ -231,11 +131,6 @@ jobs:
           cp docs/deploy.md docs/user-guide.md docs/admin-guide.md docs/known-issues.md stage/docs/ 2>/dev/null || true
           if [ "$GOOS" != windows ]; then
             cp -R deploy/systemd deploy/journald deploy/keygen deploy/lib deploy/install.sh deploy/install-interactive deploy/backup.sh deploy/release.sh deploy/Caddyfile deploy/ufot.toml deploy/policy.json stage/deploy/ 2>/dev/null || true
-            # Web UI is embedded into chatd by 'make web'; ship the real dist
-            # trees too so the layout is inspectable and install.sh can place them.
-            mkdir -p stage/apps/client stage/apps/admin
-            cp -R apps/client/dist stage/apps/client/dist 2>/dev/null || true
-            cp -R apps/admin/dist stage/apps/admin/dist 2>/dev/null || true
           fi
           # tr -c would also turn the trailing newline into '-', producing
           # 'v1.1.0-' and therefore 'ufot-v1.1.0--linux-amd64.tar.gz'.
@@ -256,7 +151,7 @@ jobs:
 
   # 源码包（FFmpeg 惯例）
   src-package:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v*')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -301,7 +196,7 @@ jobs:
           # "sha256sum *" hits directories and fails. Flatten the package
           # files to dist/ first, then hash only those.
           find . -mindepth 2 -maxdepth 3 -type f \( -name '*.tar.gz' -o -name '*.zip' \) -exec mv -f {} . \;
-          rm -rf web-client web-admin src-package 2>/dev/null || true
+          rm -rf src-package 2>/dev/null || true
           find . -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.zip' \) -printf '%P\n' \
             | sort | xargs -r sha256sum > SHA256SUMS
           ls -lh; cat SHA256SUMS

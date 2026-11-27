@@ -107,6 +107,9 @@ func Diff(old, new Policy) []string {
 	if old.Capacity != new.Capacity {
 		out = append(out, "capacity")
 	}
+	if old.Auth != new.Auth {
+		out = append(out, "auth")
+	}
 	return out
 }
 

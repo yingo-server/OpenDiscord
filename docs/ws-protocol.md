@@ -1,13 +1,13 @@
 # UFOT WebSocket 协议参考
 
-> 只描述 `proto/chat.proto`、`server/internal/proto/kinds/kinds.go`、`server/internal/user/net/frame/codec.go`、`server/internal/user/net/ws/acceptor.go`、`server/internal/data/pipe/wire/wire.go` 中**真实存在**的帧结构与语义。kind 号段逐条取自 `kinds.go`（共 **85** 个常量，含 401/402 两个旧别名；客户端真源 `apps/client/src/net/protocol/kinds.ts` 与之一一对应），状态列标注是否已有处理分支。本文描述 v2.1.0 行为。
+> 只描述 `proto/chat.proto`、`server/internal/proto/kinds/kinds.go`、`server/internal/user/net/frame/codec.go`、`server/internal/user/net/ws/acceptor.go`、`server/internal/data/pipe/wire/wire.go` 中**真实存在**的帧结构与语义。kind 号段逐条取自 `kinds.go`（共 **85** 个常量，含 401/402 两个旧别名），状态列标注是否已有处理分支。本文描述 v2.1.0 行为；客户端实现入口见 [client-contract.md §3](client-contract.md)。
 > 传输与帧格式的生产实测样例见 `api-reference.md §7`（实测于 v2.1.0 生产 2026-11-23）。
 
 ---
 
 ## 1. 传输
 
-- **端点**：`GET /ws`（挂在用户面 `listen` 端口，默认 `127.0.0.1:8080`）。非 `/ws` 路径交给同端口的 `ExtraRoutes`（`/api/auth/*`、`/healthz`、SPA）。
+- **端点**：`GET /ws`（挂在用户面 `listen` 端口，默认 `127.0.0.1:8080`）。非 `/ws` 路径交给同端口的 `ExtraRoutes`（`/api/auth/*`、`/healthz`、`GET /` 服务描述符）。
 - **协议**：WebSocket（生产经 Caddy → WSS）。握手阶段完成鉴权，失败直接 `401` 不建连（`acceptor.go`）。
 - **鉴权**：**只从 Cookie `access_token` 取 token**（`tokenFromRequest`）。也支持非浏览器客户端用 `Sec-WebSocket-Protocol: bearer, <token>` 头承载。**禁止把 token 放 URL query（红线，`security-spec §2.3`）**。
 - **同源校验**：有 `Origin` 时必须与 Host 或配置的 `public_origin` 精确匹配（不前缀/不通配）；无 `Origin`（原生客户端）放行。
@@ -360,7 +360,7 @@ payload 在 JSON 线格式下是 base64；解析后按下列结构（`wire.go` �
 
 ---
 
-## 8. 客户端实现清单（前端怎么接）
+## 8. 客户端实现清单
 
 1. **鉴权**：登录后浏览器自动持有 `access_token` Cookie；`new WebSocket(`${wss}://${host}/ws`)` 即可，**不要**在 URL 拼 token。
 2. **线格式**：浏览器发**文本帧 JSON**（snake_case envelope + base64 payload）；服务端按此格式回文本帧。原生客户端可发 protobuf 二进制帧。
@@ -384,3 +384,4 @@ payload 在 JSON 线格式下是 base64；解析后按下列结构（`wire.go` �
 - 用户 `450 PROFILE_UPDATE / 451 BLOCK / 452 UNBLOCK`：常量已定义，无处理器；`453 REPORT` 已实现（`msg_domain_v2_enabled` 门控）。
 - 管理下行 `501 ANNOUNCE`、`502 MAINTENANCE`：无生产者（仅 `500 ADMIN_BROADCAST` 有注入链路）。
 - 高风险：以上未实现 kind 若客户端上行，网关会因"能力外/无 handler"被丢弃或转 `ERROR`——**客户端不应假设其可用**。
+�其可用**。

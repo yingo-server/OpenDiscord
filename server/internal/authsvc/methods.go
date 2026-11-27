@@ -79,10 +79,11 @@ func toJSONFlags(m MethodFlags) MethodFlagsJSON {
 // handleMethods serves the public login-method discovery endpoint.
 //
 // GET /api/auth/methods
-//   200 {"methods":{"phone":false,"email":false,"password":true,"guest":true}}
-//   429 {"error":"too many requests","code":"RATE_LIMITED"} (+ retry_after_ms)
+//
+//	200 {"methods":{"phone":false,"email":false,"password":true,"guest":true}}
+//	429 {"error":"too many requests","code":"RATE_LIMITED"} (+ retry_after_ms)
 func (s *Service) handleMethods(w http.ResponseWriter, r *http.Request) *apiError {
-	if !s.methodsLimiter.Allow(s.clientIP(r), s.cfg.Now()) {
+	if !s.methodsLimiter.Allow(s.clientIP(r), s.cfg.Now(), s.probeBudget()) {
 		return errRateLimited("RATE_LIMITED", methodsRateWindow)
 	}
 	s.writeJSON(w, http.StatusOK, methodsResponse{Methods: toJSONFlags(s.methodState())})
@@ -93,8 +94,22 @@ func (s *Service) handleMethods(w http.ResponseWriter, r *http.Request) *apiErro
 // endpoint: 60 requests per minute per source IP.
 const methodsRateWindow = time.Minute
 
-// methodsMaxPerWindow is the per-IP request budget inside the window.
+// methodsMaxPerWindow is the built-in per-IP request budget inside the
+// window. The DEPLOYMENT value comes from policy.json
+// (auth.methods_probe_per_ip_per_min) and overrides this default.
 const methodsMaxPerWindow = 60
+
+// probeBudget resolves the effective per-IP budget for the discovery
+// endpoint (policy wins; the built-in default is the fallback).
+func (s *Service) probeBudget() int {
+	if s.cfg.MethodsProbeBudget == nil {
+		return methodsMaxPerWindow
+	}
+	if n := s.cfg.MethodsProbeBudget(); n > 0 {
+		return n
+	}
+	return methodsMaxPerWindow
+}
 
 // ipLimiter is a small fixed-window per-IP counter. It is deliberately local
 // to the discovery endpoint: it must not share state with the OTP/login
@@ -103,18 +118,23 @@ type ipLimiter struct {
 	mu     sync.Mutex
 	hits   map[string]ipWindow
 	window time.Duration
-	limit  int
 }
 
-func newIPLimiter(limit int, window time.Duration) *ipLimiter {
-	return &ipLimiter{hits: make(map[string]ipWindow), window: window, limit: limit}
+func newIPLimiter(window time.Duration) *ipLimiter {
+	return &ipLimiter{hits: make(map[string]ipWindow), window: window}
 }
 
 // Allow reports whether the key may make one more request in the current
 // window. Expired windows are reset lazily on the next hit for that key.
-func (l *ipLimiter) Allow(key string, now time.Time) bool {
+//
+// limit is passed per call (not fixed at construction) so a policy reload can
+// change the budget without a restart.
+func (l *ipLimiter) Allow(key string, now time.Time, limit int) bool {
 	if key == "" {
 		key = "unknown"
+	}
+	if limit <= 0 {
+		limit = methodsMaxPerWindow
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -124,7 +144,7 @@ func (l *ipLimiter) Allow(key string, now time.Time) bool {
 		l.pruneLocked(now)
 		return true
 	}
-	if entry.count >= l.limit {
+	if entry.count >= limit {
 		return false
 	}
 	entry.count++

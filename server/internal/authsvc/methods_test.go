@@ -112,7 +112,7 @@ func TestMethodsDiscoveryIsRateLimited(t *testing.T) {
 
 	// Tighten the budget for the test: the limiter is per-IP and this test
 	// client always presents the same source address.
-	env.svc.methodsLimiter = newIPLimiter(3, methodsRateWindow)
+	env.svc.cfg.MethodsProbeBudget = func() int { return 3 }
 
 	var lastStatus int
 	for i := 0; i < 5; i++ {

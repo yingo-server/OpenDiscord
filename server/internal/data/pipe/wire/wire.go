@@ -282,7 +282,7 @@ type MemberUpdate struct {
 // ConvPayload mirrors chat.v1.ConvPayload.
 //
 // The three watermark fields below (Version / LastSeq / Unread) are NOT in
-// the proto yet, but the client contract (apps/client decodeConvPayload)
+// the proto yet, but the client contract (docs/client-contract.md)
 // already reads them by these exact camelCase names. They are what makes a
 // brand-new device notice it is missing history:
 //

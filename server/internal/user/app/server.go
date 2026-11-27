@@ -114,6 +114,7 @@ func New(cfg Config, authn AuthnFunc, peer transport.Peer) (*Server, error) {
 	acc := ws.NewAcceptor(ws.Config{
 		ListenAddr:        cfg.ListenAddr,
 		PublicOrigin:      cfg.PublicOrigin,
+		AllowAnyOrigin:    cfg.AllowAnyOrigin,
 		CookieName:        cfg.CookieName,
 		HeartbeatInterval: cfg.HeartbeatInterval,
 		ReadTimeout:       cfg.ReadTimeout,

@@ -43,6 +43,7 @@ import (
 	"github.com/yingo-server/UFOT/server/internal/data/store/pg"
 	"github.com/yingo-server/UFOT/server/internal/data/store/sqlite"
 	"github.com/yingo-server/UFOT/server/internal/mediasvc"
+	"github.com/yingo-server/UFOT/server/internal/pkg/cors"
 	"github.com/yingo-server/UFOT/server/internal/pkg/featureflags"
 	"github.com/yingo-server/UFOT/server/internal/pkg/log"
 	"github.com/yingo-server/UFOT/server/internal/proto/gen/chatpb"
@@ -53,7 +54,6 @@ import (
 	"github.com/yingo-server/UFOT/server/internal/user/core/authn"
 	"github.com/yingo-server/UFOT/server/internal/user/net/frame"
 	"github.com/yingo-server/UFOT/server/internal/user/net/ws"
-	"github.com/yingo-server/UFOT/server/web"
 )
 
 type assembly struct {
@@ -315,6 +315,16 @@ func newAssembly(cfg *config, lg *log.Logger) (*assembly, error) {
 	if sms == nil && mailer == nil && captcha == nil && cfg.ProvidersPath != "" {
 		lg.Info("providers: no channel URLs configured, sms/mail/captcha stay fail-closed")
 	}
+	// CORS / WS-Origin consistency: the two knobs can contradict each other
+	// (HTTP tightened to a list while the WS handshake still accepts any
+	// origin). That is a legitimate posture, but it is rarely intended —
+	// say so loudly at startup instead of letting an operator wonder why a
+	// browser client connects but its XHRs fail.
+	if cfg.CORSMode != "" && cfg.CORSMode != "allow_any" && cfg.AllowAnyOrigin {
+		lg.Warn("cors/origins: cors_mode is not allow_any but allow_any_origin is true — the WS handshake accepts any origin while HTTP is restricted",
+			"cors_mode", cfg.CORSMode, "allow_any_origin", true)
+	}
+
 	authSvc, err := authsvc.New(authsvc.Deps{
 		DB:       hot.DB,
 		Identity: hot,
@@ -328,6 +338,8 @@ func newAssembly(cfg *config, lg *log.Logger) (*assembly, error) {
 		Captcha:  captcha,
 	}, authsvc.Config{
 		PublicOrigin:  cfg.PublicOrigin,
+		CORSMode:      cfg.CORSMode,
+		CORSOrigins:   cfg.CORSOrigins,
 		AccessTTL:     time.Duration(cfg.AccessTTLSec) * time.Second,
 		RefreshTTL:    time.Duration(cfg.RefreshTTLSec) * time.Second,
 		DevOTP:        cfg.DevOTP,
@@ -344,6 +356,12 @@ func newAssembly(cfg *config, lg *log.Logger) (*assembly, error) {
 				Password: m.Password,
 				Guest:    m.Guest,
 			}
+		},
+		// The discovery endpoint's per-IP budget is policy (not a code
+		// constant): it is read per request, so a SIGHUP reload applies
+		// immediately.
+		MethodsProbeBudget: func() int {
+			return a.policy.Current().Policy.Auth.MethodsProbePerIPPerMin
 		},
 	})
 	if err != nil {
@@ -375,6 +393,7 @@ func newAssembly(cfg *config, lg *log.Logger) (*assembly, error) {
 	userCfg := app.DefaultConfig()
 	userCfg.ListenAddr = cfg.Listen
 	userCfg.PublicOrigin = cfg.PublicOrigin
+	userCfg.AllowAnyOrigin = cfg.AllowAnyOrigin
 	userCfg.BridgeAddr = "embedded"
 	userCfg.LogLevel = cfg.LogLevel
 	userCfg.EnableRateLimit = cfg.RateLimitEnabled
@@ -541,10 +560,41 @@ func (a *assembly) buildHTTP(auth http.Handler) http.Handler {
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeJSONStatus(w, http.StatusNotFound, map[string]any{"error": "unknown api path", "code": "NOT_FOUND"})
 	})
-	// SPA: / and every non-file path fall back to index.html (the web package
-	// answers 503 when the dist has not been built, never panics).
-	mux.Handle("/", web.Handler(true))
-	return mux
+	// Backend-only deployment: this process serves the API + WS surface and
+	// NOTHING else. There is no embedded SPA — a client (web / desktop /
+	// mobile) is a separate program that points at this server through its
+	// own configuration (env: API base + WS url). The root path therefore
+	// answers with the service descriptor instead of an HTML page.
+	mux.HandleFunc("/", a.serviceRoot)
+	// ONE CORS policy for the whole user-facing HTTP surface. It is applied
+	// HERE, at the assembly layer, because a per-service implementation is
+	// how the cross-origin surface silently rots: auth, media and push must
+	// all answer a browser preflight the same way, and the /api fallback
+	// must not leak a 405 to the preflight.
+	policy := cors.New(a.cfg.CORSMode, a.cfg.PublicOrigin, a.cfg.CORSOrigins)
+	return policy.Middleware(mux)
+}
+
+// serviceRoot answers the root path with the service descriptor.
+//
+// Backend-only deployment: the process exposes the HTTP API, the WS endpoint
+// and the health probe — no user interface. A client discovers the surface
+// here and configures itself from it (API base + WS url).
+func (a *assembly) serviceRoot(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/" {
+		writeJSONStatus(w, http.StatusNotFound, map[string]any{"error": "not found", "code": "NOT_FOUND"})
+		return
+	}
+	writeJSONStatus(w, http.StatusOK, map[string]any{
+		"service": "UFOT",
+		"role":    "backend",
+		"surface": map[string]any{
+			"http_api":  "/api/*",
+			"websocket": "/ws",
+			"health":    "/healthz",
+			"auth":      "/api/auth/methods",
+		},
+	})
 }
 
 func (a *assembly) healthz(w http.ResponseWriter, r *http.Request) {

@@ -20,6 +20,12 @@ type config struct {
 	AdminListen     string // admin HTTP listen address (bridge AdminAPI: /admin/inject)
 	AdminRESTListen string // admin REST listen address (/api/v1/*) — loopback only
 	PublicOrigin    string // e.g. https://chat.example.com
+	// CORSMode: "allow_any"（默认，独立前端）/ "allow_list" / "off"。
+	CORSMode string
+	// CORSOrigins: allow_list 模式下的额外 Origin（逗号分隔）。
+	CORSOrigins []string
+	// AllowAnyOrigin: WS 握手放行任意 Origin（独立前端默认 true）。
+	AllowAnyOrigin bool
 
 	HotDB   string // SQLite hot database
 	AdminDB string // SQLite admin database (separate file, least privilege)
@@ -67,6 +73,11 @@ func defaultConfig() *config {
 		AdminListen:     "127.0.0.1:7780",
 		AdminRESTListen: "127.0.0.1:7781",
 		PublicOrigin:    "",
+		// Backend-only deployment: the UI is a separate program, so the
+		// service answers any origin by default. Both knobs exist to tighten
+		// the posture back down (allow_list / off).
+		CORSMode:        "allow_any",
+		AllowAnyOrigin:  true,
 		HotDB:           "./data/chatd.db",
 		AdminDB:         "./data/admin.db",
 		ColdDSN:         "",
@@ -114,6 +125,16 @@ func loadConfig(path string) (*config, error) {
 			cfg.AdminRESTListen = v
 		case "public_origin":
 			cfg.PublicOrigin = v
+		case "cors_mode":
+			cfg.CORSMode = v
+		case "cors_origins":
+			for _, o := range strings.Split(v, ",") {
+				if o = strings.TrimSpace(o); o != "" {
+					cfg.CORSOrigins = append(cfg.CORSOrigins, o)
+				}
+			}
+		case "allow_any_origin":
+			cfg.AllowAnyOrigin = v == "true"
 		case "hot_db":
 			cfg.HotDB = v
 		case "admin_db":

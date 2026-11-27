@@ -90,10 +90,6 @@ else
   record_fail "gofmt -l server/ 为空（需格式化：$(printf '%s' "$UNFORMATTED" | tr '\n' ' ')）"
 fi
 
-# ---- 前端构建 ---------------------------------------------------------------
-step "apps/client npm run build" sh -c 'cd apps/client && npm run build'
-step "apps/admin npm run build" sh -c 'cd apps/admin && npm run build'
-
 # ---- 部署脚本语法（POSIX sh） ----------------------------------------------
 printf '\n== sh -n deploy/*.sh\n'
 SH_OK=1

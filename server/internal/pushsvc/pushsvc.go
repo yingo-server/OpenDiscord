@@ -1,7 +1,7 @@
 // Package pushsvc implements the server half of mobile system push (Web Push
 // / VAPID, RFC 8291 + RFC 8188).
 //
-// The browser side (apps/client/src/net/push/index.ts) already speaks this
+// A browser client already speaks this
 // contract:
 //
 //	POST /api/push/subscribe

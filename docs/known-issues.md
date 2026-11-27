@@ -20,8 +20,8 @@
 | 7 | 通话需自备 TURN | 已修（自动化部分：管理面 TURN 自检，CI 全绿） |
 | 8 | 群人数上限默认 100 | 保持（默认值不动；理由：S-1/S-2 容量缺口未解决前不放大默认值） |
 | 9 | 编辑/转发/@提及 服务端 | 已实现（`msg_domain_v2_enabled` 默认开启；处理分支在 `data/pipe`，经压测守门前不宣称达标） |
-| 10 | 用户举报 kind 453 | v1.5 已修（端到端：服务端 onReport v1.4 在位，本版前端发帧接线） |
-| 10b | 会话列表未虚拟滚动 | 已修（ConvList 接 react-virtual，CI 全绿） |
+| 10 | 用户举报 kind 453 | v1.5 已修（端到端：服务端 onReport 在位，客户端经 WS 发 453 帧） |
+| 10b | 会话列表未虚拟滚动 | 已修（客户端侧长列表虚拟化，见 client-contract.md §8 性能建议） |
 | 11 | auto_vacuum 需手工转换 | 已修（`ufotctl upgrade` 自动化，CI 全绿） |
 | 12 | 旧 thumb_data 需手工迁移 | 已修（并入 `ufotctl upgrade`，dry-run 默认，CI 全绿） |
 | 容量 | 扇出写放大（S-1/S-2 缺口） | **v2.0 吞吐翻倍（≈579→1197 ACK/s）但仍未达门槛**：seq 批量分配 + batch500 显著改善写路径；单进程 SQLite 物理上限未突破，S-1/S-2 缺口如实保留，超限由 V2-0 显式限流兜底（不再静默挂起）；架构级突破留待 V2-2 分片/Actor |
@@ -92,11 +92,10 @@ LTS 不引入；云 SFU 集成留待 v1.5+ 按需求评估。
 
 ### 6. 移动端无推送 —— v1.5 已修（Web Push / VAPID）
 
-前端 `public/manifest.webmanifest` + `public/sw.js` + `src/net/push/` 订阅封装
-（production-only 注册，dev/mock 不注册）。**v1.5 补齐服务端**：`POST /api/push/subscribe`
-订阅登记（Cookie 鉴权、fail-closed）+ `pushsvc` 的 VAPID ES256 JWT / aes128gcm 下发，
-并接到数据层 flusher 的每条已提交消息（对收件人 `Notify`）。配置 `VAPID_PRIVATE_KEY` /
-`VAPID_SUBJECT` / 前端 `VITE_VAPID_PUBLIC_KEY`，任缺一则 no-op（订阅仍可登记，不发通知）。
+服务端：`POST /api/push/subscribe` 订阅登记（Cookie 鉴权、fail-closed）+ `pushsvc` 的
+VAPID ES256 JWT / aes128gcm 下发，并接到数据层 flusher 的每条已提交消息（对收件人
+`Notify`）。客户端需自行申请订阅并上报（三步契约见 [push-setup.md §0](push-setup.md)）。
+服务端配置 `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT`，任缺一则 no-op（订阅仍可登记，不发通知）。
 配置步骤见 `docs/push-setup.md`。
 
 ### 7. 通话需要自备 TURN 服务器 —— 已修（自动化部分）
@@ -123,9 +122,9 @@ LTS 不引入；云 SFU 集成留待 v1.5+ 按需求评估。
 
 453 → `sys_reports` 入库 + 审计 + ACK 的处理代码在 v1.4 已落地
 （`data/pipe/msgdomain.go` `onReport`，与第 9 条同一 flag `msg_domain_v2_enabled` 门控），
-用户层上行白名单（`bridge/defaults.go`）与 wire 转换亦已放行 453。**v1.5 补齐前端**：
-`MessageList` 举报菜单发 453 帧（不再弹"即将推出"），成功/失败有明确提示，
-PII 只传 msg_id + 枚举原因（detail 不采集自由文本）。
+用户层上行白名单（`bridge/defaults.go`）与 wire 转换亦已放行 453。客户端侧发 453 帧
+（契约见 [client-contract.md](client-contract.md)），PII 只传 msg_id + 枚举原因
+（detail 不采集自由文本）。
 
 ### 10b. 会话列表未虚拟滚动 —— 已修
 

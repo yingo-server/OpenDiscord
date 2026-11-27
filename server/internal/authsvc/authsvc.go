@@ -39,6 +39,7 @@ import (
 	"time"
 
 	"github.com/yingo-server/UFOT/server/internal/data/store"
+	"github.com/yingo-server/UFOT/server/internal/pkg/cors"
 	"github.com/yingo-server/UFOT/server/internal/pkg/log"
 	"github.com/yingo-server/UFOT/server/internal/user/core/authn"
 )
@@ -130,6 +131,18 @@ type Config struct {
 	// library default). Deployments always inject a reader; the deployment
 	// default is "every method off" (fail-closed).
 	Methods func() MethodFlags
+
+	// CORSMode selects the CORS policy: "allow_any" (default), "allow_list"
+	// or "off". See the CORSMode* constants.
+	CORSMode string
+	// CORSOrigins is the extra origin allowlist used by "allow_list" mode
+	// (PublicOrigin is always part of the list).
+	CORSOrigins []string
+
+	// MethodsProbeBudget returns the per-IP budget (requests per minute) of
+	// the public discovery endpoint. It is read on every request so a policy
+	// reload takes effect immediately. nil = built-in default (60/min).
+	MethodsProbeBudget func() int
 }
 
 // MethodFlags is the authentication surface switch set.
@@ -238,7 +251,7 @@ func New(deps Deps, cfg Config) (*Service, error) {
 		captcha:  deps.Captcha,
 		lg:       lg,
 	}
-	s.methodsLimiter = newIPLimiter(methodsMaxPerWindow, methodsRateWindow)
+	s.methodsLimiter = newIPLimiter(methodsRateWindow)
 	s.mux = s.routes()
 	if !s.methodState().AnyEnabled() {
 		lg.Warn("no login method is enabled; every /api/auth/* login will answer 403 METHOD_DISABLED",
@@ -445,19 +458,30 @@ func (s *Service) handler(fn func(http.ResponseWriter, *http.Request) *apiError)
 
 // applyCORS allows exactly the configured public origin (never a prefix or a
 // wildcard, security-spec §2.6 style strictness), with credentials.
+// CORS policy modes (the full contract lives in server/internal/pkg/cors).
+const (
+	CORSModeAllowAny  = cors.ModeAllowAny
+	CORSModeAllowList = cors.ModeAllowList
+	CORSModeOff       = cors.ModeOff
+)
+
+// corsPolicy resolves the effective CORS policy (default: allow_any).
+func (s *Service) corsPolicy() cors.Policy {
+	return cors.New(s.cfg.CORSMode, s.cfg.PublicOrigin, s.cfg.CORSOrigins)
+}
+
+// applyCORS writes the CORS headers for the public auth surface.
+//
+// The SAME policy is applied at the assembly layer to the whole user-facing
+// HTTP surface (media, push, the /api fallback); this local copy only
+// guarantees that the auth router answers standalone (e.g. when mounted in
+// another program).
 func (s *Service) applyCORS(w http.ResponseWriter, r *http.Request) {
 	origin := r.Header.Get("Origin")
 	if origin == "" {
 		return
 	}
-	if s.cfg.PublicOrigin != "" && strings.EqualFold(origin, s.cfg.PublicOrigin) {
-		h := w.Header()
-		h.Set("Access-Control-Allow-Origin", origin)
-		h.Set("Access-Control-Allow-Credentials", "true")
-		h.Set("Access-Control-Allow-Methods", "POST, OPTIONS")
-		h.Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-		h.Set("Vary", "Origin")
-	}
+	s.corsPolicy().Apply(w, origin)
 }
 
 // clientIP resolves the caller address. X-Forwarded-For is only honored when

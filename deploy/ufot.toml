@@ -21,6 +21,15 @@ metrics_listen = "127.0.0.1:9090"
 # 对外站点，用于生成绝对 URL、CORS 与 Cookie 域
 public_origin = "https://chat.example.com"
 
+# CORS 策略：allow_any（默认，独立前端）/ allow_list / off。
+# allow_any 时任意来源的浏览器客户端都能调用本服务（前端是独立程序，
+# 不由本服务托管，因此不存在本站页面被跨站滥用的路径）。
+cors_mode = "allow_any"
+# allow_list 模式下的额外来源（逗号分隔，public_origin 始终在内）
+cors_origins = ""
+# WS 握手是否放行任意 Origin（独立前端默认 true）
+allow_any_origin = true
+
 # 热库（SQLite，本地 WAL）与管理库（独立 admin.db，最小权限隔离）
 hot_db = "/var/lib/ufot/chatd.db"
 admin_db = "/var/lib/ufot/admin.db"

@@ -49,16 +49,13 @@ jobs:
           echo "=== real package contents (top level) ==="
           ls -la "$ROOT/repo" | head -20
           # Release tarball has chatd at its root and deploy/ scripts; install.sh
-          # looks for $REPO_DIR/dist/chatd and $REPO_DIR/apps/*/dist. Normalize
-          # the extracted real artifacts into that expected layout (no builds,
-          # just moving the shipped files).
+          # looks for $REPO_DIR/dist/chatd. Normalize the extracted real
+          # artifacts into that expected layout (no builds, just moving the
+          # shipped files). Backend-only: there is no SPA in the package.
           mkdir -p "$ROOT/repo/dist"
           if [ -f "$ROOT/repo/chatd" ]; then
             mv "$ROOT/repo/chatd" "$ROOT/repo/dist/chatd"
           fi
-          mkdir -p "$ROOT/repo/apps/client" "$ROOT/repo/apps/admin"
-          [ -d "$ROOT/repo/apps/client/dist" ] || mkdir -p "$ROOT/repo/apps/client/dist"
-          [ -d "$ROOT/repo/apps/admin/dist" ] || mkdir -p "$ROOT/repo/apps/admin/dist"
           echo "=== chatd binary size (real, from release) ==="
           ls -la "$ROOT/repo/dist/chatd"
           cp -R "$ROOT/repo/deploy" "$ROOT/repo/deploy-run"

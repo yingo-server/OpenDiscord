@@ -156,7 +156,6 @@ install -d -m 0755 -o root -g root "$PREFIX"
 install -d -m 0755 -o root -g root "$PREFIX/releases"
 install -d -m 0755 -o root -g root "$PREFIX/releases/bootstrap"
 install -d -m 0755 -o root -g root "$PREFIX/releases/bootstrap/bin"
-install -d -m 0755 -o root -g root "$PREFIX/releases/bootstrap/web"
 
 # ---------------------------------------------------------------------------
 # 3. 环境变量文件（0600 root:ufot，systemd 以 root 读取后再降权）
@@ -329,26 +328,13 @@ if [ "$installed_bin" -eq 0 ]; then
   die "未找到 chatd 二进制（查找过 $REPO_DIR/chatd 与 $REPO_DIR/dist/chatd）—— 包损坏或未构建"
 fi
 
-for app in client admin; do
-  if [ -d "$REPO_DIR/apps/$app/dist" ]; then
-    install -d -m 0755 -o root -g root "$BOOT/web/$app"
-    cp -R "$REPO_DIR/apps/$app/dist/." "$BOOT/web/$app/"
-    chown -R root:root "$BOOT/web/$app"
-    log "  内嵌 apps/$app/dist → $BOOT/web/$app"
-  fi
-done
-
-# current / bin / web 全部用符号链接，发布只切换 current（原子 rename）
+# current / bin 全部用符号链接，发布只切换 current（原子 rename）
 ln -sfn releases/bootstrap "$PREFIX/current"
 if [ -e "$PREFIX/bin" ] && [ ! -L "$PREFIX/bin" ]; then
   mv "$PREFIX/bin" "$PREFIX/bin.pre-symlink.$$"
   warn "已把真实目录 $PREFIX/bin 移到 $PREFIX/bin.pre-symlink.$$"
 fi
 ln -sfn current/bin "$PREFIX/bin"
-if [ -e "$PREFIX/web" ] && [ ! -L "$PREFIX/web" ]; then
-  mv "$PREFIX/web" "$PREFIX/web.pre-symlink.$$"
-fi
-ln -sfn current/web "$PREFIX/web"
 
 # ---------------------------------------------------------------------------
 # 7. systemd units 与 journald 配额

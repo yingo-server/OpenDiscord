@@ -52,7 +52,7 @@ func Decode(b []byte) (*chatpb.Envelope, error) {
 		return nil, fmt.Errorf("%w: %d > %d", ErrFrameTooLarge, len(b), MaxFrameBytes)
 	}
 	// Wire format is auto-detected: a leading '{' is the JSON form used by the
-	// browser client (apps/client defaults to JSON so it needs no protobuf
+	// browser client (browsers default to JSON so they need no protobuf
 	// runtime), everything else is protobuf. Both paths get identical limits
 	// and validation — the format is transport convenience, not a trust boundary.
 	if b[0] == '{' {
@@ -72,7 +72,7 @@ func Decode(b []byte) (*chatpb.Envelope, error) {
 }
 
 // jsonEnvelope is the JSON wire form of Envelope (snake_case field names, the
-// same shape apps/client/src/net/proto/codec.ts emits). Payload is base64, as
+// same shape the client contract documents). Payload is base64, as
 // protobuf bytes are in JSON.
 type jsonEnvelope struct {
 	ID        uint64 `json:"id,omitempty"`

@@ -6,11 +6,10 @@
 #   ./deploy/release.sh --target root@host --version v1.4.2 --skip-build
 #
 # 远端布局（单机）：
-#   /opt/ufot/releases/<version>/{bin,web}
+#   /opt/ufot/releases/<version>/bin
 #   /opt/ufot/current -> releases/<version>     # 原子切换点
 #   /opt/ufot/last    -> releases/<上一版本>     # 回滚点
 #   /opt/ufot/bin     -> current/bin
-#   /opt/ufot/web     -> current/web
 #
 # 回滚语义：健康检查（HTTP /healthz，404 时退化为 systemd is-active）失败
 #           → 把 current 指回 last → 重启 → 再次检查 → 仍失败则退出非 0 并保留现场。
@@ -45,7 +44,7 @@ usage() {
 
   --target USER@HOST   目标机（也可用 UFOT_DEPLOY_TARGET）
   --version VERSION    发布版本号（默认 git describe --tags --always --dirty）
-  --skip-build         复用已有 dist/ 与 apps/*/dist
+  --skip-build         复用已有 dist/ 产物
   --service NAME       systemd 单元名（默认 ufot.service）
   --health-url URL     健康检查地址（默认 http://127.0.0.1:8080/healthz）
   --remote-root DIR    远端根目录（默认 /opt/ufot）
@@ -91,12 +90,6 @@ if [ "$SKIP_BUILD" -eq 1 ]; then
   log "跳过构建（--skip-build）"
 else
   log "构建前端（client + admin）"
-  if [ -d apps/client ]; then
-    ( cd apps/client && npm ci && npm run build )
-  else
-    warn "apps/client 不存在，跳过用户端构建"
-  fi
-  ( cd apps/admin && npm ci && npm run build )
 
   log "构建 Go 二进制（trimpath, -s -w）"
   mkdir -p dist
@@ -116,20 +109,11 @@ fi
 # ---------------------------------------------------------------------------
 STAGE="dist/pkg-$VERSION"
 rm -rf "$STAGE"
-mkdir -p "$STAGE/bin" "$STAGE/web" "$STAGE/deploy"
+mkdir -p "$STAGE/bin" "$STAGE/deploy"
 
 for f in dist/chatd; do
   [ -f "$f" ] && install -m 0755 "$f" "$STAGE/bin/"
 done
-
-if [ -d apps/admin/dist ]; then
-  mkdir -p "$STAGE/web/admin"
-  cp -R apps/admin/dist/. "$STAGE/web/admin/"
-fi
-if [ -d apps/client/dist ]; then
-  mkdir -p "$STAGE/web/client"
-  cp -R apps/client/dist/. "$STAGE/web/client/"
-fi
 
 # 部署件随包发布，保证「发布即自包含」
 cp -R deploy/systemd deploy/policy.json deploy/ufot.toml deploy/Caddyfile "$STAGE/deploy/"
@@ -201,7 +185,6 @@ switch_to() {
     ln -sfn '$1' '$REMOTE_ROOT/current.new'
     mv -Tf '$REMOTE_ROOT/current.new' '$REMOTE_ROOT/current'
     ln -sfn current/bin '$REMOTE_ROOT/bin'
-    ln -sfn current/web '$REMOTE_ROOT/web'
   "
 }
 

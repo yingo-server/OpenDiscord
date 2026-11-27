@@ -17,7 +17,7 @@ UFOT 有 **两个 HTTP 面 + 一个 WebSocket 面**，全部由同一个 `chatd`
 
 | 面 | 监听配置项 | 默认地址 | 作用 |
 |----|-----------|---------|------|
-| 用户面 HTTP | `listen` | `127.0.0.1:8080` | `/api/auth/*`、`/api/media/*`、`/healthz`、`/ws`、SPA 静态资源（同端口） |
+| 用户面 HTTP | `listen` | `127.0.0.1:8080` | `/api/auth/*`、`/api/media/*`、`/healthz`、`/ws`、`GET /`（服务描述符） |
 | 管理面 injector | `admin_listen` | `127.0.0.1:7780` | `POST /admin/inject`（唯一帧注入入口）+ `GET /healthz` |
 | 管理面 REST | `admin_rest_listen` | `127.0.0.1:7781` | `/api/v1/*`（RBAC）+ `GET /health` |
 | WebSocket | 复用 `listen` | `127.0.0.1:8080/ws` | 业务实时帧（见 `ws-protocol.md`） |
@@ -48,6 +48,10 @@ UFOT 有 **两个 HTTP 面 + 一个 WebSocket 面**，全部由同一个 `chatd`
 
 ### 2.0z 登录方式开关（公开查询）
 
+> 四个登录端点（phone/code、email/link、password、guest）均受本开关**门控**：
+> 被关闭的方式在解析任何参数之前直接 `403 METHOD_DISABLED`。
+> 客户端契约视角的完整描述见 [client-contract.md §2.1](client-contract.md)。
+
 `GET /api/auth/methods` —— **不鉴权**（客户端尚未登录也要能问），但**按源 IP 限流**
 （60 次/分钟/IP，超限 429 `{"error":"too many requests","code":"RATE_LIMITED"}`，
 带 `retry_after_ms`；`Cache-Control: no-store`）。
@@ -67,7 +71,25 @@ HTTP 200
   `403 {"error":"<method> login is disabled","code":"METHOD_DISABLED"}`；
   `POST /api/auth/password/set`（已登录后改密）不受开关约束。
 - `policy.json` 热更（SIGHUP）即时生效，无需重启。
-- 前端据此只渲染可用的登录方式，避免用户点了必然 403 的 tab。
+- 客户端据此只展示可用的登录方式，避免用户点了必然 403 的入口。
+
+### 1.2 CORS 行为（跨域客户端必读）
+
+CORS 由 `chatd.toml` 三个键控制（`server/internal/authsvc/authsvc.go`）：
+
+| 键 | 取值 | 行为 |
+|----|------|------|
+| `cors_mode` | `allow_any`（**默认**） | 反射任意合法 http(s) Origin，`Access-Control-Allow-Credentials: true`；为独立前端跨域部署的默认姿态 |
+| `cors_mode` | `allow_list` | 只对 `public_origin` 与 `cors_origins`（逗号分隔，精确匹配、忽略大小写）回 CORS 头；UI 与后端同域托管时建议收紧到此模式 |
+| `cors_mode` | `off` | 不回任何 CORS 头（纯同域部署） |
+| `allow_any_origin` | `true`（默认） | WS 握手放行任意合法 Origin（独立前端默认）；设 `false` 收紧 |
+
+注意事项：
+
+- CORS 只作用于用户面 HTTP（`/api/auth/*`、`/api/media/*`、`/api/push/*`）；`OPTIONS` 预检统一处理（不 405）。
+- Cookie 是 HttpOnly + SameSite=Lax，跨域浏览器客户端必须 `credentials: 'include'` 并依赖服务端回 `Allow-Credentials: true`。
+- WS 握手不受浏览器 CORS 约束，但服务端校验 Origin（见 `allow_any_origin`）；非浏览器客户端可不受此限制。
+- `allow_any` 模式下非 http(s) 的 Origin（含垃圾值）不反射、不带凭证返回。
 
 
 
@@ -227,7 +249,16 @@ HTTP 401  {"code":"UNAUTHORIZED","error":"unauthorized"}
 
 ---
 
-## 4. 健康检查
+## 4. 健康检查与服务描述符
+
+**`GET /`（服务描述符）**——后端不托管 UI，根路径返回 JSON 而非网页；客户端可用它做 surface 发现：
+
+```json
+HTTP 200
+{"service":"UFOT","role":"backend","surface":{"http_api":"/api/*","websocket":"/ws","health":"/healthz","auth":"/api/auth/methods"}}
+```
+
+（非 `/` 的未知路径 → `404 {"error":"not found","code":"NOT_FOUND"}`。）
 
 **用户面 /healthz 实测于 v2.1.0 生产 2026-11-23**：
 
@@ -269,7 +300,7 @@ HTTP 200
 {"sent":0}
 ```
 
-> 4xx/5xx 时客户端 fail-closed：只记日志不重试（`apps/client/src/net/push`）。
+> 4xx/5xx 时客户端 fail-closed：只记日志不重试（见 client-contract.md §5）。
 
 | 方法 | 路径 | 面 | 鉴权 | 成功响应 |
 |------|------|----|------|---------|

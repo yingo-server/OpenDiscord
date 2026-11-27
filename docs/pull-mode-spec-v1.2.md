@@ -26,8 +26,8 @@
 |---|---|---|
 | 920/921 READ_HISTORY，`since_seq` + `before_seq` 双方向 | `proto/chat.proto:532`；`pipe/wire/wire.go:72-78`（BeforeSeq）；`pipe/readrouter.go:43,95`（降序读路径 + 测试） | 服务端已落盘 |
 | kind 8/9 SYNC 补拉（conv_id/since_seq/limit → 逐帧 Envelope） | `proto/chat.proto:79-90` | 已实现 |
-| 前端 sync 引擎：seq 收敛 / gap 缓冲 / tombstone / 去重 / **single-writer `ingest` 唯一写入口** | `apps/client/src/net/sync/engine.ts`（`ingest` 163 行；不变量见文件头注释） | 已实现，**不得破坏** |
-| 前端 history-loader：三段式 + singleflight + exhausted + stale 丢弃 | `apps/client/src/net/sync/history-loader.ts` | 已实现 |
+| 客户端 sync 引擎：seq 收敛 / gap 缓冲 / tombstone / 去重 / single-writer `ingest` 唯一写入口 | 客户端侧实现（前端已移出仓库；契约见 client-contract.md §3） | 契约不变量：**不得破坏** |
+| 客户端 history-loader：三段式 + singleflight + exhausted + stale 丢弃 | 客户端侧实现 | 已实现（契约） |
 | feature flag 机制：原子快照 + FEATURE_FLAGS(911) 广播 + SIGHUP 热重载 | `server/internal/pkg/featureflags/flags.go` | 已实现 |
 | fanout 异步扇出面：per-conv 100ms 聚合窗 + broadcaster workers + 有界丢弃 | `server/internal/data/pipe/fanout.go` | 已实现，水位线挂接点 |
 

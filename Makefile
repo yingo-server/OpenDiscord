@@ -5,19 +5,13 @@ PROTO_DIR     := proto
 GEN_DIR       := server/internal/proto/gen/chatpb
 DIST_DIR      := dist
 BIN           := chatd
-CLIENT_DIR    := apps/client
-ADMIN_DIR     := apps/admin
-EMBED_ROOT    := server/web
-EMBED_CLIENT  := $(EMBED_ROOT)/client
-EMBED_ADMIN   := $(EMBED_ROOT)/admin
 
 # 发布包版本号：tag 优先，否则日期。目录名做白名单清洗（release.sh 同规则）。
-# 不用 --dirty：make web 会重写 server/web 下的产物文件，工作树必然变脏，
-# 版本名会变成 v0.1.0-dirty（发布包实测踩到）。标签优先，其次提交短号。
+# 标签优先，其次提交短号。
 VERSION ?= $(shell git describe --tags --always 2>/dev/null || date -u +%Y%m%d%H%M%S)
 ARCH    ?= $(shell go env GOARCH 2>/dev/null || echo amd64)
 
-.PHONY: proto build test lint web web-client web-admin admin-web release release-all clean importlint
+.PHONY: proto build test lint release release-all clean importlint
 
 # importlint: enforce docs/bridge-design.md §4.1 import red lines (P0-1).
 # Included in lint (therefore CI). Runs standalone too.
@@ -55,41 +49,17 @@ lint:
 		echo "gofmt 需要格式化的文件:"; echo "$$fmt_out"; exit 1; \
 	fi
 	@bash scripts/importlint.sh
-	@bash scripts/kinds-consistency.sh
+	@bash scripts/kinds-registry.sh
 
-# kinds: T-CL-3 双端 kind 常量一致性（v3-bus-design §9 P0）
+# kinds: 协议 kind 单一真源门禁（注册表完整性 + 号段冲突 + v3 号段锁定）
 kinds:
-	@bash scripts/kinds-consistency.sh
+	@bash scripts/kinds-registry.sh
+
 
 # ---------------------------------------------------------------------------
-# 前端产物 → server/web/{client,admin}
-#
-# 产物提交进仓库（.gitignore 只忽略 apps/*/dist），理由：release 包要能直接
-# `go build`，目标机不需要 Node；同时 go:embed 要求编译期目录存在。
-# 每次构建先清空目标目录（保留 .gitkeep），避免旧 hash 资源残留导致 index.html
-# 引用的 chunk 与磁盘上的文件不一致。
+# release: 单二进制（trimpath、去符号）
 # ---------------------------------------------------------------------------
-# npm ci occasionally fails with ENOTEMPTY on esbuild's postinstall bin dir
-# when a previous run (or a parallel dev server) was interrupted; one retry
-# after clearing node_modules converges and keeps CI deterministic.
-web-client:
-	cd $(CLIENT_DIR) && (npm ci --prefer-offline || (rm -rf node_modules && npm ci --prefer-offline)) && npm run build && \
-		rm -rf ../../$(EMBED_CLIENT)/* && cp -r dist/* ../../$(EMBED_CLIENT)/
-
-web-admin:
-	cd $(ADMIN_DIR) && (npm ci --prefer-offline || (rm -rf node_modules && npm ci --prefer-offline)) && npm run build && \
-		rm -rf ../../$(EMBED_ADMIN)/* && cp -r dist/* ../../$(EMBED_ADMIN)/
-
-# web: 两端前端全部产出并落到 embed 目录
-web: web-client web-admin
-
-# admin-web: 兼容旧目标名（等价 web-admin）
-admin-web: web-admin
-
-# ---------------------------------------------------------------------------
-# release: 内嵌前端 + 单二进制（trimpath、去符号）
-# ---------------------------------------------------------------------------
-release: web
+release:
 	mkdir -p $(DIST_DIR)
 	go build -trimpath -ldflags "-s -w" -o $(DIST_DIR)/$(BIN) ./server/cmd/chatd
 
@@ -100,7 +70,7 @@ release: web
 #   dist/chatd            install.sh 从 dist/ 取二进制
 #   deploy/*              安装脚本 / unit / 配置样例
 #   docs/deploy.md        部署手册
-# 前端已 embed 进 chatd，不再单独打 web/ 目录。
+# 后端专用包：不含任何前端产物（前端是独立程序，通过 env 指向本服务）。
 # ---------------------------------------------------------------------------
 release-all: release
 	@ver="$$(printf '%s' '$(VERSION)' | tr -c 'A-Za-z0-9._-' '-')"; \

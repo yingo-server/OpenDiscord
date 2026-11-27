@@ -23,6 +23,9 @@ type Config struct {
 	// PublicOrigin 允许的浏览器 Origin（如 https://chat.example.com）；
 	// 为空时仅做 Host 同源比较。
 	PublicOrigin string
+	// AllowAnyOrigin 放行任意合法 Origin（独立前端部署默认 true）；
+	// false 时回退到 PublicOrigin / 同 Host 校验。
+	AllowAnyOrigin bool
 	// BridgeAddr 桥接地址（TCP/UDS）。本批次 Peer 由装配层注入，仅记录与健康展示。
 	BridgeAddr string
 	// CookieName 承载 access token 的 Cookie 名，默认 access_token。

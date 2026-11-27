@@ -41,8 +41,10 @@ type AuthnFunc = Authn
 
 // Config acceptor 参数。
 type Config struct {
-	ListenAddr        string
-	PublicOrigin      string // 同源校验白名单，如 https://chat.example.com
+	ListenAddr   string
+	PublicOrigin string // 同源校验白名单，如 https://chat.example.com
+	// AllowAnyOrigin 放行任意合法 Origin（独立前端部署的默认姿态）。
+	AllowAnyOrigin    bool
 	CookieName        string // 默认 access_token
 	HeartbeatInterval time.Duration
 	ReadTimeout       time.Duration
@@ -82,7 +84,7 @@ type Conn struct {
 	remoteAddr string
 
 	// jsonMode 记录本连接的线格式：浏览器客户端默认发 JSON 文本帧
-	// （apps/client 的 JSON codec），原生客户端发 protobuf 二进制帧。回帧
+	// （浏览器的 JSON 编码），原生客户端发 protobuf 二进制帧。回帧
 	// 必须与对端一致，否则客户端解析失败——格式是传输属性，不是信任边界。
 	jsonMode atomic.Bool
 
@@ -360,19 +362,29 @@ func (a *Acceptor) tokenFromRequest(r *http.Request) string {
 
 // checkOrigin 同源校验：无 Origin（非浏览器客户端）放行；有则必须与 Host 或
 // 配置的 PublicOrigin 精确匹配（不前缀/不通配）。
+// checkOrigin validates the handshake Origin.
+//
+// Backend-only deployment: the user interface is a separate program on its
+// own origin, so the strict same-origin check would reject legitimate
+// clients. AllowAnyOrigin therefore accepts any syntactically valid origin;
+// when it is off the previous behavior applies (empty Origin, configured
+// PublicOrigin, or same host).
 func (a *Acceptor) checkOrigin(r *http.Request) bool {
 	origin := r.Header.Get("Origin")
 	if origin == "" {
+		return true
+	}
+	u, err := parseOrigin(origin)
+	if err != nil {
+		return false
+	}
+	if a.cfg.AllowAnyOrigin {
 		return true
 	}
 	if a.cfg.PublicOrigin != "" && strings.EqualFold(origin, a.cfg.PublicOrigin) {
 		return true
 	}
 	// 同源：scheme + host 与请求 Host 一致。
-	u, err := parseOrigin(origin)
-	if err != nil {
-		return false
-	}
 	return strings.EqualFold(u.host, r.Host)
 }
 

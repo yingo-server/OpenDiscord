@@ -62,6 +62,9 @@ type Policy struct {
 type AuthConfig struct {
 	// Methods gates the login entry points.
 	Methods AuthMethodsConfig `json:"methods"`
+	// MethodsProbePerIPPerMin is the per-IP budget of the public discovery
+	// endpoint (GET /api/auth/methods). 0 = use the built-in default (60/min).
+	MethodsProbePerIPPerMin int `json:"methods_probe_per_ip_per_min"`
 }
 
 // AuthMethodsConfig is the per-method login switch set.

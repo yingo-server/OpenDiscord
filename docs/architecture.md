@@ -1,22 +1,23 @@
 # 架构总纲
 
-> 对齐版本：v2.1.0。前端已完全重写（apps/client，20 文件分层 platform/domain/net/state/ui，黑白极简 React SPA），
-> 前端契约见 [frontend-contract.md](frontend-contract.md)。
+> 对齐版本：v2.1.0。UFOT 是**纯后端仓库**：只包含服务端（Go）与运维工具，不含任何前端代码。
+> 客户端（Web / 桌面 / 移动）是**外部独立程序**，通过 env（API base / WS url）指向本服务；
+> 接入契约见 [client-contract.md](client-contract.md)。
 
 UFOT 由四个服务层级与一个桥接枢纽组成。embedded 模式下层间为进程内 channel（EmbeddedTransport）；
-管理面到桥接使用 HTTP API；前端到用户层使用 WebSocket。
+管理面到桥接使用 HTTP API；客户端到用户层使用 WebSocket + HTTP API。
 
 ## 总体架构
 
 ```
-                            前端 SPA (React, embed)
-         WS(用户通道) ═╗   HTTP ╗(登录/媒体: /api/auth/* /api/media/*)   HTTPS ╗(管理后台)
-                      ▼        ▼                                        ▼
+   外部客户端 (Web / 桌面 / 移动，独立程序，不在本仓库)
+         WS(用户通道) ═╗   HTTP ╗(登录/媒体/推送: /api/*)   HTTPS ╗(管理程序, 独立)
+                      ▼        ▼                              ▼
 ┌──────────────── 用户层 usergw ─────────────┐  ┌─ 管理层 admin ─┐
 │ acceptor→codec→limiter→router→forwarder    │  │ middleware 链   │
 │ (管道组件, channel 串联)                    │  │ handler/service│
 │ HTTP 面(同端口): /api/auth/* /api/media/*  │  └───────┬────────┘
-│                 /api/push/* /healthz / SPA │          │
+│                 /api/push/* /healthz / /   │          │
 └───────────────┬────────────────────────────┘          │
           socket ══╗ (内部长连接)                 HTTP API ══╗
                    ║   socket ═══════╗                 ║ (唯一例外)
@@ -37,7 +38,21 @@ UFOT 由四个服务层级与一个桥接枢纽组成。embedded 模式下层间
 
 管理层指令经 AdminAPI 翻译成 5xx 帧注入总线，与 socket 帧同构：管理指令的审计日志即帧日志。
 
-> 说明（P2-1）：用户层 usergw 除 WS 用户通道外，还在**同一监听端口**上提供 HTTP 面——`/api/auth/*`（登录/刷新/登出，须在 WS 握手前完成鉴权）、`/api/media/*`（媒体上传/下载；帧编解码上限 64KB，媒体字节不走 WS 通道）、`/api/push/*`（Web Push 订阅）与 `/healthz`。此为前端→用户层入口，不构成「绕过 Envelope」的红线违反。
+> 说明（P2-1）：用户层 usergw 除 WS 用户通道外，还在**同一监听端口**上提供 HTTP 面——`/api/auth/*`（登录/刷新/登出，须在 WS 握手前完成鉴权）、`/api/media/*`（媒体上传/下载；帧编解码上限 64KB，媒体字节不走 WS 通道）、`/api/push/*`（Web Push 订阅）、`/healthz` 与 `GET /`（JSON 服务描述符）。此为客户端→用户层入口，不构成「绕过 Envelope」的红线违反。
+
+## ADR：为什么后端不托管 UI
+
+- **背景**：v2.0 及之前，仓库以 `go:embed` 内嵌两套 SPA（用户端 + 管理端），前端随 chatd
+  二进制发布。代价：后端发布被前端构建绑死（改一行文案要重新出后端 release）；构建链
+  需要 Node 工具链；前端迭代节奏被后端发布窗口拖慢；第三方/自研客户端无法平等接入。
+- **决策**：自 v2.1.0 起前端代码全部移出仓库，UFOT 成为纯后端服务。`GET /` 返回 JSON
+  服务描述符（非 HTML）；客户端是独立程序，通过自身配置（API base / WS url）指向本服务，
+  跨域访问由 CORS（`cors_mode`）支持。契约以 [client-contract.md](client-contract.md)
+  与 [api-reference.md](api-reference.md) / [ws-protocol.md](ws-protocol.md) 为准。
+- **后果**：✅ 后端构建不再依赖 Node，发布物只有 Go 二进制；✅ 前端可独立发版、独立技术选型；
+  ✅ 多客户端（官方 Web / 桌面 / 移动 / 第三方）平等接入同一契约。⚠️ 跨域部署成为一等场景，
+  CORS 与 Cookie（SameSite=Lax + credentials）配置必须正确（见 deploy.md §CORS）；
+  ⚠️ 服务端不能再假设"客户端是我们写的"——契约字段一旦发布即需向后兼容。
 
 ## 统一 kind 号段（全局唯一真相源，定义于 proto/）
 
@@ -65,10 +80,10 @@ UFOT 由四个服务层级与一个桥接枢纽组成。embedded 模式下层间
 
 ## 跨层全链路时序
 
-**消息发送**（trace_id 前端生成，经 FrameMeta 全程透传）：
+**消息发送**（trace_id 由客户端生成，经 FrameMeta 全程透传）：
 
 ```
-前端 MSG_SEND ─WS─► usergw: acceptor→codec→limiter(令牌桶)→router(非白名单,转发)
+客户端 MSG_SEND ─WS─► usergw: acceptor→codec→limiter(令牌桶)→router(非白名单,转发)
   →forwarder Wrap(route+ctx{conn_id,user_id,device_id}) ─socket─► Bridge
   Bridge: FrameRW→Verifier(会话READY+能力)→Router(kind 101→data层)→Bus(topic: conv.{cid})
   →Egress ─socket─► data层: connector→dispatcher→cache.member.Check(越权拦截点)
@@ -76,7 +91,7 @@ UFOT 由四个服务层级与一个桥接枢纽组成。embedded 模式下层间
   →flusher(1000条/50ms组提交, SQLite事务)→outbound 103 MSG_ACK{msg_id,seq}
   ──► Bridge Router(kind 103→user层 + 103 投递→conv.{cid}订阅者)
   ──► usergw router 查session表 → 全设备投递 MSG_NEW + 发送者收 MSG_ACK
-  ──► 对端前端 sync引擎(seq连续性校验)→先写IndexedDB→进内存store→渲染
+  ──► 对端客户端按 seq 连续性校验→本地存储→渲染
 ```
 
 **封禁**：
@@ -90,12 +105,12 @@ adminctl users ban 123 / 后台按钮 ─HTTPS─► admin: authn→rbac→csrf�
   ←ack汇聚→AdminAPI→HTTP响应；审计可journalctl式顺序回放
 ```
 
-**重连补拉**：断线→指数退避→WS重连→upgrade前鉴权→RESUME(last_seq)→经桥接 920 读→readrouter 热库补 gap→逐帧下发→sync 引擎去重重组。
+**重连补拉**：断线→指数退避→WS重连→upgrade前鉴权→RESUME(last_seq)→经桥接 920 读→readrouter 热库补 gap→逐帧下发→客户端去重重组。
 
-## 总目录结构（Monorepo）
+## 总目录结构
 
 ```
-/UFOT
+/UFOT                              # 纯后端仓库（无 apps/、无 server/web）
 ├─ proto/                          # 唯一契约源(所有kind定义+Envelope)
 ├─ server/
 │  ├─ cmd/
@@ -112,14 +127,6 @@ adminctl users ban 123 / 后台按钮 ─HTTPS─► admin: authn→rbac→csrf�
 │  │  ├─ admin/{middleware,handler,service,bridgeproxy,auditshim}
 │  │  └─ pkg/{log,signalset,featureflags,exitcodes}
 │  └─ store/migrations/{hot,cold,admin}/{域}/{NNNN}.sql   # 分域编号迁移
-├─ apps/client/                    # 用户前端（v2.1 重写：React + TS，黑白极简，20 文件分层）
-│  └─ src/{app/{bootstrap,frames,services,mock},   # 装配 + 帧处理
-│         domain/{types,parse,backoff},            # 纯类型与逻辑（含单测）
-│         net/{http/{client,auth,push},ws/{client,identity,requests,call},protocol/{frame,kinds}},
-│         platform/{env,session,theme},            # 环境变量/会话存储/主题
-│         state/{chat,session},                    # store
-│         ui/{views/{Login,Settings},components/{ConvList,MessageList,Composer,CallOverlay,Toast,ErrorBoundary,BrandMark},i18n,lib,styles}}
-├─ apps/admin/                     # 管理后台前端
 ├─ config/chatd.toml policy.json
 └─ deploy/systemd/ Caddyfile release.sh backup.sh
 ```
@@ -140,13 +147,14 @@ adminctl users ban 123 / 后台按钮 ─HTTPS─► admin: authn→rbac→csrf�
 - **embedded**（2C2G 起步）：单 `chatd` 二进制，四层进程内流水线+EmbeddedTransport（chan 直连），一个 systemd unit
 - **split**（扩展期，未实现）：同代码编译出多个二进制分机部署，层间改走 UDS/TCP socket（`transport/remote` 已就绪）——只改配置 `[mode]` 段
 - 冷库 Postgres 始终在外部，本机内存与用户量增长解耦
+- 客户端永远在本仓库之外：部署方自行分发/托管客户端程序，通过 env 指向本服务（见 deploy.md「独立前端如何指向本服务」）
 
 ## 实施顺序
 
 0. `proto` 全 kind 定义 + `policy/policystore` + 分域迁移骨架（协议与地基）
 1. Bridge 流水线 + EmbeddedTransport + embedded 装配
 2. data 层写管道+读路由（SQLite）+ 用户身份/登录链路
-3. usergw + 前端 sync 引擎（消息闭环）
+3. usergw（WS + HTTP 面，客户端消息闭环）
 4. 媒体直传 + admin 层 + 审计
 5. 归档/备份 job + 冷库 + CLI 两件套（`ufotctl` + `adminctl`）
 6. 压测（`scripts/stress`，CI 压测管线）→ 2C2G 调优（GOMEMLIMIT、journald 限速、SQLite cache）

@@ -31,7 +31,7 @@ const (
 
 // onReceipt is the dispatch entry for kinds 104/105 (MSG_READ/MSG_DELIVERED).
 //
-// Contract (apps/client/src/net/protocol/handlers/receipt.ts): the DOWNLINK
+// Contract (docs/client-contract.md): the DOWNLINK
 // payload is MessagePayload.receipts — JSON {"receipts":[{msg_id,user_id,at,
 // rtype}]}, rtype 0=read 1=delivered. The sender's user_id is ALWAYS
 // rewritten to the authenticated uid (the client value is never trusted).

@@ -27,15 +27,9 @@ are reproduced below / referenced to their upstream distributions.
    - golang.org/x/crypto v0.24.0 — BSD 3-Clause License
      Copyright (c) 2009 The Go Authors
 
-2) Front-end dependencies (apps/client and apps/admin)
-   - react 18.3.1 — MIT License — Copyright (c) Meta Platforms, Inc. and affiliates
-   - react-dom 18.3.1 — MIT License — Copyright (c) Meta Platforms, Inc. and affiliates
-   - zustand 4.5.2 — MIT License — Copyright (c) 2019 Paul Henschel
-   - @tanstack/react-virtual 3.5.0 — MIT License — Copyright (c) Tanner Linsley / TanStack
-
 The full license texts of the above components are available in their upstream
 distributions and in the module/package caches used to build this product
-(go.sum / package-lock.json pin the exact versions). This NOTICE is provided to
+(go.sum pins the exact versions). This NOTICE is provided to
 satisfy the attribution requirements of Apache-2.0 §4(c)/(d) and the MIT/BSD
 licenses listed above.
 

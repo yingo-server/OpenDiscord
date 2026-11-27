@@ -56,7 +56,7 @@ curl -s  https://chat.example.com/admin/ | grep -o '<title>[^<]*'
 
 | 地址 | 用途 | 谁能访问 |
 |---|---|---|
-| `127.0.0.1:8080` | 用户层 HTTP + WebSocket + 内嵌 SPA（`listen`） | Caddy |
+| `127.0.0.1:8080` | 用户层 HTTP + WebSocket + `GET /`（服务描述符）（`listen`） | Caddy |
 | `127.0.0.1:7780` | 帧注入 AdminAPI（`admin_listen`） | Caddy + IP 白名单 |
 | `127.0.0.1:7781` | 管理 RBAC REST `/api/v1/*`（`admin_rest_listen` 默认值） | Caddy + IP 白名单 |
 | `127.0.0.1:9090` | Prometheus 指标（`metrics_listen`，当前版本未监听，见附录 A.2） | 本机/内网 |
@@ -81,7 +81,7 @@ sha256sum dist/chatd          # 与发布页 SHA256SUMS 对照
 
 ```
 ufot-<version>/
-├── dist/chatd                 # 单二进制（内含 client + admin 前端）
+├── dist/chatd                 # 单二进制（纯后端，不含前端产物）
 ├── deploy/{install.sh,release.sh,backup.sh,ufot.toml,policy.json,Caddyfile,
 │           systemd/,journald/,keygen/,logrotate.conf}
 ├── docs/deploy.md
@@ -89,9 +89,8 @@ ufot-<version>/
 └── LICENSE
 ```
 
-> 前端已 `go:embed` 进 `chatd`，发布包**不再**带 `web/` 目录，目标机无需 Node。
-> `install.sh` 兼容旧布局：若存在 `apps/{client,admin}/dist` 会额外复制到
-> `/opt/ufot/releases/bootstrap/web/`，只作静态回退，不参与内嵌。
+> **服务器只部署后端**：本仓库不含前端代码（客户端是外部独立程序，见 §「独立前端如何指向本服务」）。
+> `install.sh` 不会安装任何静态资源；目标机无需 Node。
 
 ### 2.2 执行
 
@@ -121,7 +120,7 @@ sudo ./deploy/install.sh --prefix /opt/ufot --etc /etc/ufot --state /var/lib/ufo
 | 3 | 写环境变量文件（存在则不动） | `/etc/ufot/env`（0600 root:ufot） | `ls -l /etc/ufot/env` |
 | 4 | 生成密钥（存在则跳过，绝不覆盖） | `keys/{jwt_sign_key.pem,admin_jwt_key.pem,ipc_key,hmac_key,pii_key,phone_lookup_key,download_key,upload_secret,audit_chain_key,backup.key}`；`/etc/ufot/backup.key -> keys/backup.key` | `ls -l /etc/ufot/keys`；`openssl pkey -in .../jwt_sign_key.pem -pubout \| openssl dgst -sha256` |
 | 5 | 安装配置（存在则保留；`Caddyfile.reference` 每次覆盖） | `ufot.toml` 0640、`policy.json` 0640、`Caddyfile.reference` 0640；`config/chatd.toml -> ../ufot.toml` | `ls -l /etc/ufot` |
-| 6 | 安装二进制（前端已内嵌；若包内有 `apps/*/dist` 则额外复制到 `current/web` 作静态回退） | `/opt/ufot/releases/bootstrap/bin/chatd`；`current -> releases/bootstrap`；`bin -> current/bin`；`web -> current/web` | `ls -l /opt/ufot/current/bin/chatd` |
+| 6 | 安装二进制（纯后端，无静态资源） | `/opt/ufot/releases/bootstrap/bin/chatd`；`current -> releases/bootstrap`；`bin -> current/bin` | `ls -l /opt/ufot/current/bin/chatd` |
 | 7 | 安装 unit 与 journald 配额 | `/etc/systemd/system/ufot.service`；`/etc/systemd/journald.conf.d/ufot.conf`（`SystemMaxUse=200M`） | `systemctl cat ufot`；`journalctl --disk-usage` |
 | 8 | `daemon-reload` + `enable --now`（`--no-start` 跳过） | 运行中的 unit | `systemctl is-active ufot` |
 | 9 | 红线自检：`find /etc/ufot /var/lib/ufot -perm /o+rwx` 必须为空，否则 **exit 1** | — | 手工重跑同一条命令 |
@@ -144,7 +143,7 @@ sudo ./deploy/install.sh --prefix /opt/ufot --etc /etc/ufot --state /var/lib/ufo
 | 字段 | 默认值 | 含义与约束 |
 |---|---|---|
 | `mode` | `"embedded"` | embedded 单进程。**1.4 起 embedded-only**：split 多进程未实现（lts-1.4-plan §5 #4），勿改 |
-| `listen` | `"127.0.0.1:8080"` | 用户层 HTTP/WS 监听。**必须是回环**；公网只走 Caddy。也用它托管内嵌 SPA |
+| `listen` | `"127.0.0.1:8080"` | 用户层 HTTP/WS 监听。**必须是回环**；公网只走 Caddy |
 | `admin_listen` | `"127.0.0.1:7780"` | 管理 API 监听（Caddy 仅对白名单 IP 反代 `/api/admin/*`） |
 | `metrics_listen` | `"127.0.0.1:9090"` | Prometheus `/metrics` 监听（契约字段，见下方「消费进度」） |
 | `public_origin` | `"https://chat.example.com"` | 对外站点，用于绝对 URL、CORS、Cookie 域；**不带尾斜杠**，必须与实际域名一致（否则 WS 握手 401） |
@@ -256,8 +255,7 @@ systemctl is-active ufot                 # 期望 active
 journalctl -u ufot -n 50 --no-pager      # 期望 msg="chatd ready"
 
 # 本机验证（绕过 Caddy，确认上游活着）
-curl -sI http://127.0.0.1:8080/ | head -3             # 200 + text/html
-curl -s  http://127.0.0.1:8080/admin/ | grep -o '<title>[^<]*'
+curl -sI http://127.0.0.1:8080/ | head -3             # 200 + application/json（服务描述符）
 curl -s  http://127.0.0.1:8080/healthz               # 期望 ok/200
 ```
 
@@ -280,16 +278,15 @@ sudo nft add rule inet filter input tcp dport {80,443} ip saddr != <你的IP> dr
 
 完成 §4.4 后再放开公网。
 
-### 4.4 管理员引导（逐屏操作）
+### 4.4 管理员引导（后端无管理 UI，走 CLI/REST）
 
 | 步 | 操作 | 期望结果 |
 |---|---|---|
-| 1 | 打开 `https://chat.example.com/`，用手机号/邮箱注册第一个账号 | 账号创建成功，角色自动为管理员 |
-| 2 | 打开 `https://chat.example.com/admin/`，用同一账号登录 | 进入管理后台（登录需要密码 + TOTP；首次会要求绑定） |
-| 3 | 绑定 TOTP：扫描二维码，输入 6 位验证码 | 绑定成功；**立即抄下 8 个一次性恢复码**（服务端只存哈希，丢了只能重置） |
-| 4 | 核对身份与权限（`adminctl whoami` 返回同一管理员） | 角色/RBAC 正确 |
-| 5 | 打开「审计日志」→「校验哈希链」 | 返回 ok；记下当前最大 id 作为基线 |
-| 6 | 打开「用户」页确认列表可读（空列表也算通过） | `/api/admin/v1/*` 白名单生效 |
+| 1 | 用任一客户端（或 curl）以手机号/邮箱注册第一个账号 | 账号创建成功，角色自动为管理员 |
+| 2 | `adminctl whoami` 或 `POST /api/v1/login`（password + TOTP） | 首次登录要求绑定 TOTP；**立即抄下一次性恢复码**（服务端只存哈希，丢了只能重置） |
+| 3 | 核对身份与权限（`adminctl whoami` 返回同一管理员） | 角色/RBAC 正确 |
+| 4 | 审计链校验（`adminctl audit --since-id 0 --limit 1` 或 REST） | 返回 ok；记下当前最大 id 作为基线 |
+| 5 | `adminctl users list` 确认列表可读（空列表也算通过） | `/api/v1/*` 可用 |
 
 TOTP 参数（§3.3 红线）：**SHA-1 / 6 位 / 30s 周期，时间窗 ±1**；连续 10 次失败锁 30 分钟；
 管理会话 access TTL 5 分钟、idle 15 分钟强制重认证。服务器时间必须同步（§5.6），否则全员 TOTP 失败。
@@ -299,11 +296,11 @@ TOTP 参数（§3.3 红线）：**SHA-1 / 6 位 / 30s 周期，时间窗 ±1**�
 ```bash
 # 1) 站点 200 且证书有效
 curl -sSI https://chat.example.com/ | grep -E 'HTTP/|strict-transport-security'
-# 2) 管理后台 200（白名单内）
-curl -sS https://chat.example.com/admin/ | grep -q 'UFOT 管理后台' && echo admin-ok
+# 2) 根路径返回服务描述符（纯后端）
+curl -sS https://chat.example.com/ | grep -q '"service":"UFOT"' && echo root-ok
 # 3) 指标只对本机开放：公网应为 404
 curl -s -o /dev/null -w '%{http_code}\n' https://chat.example.com/metrics   # 期望 404
-# 4) 管理 API 对非白名单 404（从白名单外的机器执行）
+# 4) 管理 REST 对非白名单 404（从白名单外的机器执行；7781 不直接暴露公网）
 curl -s -o /dev/null -w '%{http_code}\n' https://chat.example.com/api/admin/v1/whoami  # 期望 404
 # 5) 审计链基线
 adminctl --server http://127.0.0.1:7780 audit --since-id 0 --limit 1 --output json
@@ -355,11 +352,11 @@ sudo caddy validate --config /etc/caddy/Caddyfile     # 必须 "Valid configurat
 | 路径 | 上游 | 保护 |
 |---|---|---|
 | `/ws` | `127.0.0.1:{$UFOT_WS_PORT:8081}` | WS upgrade；`flush_interval -1`；建议 10 次/分钟/IP（E-3）+ 失败熔断（E-4） |
-| `/api/admin/*` | `127.0.0.1:7780` | `remote_ip` 白名单；**非白名单返回 404**（不暴露管理端存在） |
+| `/api/admin/*` | `127.0.0.1:7780` | `remote_ip` 白名单；**非白名单返回 404**（不暴露管理端存在；纯后端下管理面只有 REST `/api/v1/*` 于 7781） |
 | `/metrics` | `127.0.0.1:{$UFOT_METRICS_PORT:9090}` | 仅 127/8、10/8、192.168/16；公网 404 |
 | `/api/*` | `127.0.0.1:8080` | 请求体 1 MB（E-7） |
 | `/api/v1/media/presign` | `127.0.0.1:8080` | 请求体 64 KB（E-7） |
-| 其余（`/`、`/admin/`、静态资源） | `127.0.0.1:8080` | 二进制内嵌 SPA；index 不缓存、hash 资源 immutable |
+| 其余（`/`、`/api/*`、`/ws`） | `127.0.0.1:8080` | 纯后端：`GET /` 返回 JSON 服务描述符，无静态资源；`/api/*` 请求体 1 MB（E-7） |
 
 管理端 IP 白名单在 Caddyfile 里改这一行（换成你的运维出口 IP，可多个）：
 
@@ -429,6 +426,40 @@ sudo journalctl -u caddy -n 50 --no-pager | grep -iE 'error|certificate|obtain'
 ss -lntp | grep -E ':(80|443)\b'
 ```
 
+### 5.8 CORS 与环境变量配置（跨域客户端必读）
+
+CORS 相关键在 `/etc/ufot/ufot.toml`（改后 `systemctl restart ufot`）：
+
+| 键 | 默认 | 说明 |
+|----|------|------|
+| `cors_mode` | `allow_any` | `allow_any`：反射任意合法 http(s) Origin + `Allow-Credentials: true`（独立前端跨域部署的默认姿态）；`allow_list`：只对 `public_origin` 与 `cors_origins` 精确匹配回 CORS 头（同域托管/受控来源时收紧）；`off`：不回任何 CORS 头 |
+| `cors_origins` | 空 | `allow_list` 模式下的额外 Origin，逗号分隔，如 `https://app.example.com,https://alt.example.com` |
+| `allow_any_origin` | `true` | WS 握手 Origin 校验：`true` 放行任意合法 Origin；独立前端默认保持 `true` |
+
+- `public_origin` 必须与实际对外域名一致（Cookie Secure/域、CORS 精确匹配、WS 握手都依赖它）。
+- Cookie 是 `HttpOnly; SameSite=Lax`：跨域浏览器客户端必须 `credentials: 'include'`；
+  若客户端与后端不同站且浏览器策略阻止第三方 Cookie，最稳妥的是同级子域部署
+  （如 `chat.example.com` + `app.example.com`，Cookie 域 `Domain=example.com` 需按部署调整）。
+- WS 握手不受浏览器 CORS 约束，但服务端校验 Origin（见 `allow_any_origin`）。
+
+### 5.9 独立前端如何指向本服务
+
+前端是独立程序，部署在任何静态托管上（Netlify/Vercel/对象存储/自建 Nginx 均可），
+通过其自身配置指向本服务。以常见的构建期 env 为例：
+
+```bash
+# 前端构建/运行环境
+VITE_API_BASE=https://chat.example.com      # 后端 HTTP 根（按你的前端变量名）
+VITE_WS_URL=wss://chat.example.com/ws       # 后端 WebSocket 全 URL
+```
+
+解析约定（各端实现须一致，详见 [client-contract.md §1](client-contract.md)）：
+`API_BASE` 缺省回退同源；`WS_URL` 缺省由 `API_BASE` 推导（scheme 换 ws/wss，路径拼 `/ws`）。
+
+服务端侧要做的只有两件事：确认 `cors_mode` 允许前端的 Origin（§5.8），以及
+`policy.json` 的 `auth.methods` 至少打开一种登录方式（默认全部关闭）。
+客户端接入契约全貌见 [client-contract.md](client-contract.md)。
+
 ---
 
 ## 6. 目录与权限矩阵
@@ -443,7 +474,6 @@ embedded 形态（**1.4 起 embedded-only**，split 多进程未实现）。**�
 | `/opt/ufot/releases/<ver>/bin/*` | root:root | 0755 | `chatd` 等二进制 |
 | `/opt/ufot/current` | root:root | symlink | → `releases/<ver>`（原子的切换点） |
 | `/opt/ufot/bin` | root:root | symlink | → `current/bin` |
-| `/opt/ufot/web` | root:root | symlink | → `current/web`（旧布局静态回退，可空） |
 | `/etc/ufot` | root:ufot | 0750 | 配置根 |
 | `/etc/ufot/ufot.toml` | root:ufot | 0640 | 运行配置 |
 | `/etc/ufot/policy.json` | root:ufot | 0640 | 策略真源 |
@@ -457,7 +487,7 @@ embedded 形态（**1.4 起 embedded-only**，split 多进程未实现）。**�
 | `/var/lib/ufot/chatd.db` | ufot:ufot | 0600 | 热库（含 `-wal`/`-shm`） |
 | `/var/lib/ufot/admin.db` | ufot:ufot | 0600 | 管理库 |
 | `/var/lib/ufot/media/` | ufot:ufot | 0750 | 媒体对象（建议 LUKS 卷） |
-| `/var/lib/ufot/backup/` | ufot:ufot | 0700 | 本地加密备份 |
+| `/var/lib/ufot/backup/`backup/` | ufot:ufot | 0700 | 本地加密备份 |
 | `/run/ufot/` | ufot:ufot | 0750 | UDS 目录（systemd `RuntimeDirectory`） |
 | `/etc/systemd/system/ufot*.service` | root:root | 0644 | unit |
 | `/etc/systemd/journald.conf.d/ufot.conf` | root:root | 0644 | journald 配额 |
@@ -489,7 +519,7 @@ sudo -u ufot test -w /opt/ufot/current/bin/chatd && echo "FAIL: writable" || ech
 |---|---|
 | `ssh` / `scp` | **必须免密（BatchMode）**；`~/.ssh/config` 配好目标机 |
 | `tar` / `sha256sum` | 打包与校验 |
-| `node` + `npm` | 构建 client/admin（`--skip-build` 可跳过，复用 `apps/*/dist`） |
+| `node` + `npm` | 不再需要（纯后端包；仅本地开发前端时自备） |
 | `go` | 构建 `chatd`（`--skip-build` 时复用 `dist/`） |
 | 目标机 `curl` / `systemctl` | 健康检查与重启 |
 
@@ -562,7 +592,6 @@ readlink -f /opt/ufot/current /opt/ufot/last
 sudo ln -sfn "$(readlink -f /opt/ufot/last)" /opt/ufot/current.new
 sudo mv -Tf /opt/ufot/current.new /opt/ufot/current
 sudo ln -sfn current/bin /opt/ufot/bin
-sudo ln -sfn current/web /opt/ufot/web
 
 # 3) 重启并验证
 sudo systemctl restart ufot
@@ -578,9 +607,9 @@ journalctl -u ufot -n 100 --no-pager
 | | `make release-all` | `deploy/release.sh` |
 |---|---|---|
 | 产物 | `dist/ufot-<ver>-linux-<arch>.tar.gz` + `dist/SHA256SUMS` | 同左，但直接上传并切换 |
-| 前端 | `make web`（npm ci + build + 复制到 `server/web/{client,admin}`） | 自己 `npm ci + build`，再把 `apps/*/dist` 打进 `web/` |
+| 前端 | 不含（后端专用包，见 Makefile `release-all`） | 不含 |
 | 适用 | CI 出包、离线交付 | 运维一条命令发布到远端 |
-| 前置 | 本机 Node + Go | 本机 Node + Go + 免密 SSH |
+| 前置 | 本机 Go | 本机 Go + 免密 SSH |
 
 ---
 
@@ -964,10 +993,10 @@ sudo nft list ruleset | head -40
 |---|---|---|
 | 502 Bad Gateway | Caddy 指向的端口没有进程 | 启 `ufot`；核对 `UFOT_WS_PORT`/`listen` 一致 |
 | `/admin/` 404，其它正常 | 来源 IP 不在白名单（Caddy 故意 404） | 改 `remote_ip` 后 `systemctl restart caddy` |
-| `/admin/` 503 `admin UI is not embedded` | 二进制是未 `make web` 的构建 | 用发布包/重新 `make release` |
+| `/admin/` 404 | 后端不托管管理 UI（v2.1 起纯后端）；管理面只有 REST `/api/v1/*`（7781） | 管理操作走 `adminctl` / `opchat`，或经 IP 白名单反代访问 REST |
 | `/ws` 握手 401 | token 放在 query（红线）、Cookie 域不符、access 过期 | token 只放 Cookie 或 `Sec-WebSocket-Protocol`；核对 `public_origin` |
 | 登录 429 / 一直失败 | 失败锁定：5 次→15min→1h→24h（§A-1） | 等锁定期；查 `auth.login_failed` 审计；不要绕过限流 |
-| 浏览器报 `Unexpected token '<'` | 静态资源 404 被回成 index.html | 确认用的是本仓库新二进制（`web.spa` 对带扩展名路径返回 404） |
+| 跨域客户端请求被浏览器拦截 | `cors_mode` 配置不符 | 见 §「CORS 与环境变量」；默认 `allow_any` 应放行 |
 | TOTP 全部失败 | 服务器时间漂移 > 30s | `timedatectl status`；开 NTP/chrony |
 
 ### 10.3 消息不落库（发得出去、刷新就没了）
@@ -1094,8 +1123,7 @@ adminctl --server http://127.0.0.1:7780 audit --since-id $((N-5)) --limit 11 --o
 
 ## 附录 A：骨架阶段差异（联调必读）
 
-部署件按**目标形态**编写；当前仓库的 `chatd` 已具备 1.0 装配（管理 REST、冷库与归档作业、媒体上传/下载、
-内嵌 SPA 均已接线）。下表只列仍会被实测到、且会让"照文档做却起不来"的差异，逐条给绕过方式：
+部署件按**目标形态**编写；当前仓库的 `chatd` 已具备 1.0 装配（管理 REST、冷库与归档作业、媒体上传/下载均已接线）。下表只列仍会被实测到、且会让"照文档做却起不来"的差异，逐条给绕过方式：
 
 | # | 差异 | 现象 | 临时绕过 / 上线前要求 |
 |---|---|---|---|
@@ -1103,7 +1131,7 @@ adminctl --server http://127.0.0.1:7780 audit --since-id $((N-5)) --limit 11 --o
 | A.3 | `install.sh` 只安装 `chatd`，不安装 `adminctl` / `ufotctl` | `command not found` | 按 §9.1 从 `current/bin` 或源码 `install` 到 `/usr/local/bin` |
 | A.4 | 管理 REST 已挂载：`/api/v1/*` 在 `admin_rest_listen`（默认 `127.0.0.1:7781`） | 启动日志出现 `rest_layer="admin_rest_listen"`，管理 API 由该监听提供（不再有 `not_wired`） | 无需绕过；本机/内网按 §4.4 验证。注意 REST 端口与 `admin_listen`（7780，帧注入）是两个监听 |
 | A.5 | `deploy/ufot.toml` 中部分契约字段当前二进制未消费 | 改了 `metrics_listen`/上传上限等无效果 | 见 §3.1 表后的「消费进度」注记 |
-| A.6 | SPA 已内嵌（`server/web`，`go:embed`），`chatd` 在 `listen` 为 TCP 时同时托管 `/` 与 `/admin/` | 发布包无需额外 web 目录；从源码构建若未执行 `make web`，前端资源为空，访问返回 503 `UI is not embedded` | 用发布包，或 `make web && make release`；不要手改 `server/web/*`，它由 `make web` 整目录替换 |
+| A.6 | 后端不托管 UI：`GET /` 返回 JSON 服务描述符，`/admin/` 等 HTML 路径不存在 | 浏览器打开站点首页是 JSON 而非网页（不是故障） | 客户端是独立程序，按 client-contract.md 接入；管理走 `adminctl` / `opchat` / REST |
 | A.7 | 冷库与归档作业已接线（jobber 按 `policy.archive.cron` 调度），Postgres driver 由部署层注入 | 主二进制 `chatd` 不携带 driver（架构红线）；`cold_dsn`/`UFOT_COLD_DSN` 已配置但 driver 未注册时，启动日志报 `cold store disabled: no postgres driver registered`，归档仅 dry-run、审计降级为「只写日志不落盘」 | 用冷库变体 **`chatd-pg`**（`make build-pg`，内嵌 pgx/v5/stdlib，见 `server/cmd/chatd-pg/`），或自行注册 `postgres`/`pgx` driver；`UFOT_COLD_DSN` 经 `/etc/ufot/env`（0600）注入，覆盖 toml 的 `cold_dsn`；未接冷库前不要开启 `require_audit_store` |
 | A.8 | 媒体上传/下载已提供（MVP，无会话 ACL） | `POST /api/media/upload` 与 `GET /api/media/{id}` 可用；下载只校验登录态 + 不可枚举 `media_id`，无会话级 ACL，无异步病毒扫描 | 1.0 可用于可信小规模部署，勿把 `media_id` 外传给非会话成员；1.1 补会话 ACL 与 ClamAV |
 
@@ -1115,8 +1143,8 @@ adminctl --server http://127.0.0.1:7780 audit --since-id $((N-5)) --limit 11 --o
 ## 附录 B：目录速查
 
 ```
-/opt/ufot/current/bin/chatd                 # 单二进制（含内嵌前端）
-/opt/ufot/current/{deploy,web}              # release.sh 打包时附带
+/opt/ufot/current/bin/chatd                 # 单二进制（纯后端）
+/opt/ufot/current/deploy                    # release.sh 打包时附带
 /etc/ufot/{ufot.toml,policy.json,env,Caddyfile.reference}
 /etc/ufot/keys/{*.pem,*_key,backup.key}
 /etc/ufot/config/chatd.toml -> ../ufot.toml

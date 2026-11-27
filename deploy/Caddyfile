@@ -3,8 +3,9 @@
 # 职责边界：
 #   - 自动 HTTPS（ACME，Let's Encrypt）
 #   - /ws           → 用户层（WebSocket upgrade）
-#   - /api/admin/*  → 管理层，仅白名单 IP
-#   - 其余（含 /admin/ 静态资源与 /api/v1/*）→ chatd / usergw，SPA 由二进制内嵌托管
+#   - /api/*        → 用户面 HTTP（auth / media / push），CORS 由 chatd 统一处理
+#   - 其余          → chatd（GET / 返回服务描述 JSON —— 后端不托管任何页面；
+#                     用户界面是独立的客户端程序，经 env 指向本服务）
 #
 # 限流：Caddy 核心没有 rate_limit 指令。三条路任选其一（详见文末注释）：
 #   (a) 编译 caddy-ratelimit 插件（推荐，按 IP/路径做令牌桶）
@@ -17,7 +18,7 @@
 	servers {
 		trusted_proxies static private_ranges
 	}
-	# 管理端 SPA 与 API 不允许被搜索引擎索引
+	# 管理 API 不允许被搜索引擎索引
 	admin off
 }
 
@@ -173,13 +174,11 @@
 	}
 
 	# ------------------------------------------------------------------
-	# 5) 其余全部：chatd 内嵌 SPA（用户端 /，管理端 /admin/）
-	#    静态文件由二进制 embed.FS 托管，不需要 Caddy file_server。
+	# 5) 其余全部 → chatd（后端；/ 返回服务描述 JSON，未知路径返回 JSON 404）
 	# ------------------------------------------------------------------
 	handle {
 		reverse_proxy 127.0.0.1:8080 {
 			header_up X-Real-IP {remote_host}
 		}
-		# 缓存策略由 chatd 内嵌服务器设置（index.html no-cache，hash 资源 immutable）
 	}
 }

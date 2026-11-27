@@ -400,7 +400,7 @@ func mediaLookupFromIndex(idx map[string]*store.Media) func(string) (*store.Medi
 
 // mediaView is the client-facing media entry of the MSG_NEW content.
 //
-// Field names are the frontend contract (apps/client/src/net/proto/payload.ts
+// Field names are part of the client contract (docs/client-contract.md
 // mapMedia): snake_case, matching proto/chat.proto's Media message.
 type mediaView struct {
 	MediaID    string `json:"media_id"`

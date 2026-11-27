@@ -16,7 +16,7 @@ import (
 )
 
 // sessionResponse is the login result. Field names are the client contract
-// (apps/client/src/net/auth/provider.ts → mapAuthSession):
+// (see docs/client-contract.md — the session object is the wire form):
 //
 //	access_token / token / refresh_token / user_id / session_id / expires_at /
 //	guest / profile{display_name}
