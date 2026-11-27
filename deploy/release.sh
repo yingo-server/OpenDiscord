@@ -89,7 +89,7 @@ log "发布版本: $VERSION"
 if [ "$SKIP_BUILD" -eq 1 ]; then
   log "跳过构建（--skip-build）"
 else
-  log "构建前端（client + admin）"
+
 
   log "构建 Go 二进制（trimpath, -s -w）"
   mkdir -p dist

@@ -307,9 +307,9 @@ install -m 0640 -o root -g ufot "$SCRIPT_DIR/Caddyfile" "$ETC/Caddyfile.referenc
 ln -sfn ../ufot.toml "$ETC/config/chatd.toml"
 
 # ---------------------------------------------------------------------------
-# 6. 二进制与前端产物（release layout: releases/<ver> + current 符号链接）
+# 6. 后端二进制（release layout: releases/<ver> + current 符号链接）
 # ---------------------------------------------------------------------------
-log "安装二进制与内嵌前端"
+log "安装后端二进制"
 
 BOOT="$PREFIX/releases/bootstrap"
 installed_bin=0
