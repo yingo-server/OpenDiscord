@@ -1,0 +1,14 @@
+{
+  "name": "UFOT",
+  "short_name": "UFOT",
+  "description": "UFOT — Unfettered Freedom Of Thought",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
+  "lang": "zh-CN",
+  "icons": [
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
