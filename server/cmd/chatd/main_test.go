@@ -68,6 +68,8 @@ func testConfig(t *testing.T) *config {
 	// must opt in explicitly — exactly like a real deployment does.
 	pol.Auth.Methods.Guest = true
 	pol.Auth.Methods.Password = true
+	pol.Auth.Methods.Phone = true
+	pol.Auth.Methods.Email = true
 	body, err := json.Marshal(pol)
 	if err != nil {
 		t.Fatalf("marshal policy: %v", err)

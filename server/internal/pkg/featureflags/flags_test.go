@@ -50,8 +50,10 @@ func TestProductionDefaults(t *testing.T) {
 	for k, want := range map[string]any{
 		KeyUniversalPullEnabled:   true,
 		KeyAdaptiveControlEnabled: true,
-		KeyV3BusEnabled:           true,
-		KeyV3BusPercent:           100,
+		// v3 总线默认关闭：投递循环未就绪时全量开启会吞掉数据帧
+		// （102/202/…），契约测试实测可见；显式开启由部署方承担守门责任。
+		KeyV3BusEnabled:           false,
+		KeyV3BusPercent:           0,
 		KeyMsgDomainV2:            true,
 	} {
 		if got, ok := Defaults()[k]; !ok || got != want {

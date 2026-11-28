@@ -2,15 +2,17 @@ package featureflags
 
 import "testing"
 
-// TestV3BusDefaults 锁定 1.4 转生产默认：v3 总线全量开启（S-1~S-7 压测守门）。
-// 回滚路径由显式 NewFromMap(off) 构造，见 TestInV3BucketKillSwitch。
+// TestV3BusDefaults 锁定安全默认：v3 总线关闭（percent=0）。
+// 历史上这里断言全量开启，但 mailbox 投递循环未就绪时全量开启会吞掉
+// 数据帧（契约测试实测 202 扇出丢失）。显式开启用 NewFromMap，见
+// TestInV3BucketKillSwitch / TestInV3BucketStable。
 func TestV3BusDefaults(t *testing.T) {
 	f := New()
-	if !f.Bool(KeyV3BusEnabled, false) {
-		t.Fatal("v3_bus_enabled default must be true after 1.4 production rollout")
+	if f.Bool(KeyV3BusEnabled, true) {
+		t.Fatal("v3_bus_enabled default must be false until deliverLoop is proven ready")
 	}
-	if got := f.Int(KeyV3BusPercent, -1); got != 100 {
-		t.Fatalf("v3_bus_percent default = %d, want 100", got)
+	if got := f.Int(KeyV3BusPercent, -1); got != 0 {
+		t.Fatalf("v3_bus_percent default = %d, want 0", got)
 	}
 }
 

@@ -80,8 +80,11 @@ func Defaults() map[string]any {
 		KeyUniversalPullEnabled:   true, // 普遍拉取：所有会话走水位线（无 kind14 能力的旧客户端自动保持 inline）
 		KeyAdaptiveControlEnabled: true, // AIMD 自适应：effective[cid] 由控制循环写入
 
-		KeyV3BusEnabled: true, // v3 总线：mailbox + credit 流控为默认投递路径
-		KeyV3BusPercent: 100,  // 全量（按 uid 哈希分桶，100 = 所有 uid 在桶内）
+		// v3 总线默认关闭（S-7 回滚基线）：旧直投是唯一投递路径。
+		// 开启 v3 必须同时具备可用的 mailbox 投递循环，否则数据帧
+		// （102/202/…）被抑制旧直投后无处可去（见 v3hooks / router.deliver）。
+		KeyV3BusEnabled: false,
+		KeyV3BusPercent: 0,    // 0 = 无人入桶；需显式调高并确认 deliverLoop 在线
 
 		KeyMsgDomainV2: true, // FE-1a 消息域（106 编辑 / 109 转发 / @ / 453 举报）默认启用
 

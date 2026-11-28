@@ -228,6 +228,11 @@ func TestAPIContract(t *testing.T) {
 		}
 	}
 	t.Log(b.String())
+	// A FAIL row must fail the test. Printing a table with failures while
+	// returning green made CI lie about the WS contract (e.g. 202 fan-out).
+	if len(failed) > 0 {
+		t.Fatalf("API contract: %d/%d probes failed; see table above", len(failed), len(s.rows))
+	}
 }
 
 func trunc(s string, n int) string {
