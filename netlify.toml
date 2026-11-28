@@ -1,0 +1,43 @@
+# Netlify 部署配置 —— UFOT Web 客户端
+#
+# 使用方式（零配置接入）：
+#   Netlify 控制台 → Add new site → Import an existing project → 选本仓库
+#   其余全部留默认，Netlify 读这份文件自动完成：
+#     - base/发布目录/构建命令/分支（见下）
+#   部署后只需在 Site configuration → Environment variables 补 3 个 env
+#   （见仓库 frontend/README.md「环境变量」一节；值由部署方填写，不入库）。
+#
+# 注意：本文件作用于 Netlify 构建 frontend/ 子目录，不影响仓库内的 Go CI。
+
+[build]
+  # 前端源码在 frontend/ 子目录
+  base = "frontend"
+  # 构建产物目录（相对 base）
+  publish = "dist"
+  # CI 出的 package-lock 锁定依赖，构建可复现
+  command = "npm ci && npm run build"
+
+[build.environment]
+  NODE_VERSION = "22"
+  # 构建期零 env 注入：VITE_* 留空 → 运行时回退同源。
+  # 实际后端地址部署后在 Netlify UI 配置（不入库），见 README。
+
+# SPA 使用 HashRouter（#/chats/...），静态托管无需 rewrite 兜底；
+# 保留一条兜底以防直接访问裸路径。
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# 安全响应头（静态资源通用基线）
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+
+# Service Worker 不缓存（保证推送订阅逻辑可更新）
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache"
