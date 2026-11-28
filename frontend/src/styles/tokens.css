@@ -47,6 +47,7 @@
   --primary: #3b82f6;      /* 正蓝：主操作/AppBar */
   --primary-dark: #2563eb;
   --accent: #e5484d;       /* 正红：FAB/危险 */
+  --accent-dark: #b3261e;  /* 承载白字时使用 */
   --warn: #f5a524;         /* 正黄：警告 */
   --blue: #3b82f6;
   --red: #e5484d;
@@ -68,8 +69,8 @@
   --appbar: var(--primary);
   --appbar-text: #ffffff;
   --text: #212121;
-  --text-dim: #757575;
-  --text-faint: #9e9e9e;
+  --text-dim: #616161;
+  --text-faint: #757575;
   --border: #e0e0e0;
   --own-bubble: #e3f2fd;
   --own-bubble-fg: #0d47a1;

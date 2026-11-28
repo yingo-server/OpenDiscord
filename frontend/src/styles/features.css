@@ -49,16 +49,16 @@
   border-radius: var(--r-l); background: var(--other-bubble); color: var(--text);
   box-shadow: var(--elev-1); font-size: var(--fs-md); overflow-wrap: anywhere;
 }
-.uf-bubble--mine { background: var(--primary); color: #fff; box-shadow: var(--elev-2); }
+.uf-bubble--mine { background: var(--own-bubble); color: var(--own-bubble-fg); box-shadow: var(--elev-2); }
 .uf-bubble--tomb { opacity: 0.65; font-style: italic; }
 .uf-bubble__text { white-space: pre-wrap; }
-.uf-bubble__meta { align-self: flex-end; display: inline-flex; align-items: center; gap: 3px; color: var(--text-faint); font-size: 11px; }
-.uf-bubble--mine .uf-bubble__meta { color: rgba(255,255,255,.75); }
+.uf-bubble__meta { align-self: flex-end; display: inline-flex; align-items: center; gap: 3px; color: var(--text-faint); font-size: var(--fs-xs); }
+.uf-bubble--mine .uf-bubble__meta { color: var(--own-bubble-fg); opacity: 0.72; }
 .uf-quote { padding: var(--sp-1) var(--sp-2); border-left: 3px solid var(--primary); border-radius: var(--r-s); background: rgba(127,127,127,.12); font-size: var(--fs-sm); }
 .uf-media { display: flex; flex-direction: column; gap: var(--sp-1); }
 .uf-media__item { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2); border-radius: var(--r-s); background: rgba(127,127,127,.12); }
 .uf-bubble__actions { display: flex; align-self: flex-end; gap: 0; margin-top: 2px; }
-.uf-bubble__actions .uf-iconbtn { width: 32px; height: 32px; }
+.uf-bubble__actions .uf-iconbtn { width: 44px; height: 44px; }
 .uf-jump { position: sticky; bottom: var(--sp-3); align-self: center; padding: var(--sp-1) var(--sp-3); border: none; border-radius: var(--r-full); background: var(--primary); color: #fff; font-size: var(--fs-xs); box-shadow: var(--elev-2); }
 
 /* 输入区：MD1 底部栏 */

@@ -1,6 +1,6 @@
 /** 会话详情：顶栏、消息流、输入区。 */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Avatar, Button, EmptyState, IconButton } from '@/ui/primitives/controls';
 import { Dialog } from '@/ui/primitives/Dialog';
@@ -12,19 +12,23 @@ import { useAuthStore } from '@/core/store/auth';
 import { useUiStore } from '@/core/store/ui';
 import { requestSync, sendReceipt, sendMutation, sendForward } from '@/core/store/bridge';
 
+const NO_TYPING: readonly number[] = [];
+
 export function ChatPage() {
   const { convId: rawConvId } = useParams();
   const convId = Number(rawConvId ?? 0);
   const navigate = useNavigate();
   const conv = useConvStore((s) => s.conversations[convId]);
   const messages = useMsgStore((s) => s.messages[convId]);
-  const typing = useMsgStore((s) => s.typing[convId] ?? []);
+  const typingRaw = useMsgStore((s) => s.typing[convId]);
+  const typing = typingRaw ?? NO_TYPING;
   const userId = useAuthStore((s) => s.session?.user_id ?? 0);
   const pushToast = useUiStore((s) => s.pushToast);
   const historyLoaded = useRef<Set<number>>(new Set());
   const [infoOpen, setInfoOpen] = useState(false);
 
-  const list = useMemo(() => messages ?? [], [messages]);
+  const list = messages ?? [];
+  const lastMsgId = list.length ? list[list.length - 1]?.msgId ?? 0 : 0;
 
   // 首次进入：拉一次历史（sinceSeq=0，服务端按 seq 升序逐条回 102）。
   useEffect(() => {
@@ -36,11 +40,13 @@ export function ChatPage() {
 
   // 进入会话后把最新一条标记为已读（回执走 104）。
   useEffect(() => {
+    if (!lastMsgId || !convId) return;
     const last = list[list.length - 1];
     if (!last || last.senderId === userId) return;
-    sendReceipt(convId, last.msgId, 0);
-    useMsgStore.getState().markRead(convId, last.msgId);
-  }, [list, convId, userId]);
+    sendReceipt(convId, lastMsgId, 0);
+    useMsgStore.getState().markRead(convId, lastMsgId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastMsgId, convId, userId]);
 
   const title = conv?.title || (convId ? `会话 ${convId}` : '会话');
 

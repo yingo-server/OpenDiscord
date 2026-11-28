@@ -28,10 +28,10 @@ export function AppShell() {
     <div className="uf-shell">
       <nav className="uf-rail" aria-label="主导航">
         <span className="uf-rail__logo" title="UFOT">UF</span>
-        <NavLink to="/chats" className="uf-rail__item" aria-label="会话">
+        <NavLink to="/chats" className={({ isActive }) => `uf-rail__item${isActive ? ' uf-rail__item--active' : ''}`} aria-label="会话">
           <Icon name="chat" />
         </NavLink>
-        <NavLink to="/me" className="uf-rail__item" aria-label="我的">
+        <NavLink to="/me" className={({ isActive }) => `uf-rail__item${isActive ? ' uf-rail__item--active' : ''}`} aria-label="我的">
           <Icon name="user" />
         </NavLink>
         <div className="uf-grow" />
@@ -56,11 +56,11 @@ export function AppShell() {
       <main className="uf-main"><Outlet /></main>
 
       <nav className="uf-bottomtabs" aria-label="底部导航">
-        <NavLink to="/chats" className="uf-bottomtabs__item">
+        <NavLink to="/chats" className={({ isActive }) => `uf-bottomtabs__item${isActive ? ' uf-bottomtabs__item--active' : ''}`}>
           <Icon name="chat" />
           <span>会话</span>
         </NavLink>
-        <NavLink to="/me" className="uf-bottomtabs__item">
+        <NavLink to="/me" className={({ isActive }) => `uf-bottomtabs__item${isActive ? ' uf-bottomtabs__item--active' : ''}`}>
           <Icon name="user" />
           <span>我的</span>
         </NavLink>

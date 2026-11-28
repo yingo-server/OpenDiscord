@@ -6,7 +6,6 @@ import { Icon } from '@/ui/primitives/Icon';
 import { Avatar, Badge, Button, EmptyState, IconButton, TextInput } from '@/ui/primitives/controls';
 import { useConvStore } from '@/core/store/conv';
 import { conversationFromPayload } from '@/core/store/conv';
-import { useAuthStore } from '@/core/store/auth';
 import { useUiStore } from '@/core/store/ui';
 import { requestListMyConversations } from '@/core/store/bridge';
 
@@ -27,7 +26,6 @@ export function ConversationList() {
   const setQuery = useConvStore((s) => s.setQuery);
   const replaceAll = useConvStore((s) => s.replaceAll);
   const loading = useConvStore((s) => s.loading);
-  const userId = useAuthStore((s) => s.session?.user_id ?? 0);
   const pushToast = useUiStore((s) => s.pushToast);
   const visible = useConvStore((s) => s.visible);
   const [manualId, setManualId] = useState('');
@@ -125,7 +123,7 @@ export function ConversationList() {
         ) : null}
       </div>
 
-      <div className="uf-list__footer" style={{ display: 'flex', gap: 'var(--sp-2)', alignItems: 'center' }}>
+      <div className="uf-list__footer" style={{ display: 'flex', gap: 'var(--sp-2)', alignItems: 'center', flexWrap: 'wrap' }}>
         <TextInput
           value={manualId}
           inputMode="numeric"
@@ -136,10 +134,9 @@ export function ConversationList() {
             if (event.key === 'Enter' && manualId.trim()) navigate(`/chats/${manualId.trim()}`);
           }}
         />
-        <Button small disabled={!manualId.trim()} onClick={() => navigate(`/chats/${manualId.trim()}`)}>
-          进入
+        <Button small style={{ flex: 'none', whiteSpace: 'nowrap' }} disabled={!manualId.trim()} onClick={() => navigate(`/chats/${manualId.trim()}`)}>
+          打开
         </Button>
-        <span className="uf-faint" style={{ whiteSpace: 'nowrap' }}>{userId || '—'}</span>
       </div>
     </>
   );

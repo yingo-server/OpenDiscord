@@ -67,7 +67,7 @@ export function MessageList({
   let lastDay = '';
 
   return (
-    <div className="uf-msglist" ref={scrollRef}>
+    <div className="uf-msglist" ref={scrollRef} role="log" aria-live="polite" aria-relevant="additions">
       {!atBottom ? (
         <button
           type="button"
