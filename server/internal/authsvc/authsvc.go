@@ -118,6 +118,10 @@ type Config struct {
 	DevOTP bool
 	// SecureCookies controls the Secure flag of the access_token cookie.
 	SecureCookies bool
+	// CookieSameSite is the SameSite attribute of the access_token cookie.
+	// Lax (default) fits a same-site UI; None fits a separately hosted
+	// frontend (requires SecureCookies — enforced at assembly).
+	CookieSameSite http.SameSite
 
 	MaxBodyBytes int
 	Now          func() time.Time

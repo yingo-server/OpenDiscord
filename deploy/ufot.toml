@@ -30,6 +30,11 @@ cors_origins = ""
 # WS 握手是否放行任意 Origin（独立前端默认 true）
 allow_any_origin = true
 
+# access_token Cookie 的 SameSite 属性："lax"（默认，同站 UI）/
+# "none"（前端独立托管在别的站点时用，仅 https public_origin 下合法——
+# 违例启动即失败）。Netlify 等独立托管前端需要 "none"。
+cookie_same_site = "none"
+
 # 热库（SQLite，本地 WAL）与管理库（独立 admin.db，最小权限隔离）
 hot_db = "/var/lib/ufot/chatd.db"
 admin_db = "/var/lib/ufot/admin.db"

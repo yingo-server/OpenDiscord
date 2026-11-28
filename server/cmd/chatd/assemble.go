@@ -344,6 +344,22 @@ func newAssembly(cfg *config, lg *log.Logger) (*assembly, error) {
 		RefreshTTL:    time.Duration(cfg.RefreshTTLSec) * time.Second,
 		DevOTP:        cfg.DevOTP,
 		SecureCookies: strings.HasPrefix(cfg.PublicOrigin, "https://"),
+		CookieSameSite: func() http.SameSite {
+			// cookie_same_site = "lax"(default) | "none"。"none" 只在 https
+			// public_origin 下合法（浏览器拒绝无 Secure 的 SameSite=None），
+			// 违例在启动时 fail-fast（与 cors_mode 校验同类）。
+			switch strings.ToLower(strings.TrimSpace(cfg.CookieSameSite)) {
+			case "none":
+				if !strings.HasPrefix(cfg.PublicOrigin, "https://") {
+					panic(fmt.Sprintf("chatd: cookie_same_site=none requires https public_origin (got %q)", cfg.PublicOrigin))
+				}
+				return http.SameSiteNoneMode
+			case "", "lax":
+				return http.SameSiteLaxMode
+			default:
+				panic(fmt.Sprintf("chatd: invalid cookie_same_site %q (want lax|none)", cfg.CookieSameSite))
+			}
+		}(),
 		Logger:        log.For("authsvc"),
 		// The login-method switches live in policy.json ("auth.methods").
 		// The closure reads the LIVE snapshot, so a policy reload (SIGHUP)

@@ -24,6 +24,9 @@ type config struct {
 	CORSMode string
 	// CORSOrigins: allow_list 模式下的额外 Origin（逗号分隔）。
 	CORSOrigins []string
+	// CookieSameSite: "lax"(默认) | "none"（独立托管前端跨站携带 Cookie 时用，
+	// 仅 https public_origin 下合法——违例启动即失败）。
+	CookieSameSite string
 	// AllowAnyOrigin: WS 握手放行任意 Origin（独立前端默认 true）。
 	AllowAnyOrigin bool
 
@@ -133,6 +136,8 @@ func loadConfig(path string) (*config, error) {
 					cfg.CORSOrigins = append(cfg.CORSOrigins, o)
 				}
 			}
+		case "cookie_same_site":
+			cfg.CookieSameSite = v
 		case "allow_any_origin":
 			cfg.AllowAnyOrigin = v == "true"
 		case "hot_db":
