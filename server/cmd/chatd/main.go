@@ -1,4 +1,4 @@
-// Command chatd is the embedded-mode assembly of OpenChat: one process, four
+// Command chatd is the embedded-mode assembly of UFOT: one process, four
 // layers wired through the in-process transport, plus the user authentication
 // HTTP API and the management frame injector.
 //
@@ -11,16 +11,22 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"sync"
 
-	"github.com/yingo-server/OpenChat/server/internal/pkg/exitcodes"
-	"github.com/yingo-server/OpenChat/server/internal/pkg/log"
-	"github.com/yingo-server/OpenChat/server/internal/pkg/signalset"
+	"github.com/yingo-server/UFOT/server/internal/pkg/i18n"
+
+	"github.com/yingo-server/UFOT/server/internal/pkg/exitcodes"
+	"github.com/yingo-server/UFOT/server/internal/pkg/log"
+	"github.com/yingo-server/UFOT/server/internal/pkg/signalset"
 )
 
-const usage = `chatd — OpenChat embedded server
+const usage = `chatd — UFOT embedded server
 
-usage: chatd [--config PATH]   (default: config/chatd.toml)
+usage: chatd [--config PATH] [--tui] [--lang zh-CN|en]   (default config: config/chatd.toml)
+
+  --tui           full-screen ANSI dashboard, 2s refresh, hotkeys q/r/d
+  --lang          UI language for the TUI (zh-CN / en, default auto)
 
 signals:
   SIGTERM/SIGINT  graceful drain: usergw -> data pipe -> bridge, exit 0
@@ -29,16 +35,35 @@ signals:
 
 exit codes: 0 ok, 1 config invalid, 2 assembly failed, 75 listen/transient`
 
+// stty helpers are overridable in tests (no real terminal in CI).
+var (
+	lookStty = func() (string, error) { return exec.LookPath("stty") }
+	sttyCmd  = func(name string, args ...string) *exec.Cmd { return exec.Command(name, args...) }
+)
+
 func main() { os.Exit(run()) }
 
 func run() int {
 	cfgPath := "config/chatd.toml"
+	tui := false
+	nonInteractive := false
 	args := os.Args[1:]
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--config", "-config", "-c":
 			if i+1 < len(args) {
 				cfgPath = args[i+1]
+				i++
+			}
+		case "--tui":
+			tui = true
+		case "--non-interactive":
+			// Dual mode: non-TTY (CI/pipes) already implies CLI mode; this
+			// flag additionally forces it on a TTY. Flags are the truth.
+			nonInteractive = true
+		case "--lang":
+			if i+1 < len(args) {
+				i18n.SetLang(i18n.DetectLang(args[i+1]))
 				i++
 			}
 		case "--help", "-h":
@@ -99,6 +124,24 @@ func run() int {
 			a.dump(os.Stdout)
 		}
 	})
+
+	// TUI mode: replace the plain blocking run with the dashboard loop; the
+	// hotkeys drive the SAME quit/reload/dump callbacks as the signals above.
+	if tui {
+		if nonInteractive {
+			fmt.Fprintln(os.Stderr, "chatd: --tui conflicts with --non-interactive")
+			return exitcodes.ConfigInvalid
+		}
+		if !i18n.StdinIsTTY() {
+			// Dual-mode rule: no TTY → no dashboard; behave exactly as
+			// without --tui (systemd/CI safe).
+			tui = false
+		}
+	}
+	if tui {
+		go func() { _ = a.run(ctx) }()
+		return runTUI(ctx, a, quit, func() { a.reload(ctx) }, func() { a.dump(os.Stdout) })
+	}
 
 	runErr := a.run(ctx)
 	// quit() is idempotent AND blocks while an in-progress drain finishes

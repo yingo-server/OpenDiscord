@@ -1,10 +1,10 @@
-# OpenChat 部署手册（单机 embedded）
+# UFOT 部署手册（单机 embedded）
 
 > 适用：单机 2C2G 起步的 embedded 部署（bridge/user/data/admin 同进程）。
 > 权威来源：安全基线见 [security-spec.md](security-spec.md) §6；数据与 API 设计见
 > [admin-data-design.md](admin-data-design.md)。本文只写「怎么装、怎么改、怎么救」。
 >
-> 约定：`$` = 普通用户，`#` = root；`/opt/openchat/current` 永远指向当前 release 目录。
+> 约定：`$` = 普通用户，`#` = root；`/opt/ufot/current` 永远指向当前 release 目录。
 > 假设发行包（`.tar.gz` + `SHA256SUMS`）已上传到 `/root` 并解压。
 
 ---
@@ -14,22 +14,22 @@
 ```bash
 # 0) 校验并解包（在存放 tar.gz 与 SHA256SUMS 的目录执行）
 cd /root
-sha256sum -c SHA256SUMS && tar -xzf openchat-<version>-linux-amd64.tar.gz
-cd openchat-<version>
+sha256sum -c SHA256SUMS && tar -xzf ufot-<version>-linux-amd64.tar.gz
+cd ufot-<version>
 
 # 1) 装系统（建用户/目录/密钥/unit，幂等）
 sudo ./deploy/install.sh
 
 # 2) 改三个值：域名、冷库 DSN；监听地址保持 127.0.0.1
-sudoedit /etc/openchat/openchat.toml
+sudoedit /etc/ufot/ufot.toml
 
-# 3) 起服务（骨架阶段先按附录 A.1 把 Type=notify 改为 Type=exec）
-sudo systemctl enable --now openchat
-systemctl is-active openchat && ss -lntp | grep -E ':(8080|7780|9090)'
+# 3) 起服务（unit 为 Type=simple：chatd 不发 sd_notify，无需改 exec）
+sudo systemctl enable --now ufot
+systemctl is-active ufot && ss -lntp | grep -E ':(8080|7780|9090)'
 
 # 4) 边缘：Caddy 自动 HTTPS
-sudo cp /etc/openchat/Caddyfile.reference /etc/caddy/Caddyfile
-sudoedit /etc/caddy/Caddyfile          # OPENCHAT_DOMAIN / remote_ip 白名单
+sudo cp /etc/ufot/Caddyfile.reference /etc/caddy/Caddyfile
+sudoedit /etc/caddy/Caddyfile          # UFOT_DOMAIN / remote_ip 白名单
 sudo caddy validate --config /etc/caddy/Caddyfile && sudo systemctl restart caddy
 
 # 5) 首登：先在本机/跳板完成首个账号注册（自动成为管理员）→ /admin/ 开 TOTP
@@ -44,7 +44,7 @@ curl -s  https://chat.example.com/admin/ | grep -o '<title>[^<]*'
 | 项 | 最低 | 说明 |
 |---|---|---|
 | 操作系统 | Linux + systemd 249+ | Debian 12 / Ubuntu 22.04 / Rocky 9 验证；x86_64 或 aarch64 |
-| CPU / 内存 | 2 vCPU / 2 GB | `GOMEMLIMIT=1280MiB` 已写入 `/etc/openchat/env` |
+| CPU / 内存 | 2 vCPU / 2 GB | `GOMEMLIMIT=1280MiB` 已写入 `/etc/ufot/env` |
 | 磁盘 | 40 GB SSD | 媒体目录建议独立 LUKS 卷；备份目录与数据盘分开 |
 | 冷库 | PostgreSQL 14+（外部） | `sslmode=require` 为底线；本机不装 PG 也能先跑（归档会失败告警） |
 | 运行时依赖 | `bash` `coreutils` `openssl` `sqlite3` `curl` `tar` | `install.sh` 需要 `useradd/groupadd/getent/install`；`backup.sh` 需要 `sqlite3` |
@@ -56,11 +56,10 @@ curl -s  https://chat.example.com/admin/ | grep -o '<title>[^<]*'
 
 | 地址 | 用途 | 谁能访问 |
 |---|---|---|
-| `127.0.0.1:8080` | 用户层 HTTP + WebSocket + 内嵌 SPA（`listen`） | Caddy |
-| `127.0.0.1:8081` | split 形态用户网关（Caddy `OPENCHAT_WS_PORT`，embedded 设为 8080） | Caddy |
-| `127.0.0.1:7780` | 管理 API（`admin_listen`） | Caddy + IP 白名单 |
+| `127.0.0.1:8080` | 用户层 HTTP + WebSocket + `GET /`（服务描述符）（`listen`） | Caddy |
+| `127.0.0.1:7780` | 帧注入 AdminAPI（`admin_listen`） | Caddy + IP 白名单 |
+| `127.0.0.1:7781` | 管理 RBAC REST `/api/v1/*`（`admin_rest_listen` 默认值） | Caddy + IP 白名单 |
 | `127.0.0.1:9090` | Prometheus 指标（`metrics_listen`，当前版本未监听，见附录 A.2） | 本机/内网 |
-| `/run/openchat/*.sock` | 层间 UDS（split） | 同组进程，0600 |
 | `22 / 80 / 443` | SSH / ACME / HTTPS | 公网（22 建议源 IP 白名单） |
 
 ---
@@ -72,8 +71,8 @@ curl -s  https://chat.example.com/admin/ | grep -o '<title>[^<]*'
 ```bash
 cd /root
 sha256sum -c SHA256SUMS
-tar -xzf openchat-<version>-linux-amd64.tar.gz
-cd openchat-<version>
+tar -xzf ufot-<version>-linux-amd64.tar.gz
+cd ufot-<version>
 ls -l dist/chatd deploy/install.sh docs/deploy.md
 sha256sum dist/chatd          # 与发布页 SHA256SUMS 对照
 ```
@@ -81,37 +80,34 @@ sha256sum dist/chatd          # 与发布页 SHA256SUMS 对照
 包内布局（`make release-all` 与 `release.sh` 产物一致）：
 
 ```
-openchat-<version>/
-├── dist/chatd                 # 单二进制（内含 client + admin 前端）
-├── deploy/{install.sh,release.sh,backup.sh,openchat.toml,policy.json,Caddyfile,
+ufot-<version>/
+├── dist/chatd                 # 单二进制（纯后端，不含前端产物）
+├── deploy/{install.sh,release.sh,backup.sh,ufot.toml,policy.json,Caddyfile,
 │           systemd/,journald/,keygen/,logrotate.conf}
 ├── docs/deploy.md
 ├── README.md
 └── LICENSE
 ```
 
-> 前端已 `go:embed` 进 `chatd`，发布包**不再**带 `web/` 目录，目标机无需 Node。
-> `install.sh` 兼容旧布局：若存在 `apps/{client,admin}/dist` 会额外复制到
-> `/opt/openchat/releases/bootstrap/web/`，只作静态回退，不参与内嵌。
+> **服务器只部署后端**：本仓库不含前端代码（客户端是外部独立程序，见 §「独立前端如何指向本服务」）。
+> `install.sh` 不会安装任何静态资源；目标机无需 Node。
 
 ### 2.2 执行
 
 ```bash
-sudo ./deploy/install.sh                 # embedded（默认）
+sudo ./deploy/install.sh                 # embedded 单进程（1.4 起 embedded-only）
 sudo ./deploy/install.sh --no-start      # 只落盘，不 enable/start（打镜像）
-sudo ./deploy/install.sh --split         # split：bridge/user/data/admin 四个 unit
 sudo ./deploy/install.sh --skip-keys     # 密钥由 KMS 下发时
-sudo ./deploy/install.sh --prefix /opt/openchat --etc /etc/openchat --state /var/lib/openchat
+sudo ./deploy/install.sh --prefix /opt/ufot --etc /etc/ufot --state /var/lib/ufot
 ```
 
 | 参数 | 默认 | 作用 |
 |---|---|---|
-| `--split` | off | 安装 4 个 split unit，并 disable embedded unit |
 | `--no-start` | off | 只 `daemon-reload`，不 `enable --now` |
 | `--skip-keys` | off | 跳过密钥生成（要求已由外部下发） |
-| `--prefix` | `/opt/openchat` | 二进制 release 根 |
-| `--etc` | `/etc/openchat` | 配置根 |
-| `--state` | `/var/lib/openchat` | 数据根 |
+| `--prefix` | `/opt/ufot` | 二进制 release 根 |
+| `--etc` | `/etc/ufot` | 配置根 |
+| `--state` | `/var/lib/ufot` | 数据根 |
 
 退出码：`0` 成功 / `64` 用法错误 / `77` 非 root / `78` 缺少依赖（如 openssl 与 go 都没有）。
 
@@ -119,45 +115,45 @@ sudo ./deploy/install.sh --prefix /opt/openchat --etc /etc/openchat --state /var
 
 | # | 动作 | 产物 | 现场校验 |
 |---|---|---|---|
-| 1 | 建组 `openchat` 与系统用户（embedded: `openchat`；split: `openchat-{bridge,user,data,admin}`，shell=nologin，home=`/var/lib/openchat`） | `/etc/group`、`/etc/passwd` | `getent passwd openchat` |
-| 2 | 建目录并按 §6 矩阵 chmod/chown | 见 §6 表 | `stat -c '%a %U:%G %n' /etc/openchat /var/lib/openchat` |
-| 3 | 写环境变量文件（存在则不动） | `/etc/openchat/env`（0600 root:openchat；split 为 `env.d/*.env`） | `ls -l /etc/openchat/env` |
-| 4 | 生成密钥（存在则跳过，绝不覆盖） | `keys/{jwt_sign_key.pem,admin_jwt_key.pem,ipc_key,hmac_key,pii_key,phone_lookup_key,download_key,upload_secret,audit_chain_key,backup.key}`；`/etc/openchat/backup.key -> keys/backup.key` | `ls -l /etc/openchat/keys`；`openssl pkey -in .../jwt_sign_key.pem -pubout \| openssl dgst -sha256` |
-| 5 | 安装配置（存在则保留；`Caddyfile.reference` 每次覆盖） | `openchat.toml` 0640、`policy.json` 0640、`Caddyfile.reference` 0640；`config/chatd.toml -> ../openchat.toml` | `ls -l /etc/openchat` |
-| 6 | 安装二进制（前端已内嵌；若包内有 `apps/*/dist` 则额外复制到 `current/web` 作静态回退） | `/opt/openchat/releases/bootstrap/bin/chatd`；`current -> releases/bootstrap`；`bin -> current/bin`；`web -> current/web` | `ls -l /opt/openchat/current/bin/chatd` |
-| 7 | 安装 unit 与 journald 配额 | `/etc/systemd/system/openchat.service`（split 为 4 个）；`/etc/systemd/journald.conf.d/openchat.conf`（`SystemMaxUse=200M`） | `systemctl cat openchat`；`journalctl --disk-usage` |
-| 8 | `daemon-reload` + `enable --now`（`--no-start` 跳过） | 运行中的 unit | `systemctl is-active openchat` |
-| 9 | 红线自检：`find /etc/openchat /var/lib/openchat -perm /o+rwx` 必须为空，否则 **exit 1** | — | 手工重跑同一条命令 |
+| 1 | 建组 `ufot` 与系统用户（`ufot`，shell=nologin，home=`/var/lib/ufot`；embedded-only） | `/etc/group`、`/etc/passwd` | `getent passwd ufot` |
+| 2 | 建目录并按 §6 矩阵 chmod/chown | 见 §6 表 | `stat -c '%a %U:%G %n' /etc/ufot /var/lib/ufot` |
+| 3 | 写环境变量文件（存在则不动） | `/etc/ufot/env`（0600 root:ufot） | `ls -l /etc/ufot/env` |
+| 4 | 生成密钥（存在则跳过，绝不覆盖） | `keys/{jwt_sign_key.pem,admin_jwt_key.pem,ipc_key,hmac_key,pii_key,phone_lookup_key,download_key,upload_secret,audit_chain_key,backup.key}`；`/etc/ufot/backup.key -> keys/backup.key` | `ls -l /etc/ufot/keys`；`openssl pkey -in .../jwt_sign_key.pem -pubout \| openssl dgst -sha256` |
+| 5 | 安装配置（存在则保留；`Caddyfile.reference` 每次覆盖） | `ufot.toml` 0640、`policy.json` 0640、`Caddyfile.reference` 0640；`config/chatd.toml -> ../ufot.toml` | `ls -l /etc/ufot` |
+| 6 | 安装二进制（纯后端，无静态资源） | `/opt/ufot/releases/bootstrap/bin/chatd`；`current -> releases/bootstrap`；`bin -> current/bin` | `ls -l /opt/ufot/current/bin/chatd` |
+| 7 | 安装 unit 与 journald 配额 | `/etc/systemd/system/ufot.service`；`/etc/systemd/journald.conf.d/ufot.conf`（`SystemMaxUse=200M`） | `systemctl cat ufot`；`journalctl --disk-usage` |
+| 8 | `daemon-reload` + `enable --now`（`--no-start` 跳过） | 运行中的 unit | `systemctl is-active ufot` |
+| 9 | 红线自检：`find /etc/ufot /var/lib/ufot -perm /o+rwx` 必须为空，否则 **exit 1** | — | 手工重跑同一条命令 |
 | 10 | 打印下一步（改 toml / policy / Caddy / 首登） | stdout | — |
 
 **幂等语义**：重复执行只校正目录权限，不覆盖已有配置、环境文件与密钥；升级配置需人工 merge
-（`install_cfg` 会打印「已存在，保持不变」）。所以**升级前先备份 `/etc/openchat`**（§8.1）。
+（`install_cfg` 会打印「已存在，保持不变」）。所以**升级前先备份 `/etc/ufot`**（§8.1）。
 
 > 第 9 步失败时服务可能已经启动（第 8 步在前）。修完权限重跑脚本即可，不必先停服。
-> `install.sh` **不安装** `adminctl` / `openchatctl`，CLI 安装见 §9.1。
+> `install.sh` **不安装** `adminctl` / `ufotctl`，CLI 安装见 §9.1。
 
 ---
 
 ## 3. 配置项
 
-### 3.1 `/etc/openchat/openchat.toml`（0640 root:openchat）
+### 3.1 `/etc/ufot/ufot.toml`（0640 root:ufot）
 
-改完 **必须 restart**（TOML 不热载）：`sudo systemctl restart openchat`。
+改完 **必须 restart**（TOML 不热载）：`sudo systemctl restart ufot`。
 
 | 字段 | 默认值 | 含义与约束 |
 |---|---|---|
-| `mode` | `"embedded"` | `embedded` 单进程；`split` 五进程（配合 `[socket]`） |
-| `listen` | `"127.0.0.1:8080"` | 用户层 HTTP/WS 监听。**必须是回环**；公网只走 Caddy。也用它托管内嵌 SPA |
+| `mode` | `"embedded"` | embedded 单进程。**1.4 起 embedded-only**：split 多进程未实现（lts-1.4-plan §5 #4），勿改 |
+| `listen` | `"127.0.0.1:8080"` | 用户层 HTTP/WS 监听。**必须是回环**；公网只走 Caddy |
 | `admin_listen` | `"127.0.0.1:7780"` | 管理 API 监听（Caddy 仅对白名单 IP 反代 `/api/admin/*`） |
 | `metrics_listen` | `"127.0.0.1:9090"` | Prometheus `/metrics` 监听（契约字段，见下方「消费进度」） |
 | `public_origin` | `"https://chat.example.com"` | 对外站点，用于绝对 URL、CORS、Cookie 域；**不带尾斜杠**，必须与实际域名一致（否则 WS 握手 401） |
-| `hot_db` | `"/var/lib/openchat/chatd.db"` | 热库 SQLite（WAL）。文件 0600，目录 0700 |
-| `admin_db` | `"/var/lib/openchat/admin.db"` | 管理库（管理员/会话），独立文件做最小权限隔离 |
-| `media_dir` | `"/var/lib/openchat/media"` | 媒体根（LUKS 卷挂载点），0750 |
-| `jwt_key_path` | `"/etc/openchat/keys/jwt_sign_key.pem"` | 用户 token 签名私钥（Ed25519 PKCS#8，0640 root:openchat） |
-| `pii_hmac_key_path` | `"/etc/openchat/keys/phone_lookup_key"` | 手机号/邮箱 HMAC 索引密钥（32B hex，0600） |
-| `cold_dsn` | `postgres://openchat@db.internal:5432/openchat?sslmode=require` | 冷库 DSN；`sslmode=require` 为底线，内网也建议 `verify-full` |
-| `policy_path` | `"/etc/openchat/policy.json"` | 策略唯一真源（保留期/cron/限流）；SIGHUP 热载 |
+| `hot_db` | `"/var/lib/ufot/chatd.db"` | 热库 SQLite（WAL）。文件 0600，目录 0700；v2.1 写批量化（group commit） |
+| `admin_db` | `"/var/lib/ufot/admin.db"` | 管理库（管理员/会话），独立文件做最小权限隔离 |
+| `media_dir` | `"/var/lib/ufot/media"` | 媒体根（LUKS 卷挂载点），0750 |
+| `jwt_key_path` | `"/etc/ufot/keys/jwt_sign_key.pem"` | 用户 token 签名私钥（Ed25519 PKCS#8，0640 **ufot:ufot** —— install.sh `chown ufot:ufot`，属主必须是服务账号，root 属主 0600 会让 chatd 启动失败） |
+| `pii_hmac_key_path` | `"/etc/ufot/keys/phone_lookup_key"` | 手机号/邮箱 HMAC 索引密钥（32B hex，0600） |
+| `cold_dsn` | `postgres://ufot@db.internal:5432/ufot?sslmode=require` | 冷库 DSN；`sslmode=require` 为底线，内网也建议 `verify-full` |
+| `policy_path` | `"/etc/ufot/policy.json"` | 策略唯一真源（保留期/cron/限流）；SIGHUP 热载 |
 | `log_level` | `"info"` | `debug`/`info`/`warn`/`error`；日志只写 stdout → journald |
 | `shutdown_timeout_sec` | `30` | SIGTERM 优雅退出预算（flusher 最后组提交 + 归档断点） |
 | `watchdog_interval_sec` | `7` | 进程心跳间隔，取 systemd `WatchdogSec=15` 的一半（契约字段） |
@@ -169,10 +165,20 @@ sudo ./deploy/install.sh --prefix /opt/openchat --etc /etc/openchat --state /var
 | `[feature_flags].registration` | `true` | 注册开关；被刷时后台关（§6.4.3 一键禁注册） |
 | `[feature_flags].readonly` | `false` | 全站只读（收信保留，MSG_SEND 回 READONLY） |
 | `[feature_flags].call_enabled` | `false` | 通话开关 |
-| `[socket].bus/user/data/admin`（split） | 注释示例 | split 形态的 UDS 地址，默认 `/run/openchat/*.sock` |
+| `[socket].bus/user/data/admin` | 注释占位 | 前瞻字段；split 未实现，当前无效 |
 
 **不要改**：监听地址改成 `0.0.0.0`（绕过 Caddy 等于裸奔）、`public_origin` 用 http、
 把 `hot_db` 放到 NFS（SQLite WAL 不支持网络文件系统）。
+
+> **热库 PRAGMA 与持久性（perf-spec 模块 3）**：热库连接强制
+> `journal_mode=WAL`、`synchronous=NORMAL`、`busy_timeout=5000`、
+> `foreign_keys=ON`、`cache_size=-8000`（8MB/连接）、`journal_size_limit=64MB`、
+> `wal_autocheckpoint=2000`（约 8MB WAL 触发被动检查点，减少写路径停顿）。
+> **`synchronous=NORMAL`（而非 `OFF`）的持久性权衡**：WAL 模式下进程崩溃不丢已提交
+> 事务；但**操作系统崩溃 / 掉电会丢失最近一次 checkpoint 之后、尚未 fsync 的事务**。
+> 这是吞吐与持久性的显式取舍，**默认值即如此，且不提供改成 `OFF` 的开关**
+> （`OFF` 会在掉电时丢失任意多条已 ACK 消息，不适合作为默认）。对消息不可丢有强
+> 需求的部署，应通过外部机制（写前日志、异地冗余）而非 `synchronous=OFF` 补偿。
 
 > **消费进度**：当前 `chatd` 已读取 `mode/listen/admin_listen/public_origin/hot_db/admin_db/
 > cold_dsn/policy_path/jwt_key_path/pii_hmac_key_path/media_dir/log_level/shutdown_timeout_sec`
@@ -180,9 +186,9 @@ sudo ./deploy/install.sh --prefix /opt/openchat --etc /etc/openchat --state /var
 > `max_upload_bytes`、`daily_upload_bytes_per_user` 是契约字段，本版本尚未消费（未知键被
 > 安全忽略，不会导致启动失败）。改这些字段前先确认二进制版本。
 
-### 3.2 `/etc/openchat/policy.json`（0640 root:openchat）
+### 3.2 `/etc/ufot/policy.json`（0640 root:ufot）
 
-策略唯一真源；改完 `sudo systemctl reload openchat`（SIGHUP）热生效。非法策略会被拒绝并继续用旧值。
+策略唯一真源；改完 `sudo systemctl reload ufot`（SIGHUP）热生效。非法策略会被拒绝并继续用旧值。
 
 | 键 | 默认 | 含义 |
 |---|---|---|
@@ -192,13 +198,22 @@ sudo ./deploy/install.sh --prefix /opt/openchat --etc /etc/openchat --state /var
 | `archive.batch_pause_ms` | `100` | 批间停顿，避免打满 I/O |
 | `archive.active_exempt` | `true` | 活跃会话（近 7 天有消息）不归档 |
 | `backup.cron` | `"30 5 * * *"` | 备份调度（每日 05:30；调度器见 §8.2） |
-| `backup.dir` | `"/var/lib/openchat/backup"` | 本地备份目录（0700） |
+| `backup.dir` | `"/var/lib/ufot/backup"` | 本地备份目录（0700） |
 | `backup.keep_days` | `14` | 本地备份保留天数 |
 | `trim[]` | `sys_rate_limit` 7 天、`identity_login_history` 180 天 | 只允许白名单表；其他值加载即拒绝（防动态 SQL） |
 | `rate_limit.msg_per_user_per_min` | `60` | 用户级消息速率（跨设备聚合） |
 | `rate_limit.login_per_ip_per_min` | `10` | 单 IP 登录尝试速率 |
+| `write_path.batch_size` | `1000` | 写路径组提交批大小（一个事务的消息条数）。调大可提吞吐；上限 `8000`。批越大，单次提交的最坏 ACK 延迟越高 |
+| `write_path.flush_interval_ms` | `50` | 组提交兜底间隔（不足一批时最多等多久提交）。调小延迟更低但提交更频繁。范围 `5`–`2000` |
 
-### 3.3 `/etc/openchat/env`（0600 root:openchat）
+> **`write_path` 调参建议（perf-spec 模块 3，写路径优化）**：默认
+> `batch_size=1000`、`flush_interval_ms=50` 与 v1.1.1 行为一致（可安全回退）。
+> 压测建议从 `batch_size=2000`、`flush_interval_ms=50` 起步（预期 ~1.5x），
+> 只在 P95 仍达标时继续加。`write_path` 只影响吞吐/延迟，不改变
+> all-or-nothing、去重（`ErrDuplicate`）与崩溃持久性语义；SIGHUP 热载
+> 对**下一批**生效（在途批次按旧参数提交）。
+
+### 3.3 `/etc/ufot/env`（0600 root:ufot）
 
 只放运行时参数，不放密钥（密钥走 `keys/`）：
 
@@ -206,10 +221,10 @@ sudo ./deploy/install.sh --prefix /opt/openchat --etc /etc/openchat --state /var
 |---|---|---|
 | `TZ` | `UTC` | 固定 UTC，避免 cron/归档时间漂移 |
 | `GOMEMLIMIT` | `1280MiB` | Go 软内存上限（2C2G 留 700MB 给系统/页缓存） |
-| `OPENCHAT_CONFIG` | `/etc/openchat/openchat.toml` | 配置路径（`chatd --config` 的默认值来源） |
-| `OPENCHAT_LAYER` | `embedded`（split 为层名） | 进程角色标识 |
+| `UFOT_CONFIG` | `/etc/ufot/ufot.toml` | 配置路径（`chatd --config` 的默认值来源） |
+| `UFOT_LAYER` | `embedded` | 进程角色标识（embedded-only） |
 
-改完 `systemctl restart openchat`（EnvironmentFile 只在启动时读取）。
+改完 `systemctl restart ufot`（EnvironmentFile 只在启动时读取）。
 
 ---
 
@@ -219,14 +234,14 @@ sudo ./deploy/install.sh --prefix /opt/openchat --etc /etc/openchat --state /var
 
 ```bash
 # 1) 配置键齐全、引号成对（TOML 不支持中文标点）
-grep -nE '^(mode|listen|admin_listen|public_origin|hot_db|cold_dsn|policy_path|jwt_key_path)' /etc/openchat/openchat.toml
+grep -nE '^(mode|listen|admin_listen|public_origin|hot_db|cold_dsn|policy_path|jwt_key_path)' /etc/ufot/ufot.toml
 
 # 2) 密钥齐全且权限对（私钥 0640，对称密钥 0600）
-ls -l /etc/openchat/keys/
+ls -l /etc/ufot/keys/
 
 # 3) unit 语法与安全评分
-systemd-analyze verify /etc/systemd/system/openchat.service
-systemd-analyze security --offline=true /etc/systemd/system/openchat.service | tail -3
+systemd-analyze verify /etc/systemd/system/ufot.service
+systemd-analyze security --offline=true /etc/systemd/system/ufot.service | tail -3
 
 # 4) 端口没被占用
 ss -lntp | grep -E ':(8080|7780|9090)' || echo "ports free"
@@ -235,18 +250,17 @@ ss -lntp | grep -E ':(8080|7780|9090)' || echo "ports free"
 ### 4.2 启动
 
 ```bash
-sudo systemctl enable --now openchat
-systemctl is-active openchat                 # 期望 active
-journalctl -u openchat -n 50 --no-pager      # 期望 msg="chatd ready"
+sudo systemctl enable --now ufot
+systemctl is-active ufot                 # 期望 active
+journalctl -u ufot -n 50 --no-pager      # 期望 msg="chatd ready"
 
 # 本机验证（绕过 Caddy，确认上游活着）
-curl -sI http://127.0.0.1:8080/ | head -3             # 200 + text/html
-curl -s  http://127.0.0.1:8080/admin/ | grep -o '<title>[^<]*'
+curl -sI http://127.0.0.1:8080/ | head -3             # 200 + application/json（服务描述符）
 curl -s  http://127.0.0.1:8080/healthz               # 期望 ok/200
 ```
 
-> 骨架阶段 `Type=notify` 未实现 `sd_notify`，会 `start operation timed out`。
-> 先按 **附录 A.1** 临时改 `Type=exec`（上线前恢复并实现 notify + watchdog）。
+> unit 已是 `Type=simple`（chatd 不发 sd_notify，见 `deploy/systemd/ufot.service`），
+> 正常 `systemctl start` 即 active；不存在 `Type=notify` 超时问题。
 
 ### 4.3 先堵抢注，再开放公网
 
@@ -264,16 +278,15 @@ sudo nft add rule inet filter input tcp dport {80,443} ip saddr != <你的IP> dr
 
 完成 §4.4 后再放开公网。
 
-### 4.4 管理员引导（逐屏操作）
+### 4.4 管理员引导（后端无管理 UI，走 CLI/REST）
 
 | 步 | 操作 | 期望结果 |
 |---|---|---|
-| 1 | 打开 `https://chat.example.com/`，用手机号/邮箱注册第一个账号 | 账号创建成功，角色自动为管理员 |
-| 2 | 打开 `https://chat.example.com/admin/`，用同一账号登录 | 进入管理后台（登录需要密码 + TOTP；首次会要求绑定） |
-| 3 | 绑定 TOTP：扫描二维码，输入 6 位验证码 | 绑定成功；**立即抄下 8 个一次性恢复码**（服务端只存哈希，丢了只能重置） |
-| 4 | 核对身份与权限（`adminctl whoami` 返回同一管理员） | 角色/RBAC 正确 |
-| 5 | 打开「审计日志」→「校验哈希链」 | 返回 ok；记下当前最大 id 作为基线 |
-| 6 | 打开「用户」页确认列表可读（空列表也算通过） | `/api/admin/v1/*` 白名单生效 |
+| 1 | 用任一客户端（或 curl）以手机号/邮箱注册第一个账号 | 账号创建成功，角色自动为管理员 |
+| 2 | `adminctl whoami` 或 `POST /api/v1/login`（password + TOTP） | 首次登录要求绑定 TOTP；**立即抄下一次性恢复码**（服务端只存哈希，丢了只能重置） |
+| 3 | 核对身份与权限（`adminctl whoami` 返回同一管理员） | 角色/RBAC 正确 |
+| 4 | 审计链校验（`adminctl audit --since-id 0 --limit 1` 或 REST） | 返回 ok；记下当前最大 id 作为基线 |
+| 5 | `adminctl users list` 确认列表可读（空列表也算通过） | `/api/v1/*` 可用 |
 
 TOTP 参数（§3.3 红线）：**SHA-1 / 6 位 / 30s 周期，时间窗 ±1**；连续 10 次失败锁 30 分钟；
 管理会话 access TTL 5 分钟、idle 15 分钟强制重认证。服务器时间必须同步（§5.6），否则全员 TOTP 失败。
@@ -283,11 +296,11 @@ TOTP 参数（§3.3 红线）：**SHA-1 / 6 位 / 30s 周期，时间窗 ±1**�
 ```bash
 # 1) 站点 200 且证书有效
 curl -sSI https://chat.example.com/ | grep -E 'HTTP/|strict-transport-security'
-# 2) 管理后台 200（白名单内）
-curl -sS https://chat.example.com/admin/ | grep -q 'OpenChat 管理后台' && echo admin-ok
+# 2) 根路径返回服务描述符（纯后端）
+curl -sS https://chat.example.com/ | grep -q '"service":"UFOT"' && echo root-ok
 # 3) 指标只对本机开放：公网应为 404
 curl -s -o /dev/null -w '%{http_code}\n' https://chat.example.com/metrics   # 期望 404
-# 4) 管理 API 对非白名单 404（从白名单外的机器执行）
+# 4) 管理 REST 对非白名单 404（从白名单外的机器执行；7781 不直接暴露公网）
 curl -s -o /dev/null -w '%{http_code}\n' https://chat.example.com/api/admin/v1/whoami  # 期望 404
 # 5) 审计链基线
 adminctl --server http://127.0.0.1:7780 audit --since-id 0 --limit 1 --output json
@@ -316,16 +329,16 @@ Caddyfile 用 `{$VAR:default}` 读环境变量，变量放在 systemd drop-in（
 
 ```bash
 sudo mkdir -p /etc/systemd/system/caddy.service.d
-sudo tee /etc/systemd/system/caddy.service.d/openchat.conf >/dev/null <<'EOF'
+sudo tee /etc/systemd/system/caddy.service.d/ufot.conf >/dev/null <<'EOF'
 [Service]
-Environment=OPENCHAT_DOMAIN=chat.example.com
-Environment=OPENCHAT_ACME_EMAIL=ops@example.com
-Environment=OPENCHAT_WS_PORT=8080
-Environment=OPENCHAT_METRICS_PORT=9090
+Environment=UFOT_DOMAIN=chat.example.com
+Environment=UFOT_ACME_EMAIL=ops@example.com
+Environment=UFOT_WS_PORT=8080
+Environment=UFOT_METRICS_PORT=9090
 EOF
 sudo systemctl daemon-reload
 
-sudo cp /etc/openchat/Caddyfile.reference /etc/caddy/Caddyfile
+sudo cp /etc/ufot/Caddyfile.reference /etc/caddy/Caddyfile
 sudo caddy fmt --overwrite /etc/caddy/Caddyfile
 sudo caddy validate --config /etc/caddy/Caddyfile     # 必须 "Valid configuration"
 ```
@@ -338,12 +351,12 @@ sudo caddy validate --config /etc/caddy/Caddyfile     # 必须 "Valid configurat
 
 | 路径 | 上游 | 保护 |
 |---|---|---|
-| `/ws` | `127.0.0.1:{$OPENCHAT_WS_PORT:8081}` | WS upgrade；`flush_interval -1`；建议 10 次/分钟/IP（E-3）+ 失败熔断（E-4） |
-| `/api/admin/*` | `127.0.0.1:7780` | `remote_ip` 白名单；**非白名单返回 404**（不暴露管理端存在） |
-| `/metrics` | `127.0.0.1:{$OPENCHAT_METRICS_PORT:9090}` | 仅 127/8、10/8、192.168/16；公网 404 |
+| `/ws` | `127.0.0.1:{$UFOT_WS_PORT:8081}` | WS upgrade；`flush_interval -1`；建议 10 次/分钟/IP（E-3）+ 失败熔断（E-4） |
+| `/api/admin/*` | `127.0.0.1:7780` | `remote_ip` 白名单；**非白名单返回 404**（不暴露管理端存在；纯后端下管理面只有 REST `/api/v1/*` 于 7781） |
+| `/metrics` | `127.0.0.1:{$UFOT_METRICS_PORT:9090}` | 仅 127/8、10/8、192.168/16；公网 404 |
 | `/api/*` | `127.0.0.1:8080` | 请求体 1 MB（E-7） |
 | `/api/v1/media/presign` | `127.0.0.1:8080` | 请求体 64 KB（E-7） |
-| 其余（`/`、`/admin/`、静态资源） | `127.0.0.1:8080` | 二进制内嵌 SPA；index 不缓存、hash 资源 immutable |
+| 其余（`/`、`/api/*`、`/ws`） | `127.0.0.1:8080` | 纯后端：`GET /` 返回 JSON 服务描述符，无静态资源；`/api/*` 请求体 1 MB（E-7） |
 
 管理端 IP 白名单在 Caddyfile 里改这一行（换成你的运维出口 IP，可多个）：
 
@@ -413,58 +426,87 @@ sudo journalctl -u caddy -n 50 --no-pager | grep -iE 'error|certificate|obtain'
 ss -lntp | grep -E ':(80|443)\b'
 ```
 
+### 5.8 CORS 与环境变量配置（跨域客户端必读）
+
+CORS 相关键在 `/etc/ufot/ufot.toml`（改后 `systemctl restart ufot`）：
+
+| 键 | 默认 | 说明 |
+|----|------|------|
+| `cors_mode` | `allow_any` | `allow_any`：反射任意合法 http(s) Origin + `Allow-Credentials: true`（独立前端跨域部署的默认姿态）；`allow_list`：只对 `public_origin` 与 `cors_origins` 精确匹配回 CORS 头（同域托管/受控来源时收紧）；`off`：不回任何 CORS 头 |
+| `cors_origins` | 空 | `allow_list` 模式下的额外 Origin，逗号分隔，如 `https://app.example.com,https://alt.example.com` |
+| `allow_any_origin` | `true` | WS 握手 Origin 校验：`true` 放行任意合法 Origin；独立前端默认保持 `true` |
+
+- `public_origin` 必须与实际对外域名一致（Cookie Secure/域、CORS 精确匹配、WS 握手都依赖它）。
+- Cookie 是 `HttpOnly; SameSite=Lax`：跨域浏览器客户端必须 `credentials: 'include'`；
+  若客户端与后端不同站且浏览器策略阻止第三方 Cookie，最稳妥的是同级子域部署
+  （如 `chat.example.com` + `app.example.com`，Cookie 域 `Domain=example.com` 需按部署调整）。
+- WS 握手不受浏览器 CORS 约束，但服务端校验 Origin（见 `allow_any_origin`）。
+
+### 5.9 独立前端如何指向本服务
+
+前端是独立程序，部署在任何静态托管上（Netlify/Vercel/对象存储/自建 Nginx 均可），
+通过其自身配置指向本服务。以常见的构建期 env 为例：
+
+```bash
+# 前端构建/运行环境
+VITE_API_BASE=https://chat.example.com      # 后端 HTTP 根（按你的前端变量名）
+VITE_WS_URL=wss://chat.example.com/ws       # 后端 WebSocket 全 URL
+```
+
+解析约定（各端实现须一致，详见 [client-contract.md §1](client-contract.md)）：
+`API_BASE` 缺省回退同源；`WS_URL` 缺省由 `API_BASE` 推导（scheme 换 ws/wss，路径拼 `/ws`）。
+
+服务端侧要做的只有两件事：确认 `cors_mode` 允许前端的 Origin（§5.8），以及
+`policy.json` 的 `auth.methods` 至少打开一种登录方式（默认全部关闭）。
+客户端接入契约全貌见 [client-contract.md](client-contract.md)。
+
 ---
 
 ## 6. 目录与权限矩阵
 
-embedded 形态（split 的差异在表后注明）。**这张表就是 security-spec §6.2 红线的落地值**，
+embedded 形态（**1.4 起 embedded-only**，split 多进程未实现）。**这张表就是 security-spec §6.2 红线的落地值**，
 任何 `other` 位带 `rwx` 都视为未通过上线评审。
 
 | 路径 | owner:group | mode | 内容 / 说明 |
 |---|---|---|---|
-| `/opt/openchat` | root:root | 0755 | 发布根；运行用户不可写 |
-| `/opt/openchat/releases/<ver>` | root:root | 0755 | 每个版本一个目录 |
-| `/opt/openchat/releases/<ver>/bin/*` | root:root | 0755 | `chatd` 等二进制 |
-| `/opt/openchat/current` | root:root | symlink | → `releases/<ver>`（原子的切换点） |
-| `/opt/openchat/bin` | root:root | symlink | → `current/bin` |
-| `/opt/openchat/web` | root:root | symlink | → `current/web`（旧布局静态回退，可空） |
-| `/etc/openchat` | root:openchat | 0750 | 配置根 |
-| `/etc/openchat/openchat.toml` | root:openchat | 0640 | 运行配置 |
-| `/etc/openchat/policy.json` | root:openchat | 0640 | 策略真源 |
-| `/etc/openchat/Caddyfile.reference` | root:openchat | 0640 | 边缘配置样例（每次安装覆盖） |
-| `/etc/openchat/env` | root:openchat | 0600 | 环境变量（split: `env.d/*.env`） |
-| `/etc/openchat/keys/` | root:openchat | 0750 | 密钥目录 |
-| `/etc/openchat/keys/*.pem` | root:openchat | 0640 | Ed25519 私钥（JWT 签名） |
-| `/etc/openchat/keys/{ipc,hmac,pii,phone_lookup,download,upload_secret,audit_chain}_key` | root:openchat | 0600 | 对称密钥 |
-| `/etc/openchat/keys/backup.key` | root:openchat | 0600 | 备份加密口令（`/etc/openchat/backup.key` 为符号链接） |
-| `/var/lib/openchat` | openchat:openchat | 0700 | 运行数据根（embedded） |
-| `/var/lib/openchat/chatd.db` | openchat:openchat | 0600 | 热库（含 `-wal`/`-shm`） |
-| `/var/lib/openchat/admin.db` | openchat:openchat | 0600 | 管理库 |
-| `/var/lib/openchat/media/` | openchat:openchat | 0750 | 媒体对象（建议 LUKS 卷） |
-| `/var/lib/openchat/backup/` | openchat:openchat | 0700 | 本地加密备份 |
-| `/run/openchat/` | openchat:openchat | 0750 | UDS 目录（systemd `RuntimeDirectory`） |
-| `/run/openchat/*.sock` | 层用户:openchat | 0600 | 层间 socket（split） |
-| `/etc/systemd/system/openchat*.service` | root:root | 0644 | unit |
-| `/etc/systemd/journald.conf.d/openchat.conf` | root:root | 0644 | journald 配额 |
-
-split 差异：`/var/lib/openchat/{data,admin,user,bridge}` 各自 0700、owner 为同名用户；
-媒体与备份归 `openchat-data`。
+| `/opt/ufot` | root:root | 0755 | 发布根；运行用户不可写 |
+| `/opt/ufot/releases/<ver>` | root:root | 0755 | 每个版本一个目录 |
+| `/opt/ufot/releases/<ver>/bin/*` | root:root | 0755 | `chatd` 等二进制 |
+| `/opt/ufot/current` | root:root | symlink | → `releases/<ver>`（原子的切换点） |
+| `/opt/ufot/bin` | root:root | symlink | → `current/bin` |
+| `/etc/ufot` | root:ufot | 0750 | 配置根 |
+| `/etc/ufot/ufot.toml` | root:ufot | 0640 | 运行配置 |
+| `/etc/ufot/policy.json` | root:ufot | 0640 | 策略真源 |
+| `/etc/ufot/Caddyfile.reference` | root:ufot | 0640 | 边缘配置样例（每次安装覆盖） |
+| `/etc/ufot/env` | root:ufot | 0600 | 环境变量 |
+| `/etc/ufot/keys/` | root:ufot | 0750 | 密钥目录 |
+| `/etc/ufot/keys/*.pem` | root:ufot | 0640 | Ed25519 私钥（JWT 签名） |
+| `/etc/ufot/keys/{ipc,hmac,pii,phone_lookup,download,upload_secret,audit_chain}_key` | root:ufot | 0600 | 对称密钥 |
+| `/etc/ufot/keys/backup.key` | root:ufot | 0600 | 备份加密口令（`/etc/ufot/backup.key` 为符号链接） |
+| `/var/lib/ufot` | ufot:ufot | 0700 | 运行数据根（embedded） |
+| `/var/lib/ufot/chatd.db` | ufot:ufot | 0600 | 热库（含 `-wal`/`-shm`） |
+| `/var/lib/ufot/admin.db` | ufot:ufot | 0600 | 管理库 |
+| `/var/lib/ufot/media/` | ufot:ufot | 0750 | 媒体对象（建议 LUKS 卷） |
+| `/var/lib/ufot/backup/`backup/` | ufot:ufot | 0700 | 本地加密备份 |
+| `/run/ufot/` | ufot:ufot | 0750 | UDS 目录（systemd `RuntimeDirectory`） |
+| `/etc/systemd/system/ufot*.service` | root:root | 0644 | unit |
+| `/etc/systemd/journald.conf.d/ufot.conf` | root:root | 0644 | journald 配额 |
 
 ### 6.1 权限自检（贴进巡检脚本）
 
 ```bash
 # 1) 红线：other 位不得有 rwx（期望无输出）
-sudo find /etc/openchat /var/lib/openchat -perm /o+rwx -print
+sudo find /etc/ufot /var/lib/ufot -perm /o+rwx -print
 
 # 2) 关键路径逐项核对
-stat -c '%a %U:%G %n' /etc/openchat /etc/openchat/keys /etc/openchat/env \
-  /var/lib/openchat /var/lib/openchat/media /var/lib/openchat/backup
+stat -c '%a %U:%G %n' /etc/ufot /etc/ufot/keys /etc/ufot/env \
+  /var/lib/ufot /var/lib/ufot/media /var/lib/ufot/backup
 
 # 3) 逐级解析（确认父目录没有意外放行）
-namei -l /etc/openchat/keys/jwt_sign_key.pem
+namei -l /etc/ufot/keys/jwt_sign_key.pem
 
 # 4) 二进制不可被运行用户改写
-sudo -u openchat test -w /opt/openchat/current/bin/chatd && echo "FAIL: writable" || echo ok
+sudo -u ufot test -w /opt/ufot/current/bin/chatd && echo "FAIL: writable" || echo ok
 ```
 
 ---
@@ -477,7 +519,7 @@ sudo -u openchat test -w /opt/openchat/current/bin/chatd && echo "FAIL: writable
 |---|---|
 | `ssh` / `scp` | **必须免密（BatchMode）**；`~/.ssh/config` 配好目标机 |
 | `tar` / `sha256sum` | 打包与校验 |
-| `node` + `npm` | 构建 client/admin（`--skip-build` 可跳过，复用 `apps/*/dist`） |
+| `node` + `npm` | 不再需要（纯后端包；仅本地开发前端时自备） |
 | `go` | 构建 `chatd`（`--skip-build` 时复用 `dist/`） |
 | 目标机 `curl` / `systemctl` | 健康检查与重启 |
 
@@ -495,9 +537,9 @@ ssh -o BatchMode=yes root@chat.example.com true   # 先验证免密
 ./deploy/release.sh --target root@chat.example.com --version v1.4.2 --skip-build
 
 # 其它参数
---service openchat.service     # systemd 单元名
+--service ufot.service     # systemd 单元名
 --health-url http://127.0.0.1:8080/healthz
---remote-root /opt/openchat    # 远端根
+--remote-root /opt/ufot    # 远端根
 --ssh-port 2222
 ```
 
@@ -510,7 +552,7 @@ ssh -o BatchMode=yes root@chat.example.com true   # 先验证免密
 |---|---|---|
 | 1 | `npm ci && npm run build`（client、admin 各自目录） | 立即退出，不动远端 |
 | 2 | `go build -trimpath -ldflags "-s -w"` 逐个子命令（只有存在的 `server/cmd/*` 才编） | 同上；`dist/chatd` 缺失直接 die |
-| 3 | 打包 `dist/openchat-<ver>-linux-<arch>.tar.gz`：`bin/` + `web/{client,admin}` + `deploy/`，并生成 `dist/SHA256SUMS` | 同上 |
+| 3 | 打包 `dist/ufot-<ver>-linux-<arch>.tar.gz`：`bin/` + `web/{client,admin}` + `deploy/`，并生成 `dist/SHA256SUMS` | 同上 |
 | 4 | `scp` 到 `$REMOTE_ROOT/incoming/` | SSH 失败即退出 |
 | 5 | 远端 `sha256sum -c SHA256SUMS` → 解包到 `releases/<ver>` → `chown -R root:root` | 校验失败即退出，旧版本不受影响 |
 | 6 | 原子切换 `current`（`ln -sfn` 到 `.new` + `mv -Tf`），同步 `bin`/`web` 链接，`systemctl restart` | 启动失败进入回滚 |
@@ -518,20 +560,20 @@ ssh -o BatchMode=yes root@chat.example.com true   # 先验证免密
 | 8 | 记录 `last`，清理 `incoming` 与多余 release（只留 `current`、`last`、`bootstrap`） | 清理失败不影响服务 |
 
 回滚语义：第 7 步失败时把 `current` 指回上一版本并重启；**回滚也失败**则退出非 0 并保留现场
-（`journalctl -u openchat -n 100`）。首次发布没有 `last` 时无法自动回滚，必须人工介入。
+（`journalctl -u ufot -n 100`）。首次发布没有 `last` 时无法自动回滚，必须人工介入。
 
 ### 7.4 产物与校验
 
 ```bash
-ls -l dist/openchat-*-linux-*.tar.gz dist/SHA256SUMS
+ls -l dist/ufot-*-linux-*.tar.gz dist/SHA256SUMS
 sha256sum -c dist/SHA256SUMS          # 在 dist/ 目录内执行
-tar -tzf dist/openchat-<ver>-linux-amd64.tar.gz | head -20
+tar -tzf dist/ufot-<ver>-linux-amd64.tar.gz | head -20
 ```
 
-远端布局（`--remote-root /opt/openchat`）：
+远端布局（`--remote-root /opt/ufot`）：
 
 ```
-/opt/openchat/
+/opt/ufot/
 ├── releases/v1.4.2/{bin,web,deploy}
 ├── releases/v1.4.1/            # last
 ├── current -> releases/v1.4.2
@@ -544,18 +586,17 @@ tar -tzf dist/openchat-<ver>-linux-amd64.tar.gz | head -20
 
 ```bash
 # 1) 看当前与上一版本
-readlink -f /opt/openchat/current /opt/openchat/last
+readlink -f /opt/ufot/current /opt/ufot/last
 
 # 2) 切回上一版本（原子）
-sudo ln -sfn "$(readlink -f /opt/openchat/last)" /opt/openchat/current.new
-sudo mv -Tf /opt/openchat/current.new /opt/openchat/current
-sudo ln -sfn current/bin /opt/openchat/bin
-sudo ln -sfn current/web /opt/openchat/web
+sudo ln -sfn "$(readlink -f /opt/ufot/last)" /opt/ufot/current.new
+sudo mv -Tf /opt/ufot/current.new /opt/ufot/current
+sudo ln -sfn current/bin /opt/ufot/bin
 
 # 3) 重启并验证
-sudo systemctl restart openchat
-systemctl is-active openchat
-journalctl -u openchat -n 100 --no-pager
+sudo systemctl restart ufot
+systemctl is-active ufot
+journalctl -u ufot -n 100 --no-pager
 ```
 
 **数据库迁移只向前**：回滚二进制前先确认该版本引入的迁移是否向后兼容；破坏性迁移必须
@@ -565,12 +606,74 @@ journalctl -u openchat -n 100 --no-pager
 
 | | `make release-all` | `deploy/release.sh` |
 |---|---|---|
-| 产物 | `dist/openchat-<ver>-linux-<arch>.tar.gz` + `dist/SHA256SUMS` | 同左，但直接上传并切换 |
-| 前端 | `make web`（npm ci + build + 复制到 `server/web/{client,admin}`） | 自己 `npm ci + build`，再把 `apps/*/dist` 打进 `web/` |
+| 产物 | `dist/ufot-<ver>-linux-<arch>.tar.gz` + `dist/SHA256SUMS` | 同左，但直接上传并切换 |
+| 前端 | 不含（后端专用包，见 Makefile `release-all`） | 不含 |
 | 适用 | CI 出包、离线交付 | 运维一条命令发布到远端 |
-| 前置 | 本机 Node + Go | 本机 Node + Go + 免密 SSH |
+| 前置 | 本机 Go | 本机 Go + 免密 SSH |
 
 ---
+
+### 7.7 升级到 v1.4：`ufotctl upgrade`（一次性维护自动化）
+
+1.4 把历史上需要手工做的两项一次性维护合并成一条命令：
+
+| # | 步骤 | 背景 |
+|---|---|---|
+| 1 | 旧 `thumb_data` 内联缩略图迁移到 `media_dir/thumbs/` 文件（即原 `migrate thumbs`） | v1.0 的缩略图按 base64 存在热库，每行 ~10.7KB，百万级图片可占 >10GB |
+| 2 | 热库 `auto_vacuum=0 → INCREMENTAL` 转换（`PRAGMA auto_vacuum=INCREMENTAL; VACUUM;`） | SQLite 默认 `auto_vacuum=0` 只把删除的页标记为空闲，文件不缩小；不转换则 2C2G 上磁盘只涨不落 |
+
+**安全约定：默认 dry-run**——不带 `--run` 时命令只读热库、输出结构化计划（含
+`--json` 信封），不写盘、不改库、不加写锁；带 `--run` 才执行。auto_vacuum 的
+`VACUUM` 会重写整个库文件，因此 `--run` 前服务必须已停止（`systemctl is-active`
+检测到运行中会拒绝并提示，exit 77；仅离线维护窗口可用 `--force` 跳过检查）。
+
+推荐流程：
+
+```bash
+# 1. 先备份（§8）
+sudo deploy/backup.sh
+
+# 2. 停服（VACUUM 期间不能有连接）
+sudo systemctl stop ufot
+
+# 3. 预览计划（dry-run，只读）
+ufotctl upgrade --hot-db /var/lib/ufot/data/hot.db
+ufotctl upgrade --json --hot-db /var/lib/ufot/data/hot.db   # 结构化输出
+
+# 4. 执行（thumbs 迁移 + auto_vacuum 转换，幂等，可重跑）
+ufotctl upgrade --run --hot-db /var/lib/ufot/data/hot.db
+
+# 5. 校验并启动：auto_vacuum 必须为 2（INCREMENTAL）
+ufotctl doctor --hot-db /var/lib/ufot/data/hot.db   # 应全 OK
+sudo systemctl start ufot
+```
+
+计划输出示例（dry-run）：
+
+```
+upgrade: dry-run（未改库；加 --run 执行）
+  hot_db      : /var/lib/ufot/data/hot.db (auto_vacuum=0)
+  [!] thumbs       1234 行旧 thumb_data 待迁移到 /var/lib/ufot/media
+  [!] auto_vacuum  auto_vacuum=0 → 需转换为 INCREMENTAL（PRAGMA auto_vacuum=INCREMENTAL; VACUUM;）
+图例: ! 待执行  ✓ 已执行  - 无需  ✗ 失败
+```
+
+已转换的库重跑为 no-op（两个步骤均报「无需」）。等价的手工路径（不使用 CLI 时）：
+`VACUUM INTO` 备份 → `sqlite3 "$HOT" "PRAGMA auto_vacuum=INCREMENTAL; VACUUM;"` →
+`PRAGMA auto_vacuum;` 返回 2。
+
+**升级检查清单（→ v1.4）**
+
+| 步骤 | 命令 / 动作 | 失败会怎样 |
+|---|---|---|
+| 1 | 备份热库与配置（`deploy/backup.sh`） | 无备份可回滚 |
+| 2 | `ufotctl upgrade`（dry-run 预览 → `--run` 执行；含 auto_vacuum 转换与 thumbs 迁移，一次性） | 磁盘只涨不落 / 热库虚胖 |
+| 3 | 确认 `rate_limit_enabled` 未显式为 false | 生产环境会**拒绝启动**（这是有意的护栏） |
+| 4 | 确认 `public_origin` 已设为 https 域名 | 同源校验与安全 Cookie 走宽松分支 |
+| 5 | 若用短信/邮件登录：配置供应商（未配则仅 dev 模式可用） | 生产注册登录不可用 |
+| 6 | 若要开视频/语音通话：`feature_flags.call_enabled=true` + 配 TURN | 通话按钮不出现/建连失败 |
+| 7 | 替换二进制 → `systemctl restart ufot` | — |
+| 8 | `ufotctl doctor` + `ufotctl status` | 逐项排查 |
 
 ## 8. 备份与恢复（backup.sh）
 
@@ -581,11 +684,11 @@ journalctl -u openchat -n 100 --no-pager
 
 | 对象 | 为什么重要 | 单独备份方式 |
 |---|---|---|
-| `/var/lib/openchat/admin.db` | 管理员账号、TOTP secret、会话 | 停服或 `sqlite3 .backup` 后加密（见 §8.5） |
-| `/etc/openchat/keys/` | `audit_chain_key` 丢失 = 审计链永久无法验证；`pii_key` 丢失 = 手机号不可解 | 离线加密保管，**不要**放进 `/var/lib/openchat/backup` 自动清理目录 |
+| `/var/lib/ufot/admin.db` | 管理员账号、TOTP secret、会话 | 停服或 `sqlite3 .backup` 后加密（见 §8.5） |
+| `/etc/ufot/keys/` | `audit_chain_key` 丢失 = 审计链永久无法验证；`pii_key` 丢失 = 手机号不可解 | 离线加密保管，**不要**放进 `/var/lib/ufot/backup` 自动清理目录 |
 | 媒体文件 `media/` | 图片/语音/文件本体 | LUKS 卷快照或 `restic`/`borg` 增量 |
 | 冷库 PostgreSQL | 90 天前的全量历史 | PostgreSQL 自身 PITR / `pg_dump` |
-| `/etc/openchat/*.toml/json` | 配置与策略 | 随发布包或配置管理（Git）留存 |
+| `/etc/ufot/*.toml/json` | 配置与策略 | 随发布包或配置管理（Git）留存 |
 
 > 只恢复 `chatd.db` 而丢掉 `admin.db`/`keys`，等于「有消息但没人能登录、审计链无法验证」。
 > 生产环境必须把上表纳入同一份恢复演练。
@@ -595,29 +698,29 @@ journalctl -u openchat -n 100 --no-pager
 `policy.json` 的 `backup.cron` 是**声明**，由外部调度器执行。推荐 systemd timer（可查、幂等）：
 
 ```bash
-sudo install -m 0755 deploy/backup.sh /usr/local/sbin/openchat-backup
+sudo install -m 0755 deploy/backup.sh /usr/local/sbin/ufot-backup
 
-sudo tee /etc/systemd/system/openchat-backup.service >/dev/null <<'EOF'
+sudo tee /etc/systemd/system/ufot-backup.service >/dev/null <<'EOF'
 [Unit]
-Description=OpenChat hot DB backup (sqlite3 .backup + encrypt)
-After=openchat.service
+Description=UFOT hot DB backup (sqlite3 .backup + encrypt)
+After=ufot.service
 [Service]
 Type=oneshot
 User=root
-ExecStart=/usr/local/sbin/openchat-backup
+ExecStart=/usr/local/sbin/ufot-backup
 Nice=10
 IOSchedulingClass=best-effort
 IOSchedulingPriority=7
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/var/lib/openchat/backup
+ReadWritePaths=/var/lib/ufot/backup
 NoNewPrivileges=true
 EOF
 
-sudo tee /etc/systemd/system/openchat-backup.timer >/dev/null <<'EOF'
+sudo tee /etc/systemd/system/ufot-backup.timer >/dev/null <<'EOF'
 [Unit]
-Description=Daily OpenChat backup at 05:30
+Description=Daily UFOT backup at 05:30
 [Timer]
 OnCalendar=*-*-* 05:30:00
 Persistent=true
@@ -627,46 +730,46 @@ WantedBy=timers.target
 EOF
 
 sudo systemctl daemon-reload
-sudo systemctl enable --now openchat-backup.timer
-systemctl list-timers openchat-backup.timer
+sudo systemctl enable --now ufot-backup.timer
+systemctl list-timers ufot-backup.timer
 ```
 
 `OnCalendar` 用**系统时区**；建议 `sudo timedatectl set-timezone UTC` 与 `policy.json` 的
-`"30 5 * * *"` 对齐。备份以 root 运行：`backup.key` 是 0600 root:openchat，普通用户读不到。
+`"30 5 * * *"` 对齐。备份以 root 运行：`backup.key` 是 0600 root:ufot，普通用户读不到。
 
 ### 8.3 手动备份与产物
 
 ```bash
 # 预检：空间、密钥、加密工具、异地目标（不写任何文件）
-sudo /usr/local/sbin/openchat-backup --dry-run
+sudo /usr/local/sbin/ufot-backup --dry-run
 
 # 立即备份
-sudo /usr/local/sbin/openchat-backup
+sudo /usr/local/sbin/ufot-backup
 ```
 
-产物（`$BACKUP_DIR` 默认 `/var/lib/openchat/backup`，umask 077）：
+产物（`$BACKUP_DIR` 默认 `/var/lib/ufot/backup`，umask 077）：
 
 ```
-openchat-20261029T053000Z.db.enc        # openssl 加密；用 age 时为 .db.age
-openchat-20261029T053000Z.db.enc.sha256 # 密文校验和
-openchat-20261029T053000Z.manifest.json # created_at / 源库大小 / 明文 sha256 / 保留天数 / host
+ufot-20261029T053000Z.db.enc        # openssl 加密；用 age 时为 .db.age
+ufot-20261029T053000Z.db.enc.sha256 # 密文校验和
+ufot-20261029T053000Z.manifest.json # created_at / 源库大小 / 明文 sha256 / 保留天数 / host
 ```
 
 流程：`sqlite3 .backup`（在线一致快照，不锁写）→ `PRAGMA integrity_check` 必须 ok →
 立即删除明文（有 `shred` 则覆写）→ 加密 → 原子 rename 落盘 → 异地 → 按 `keep_days` 清理。
 任一步失败退出非 0，timer 记录 failed。
 
-加密选择：`OPENCHAT_AGE_RECIPIENT`（或 `backup.key` 内容以 `age1` 开头）且装了 `age` → age；
-否则 `openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -pass file:/etc/openchat/backup.key`。
+加密选择：`UFOT_AGE_RECIPIENT`（或 `backup.key` 内容以 `age1` 开头）且装了 `age` → age；
+否则 `openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -pass file:/etc/ufot/backup.key`。
 
 ### 8.4 异地副本
 
 ```bash
 # rsync（写进 systemd unit 的 Environment= 或 root 的 crontab）
-OPENCHAT_BACKUP_RSYNC=backup@10.0.0.9:/srv/openchat-backup
+UFOT_BACKUP_RSYNC=backup@10.0.0.9:/srv/ufot-backup
 
 # 对象存储（aws 或 rclone 二选一）
-OPENCHAT_BACKUP_S3=s3://my-bucket/openchat
+UFOT_BACKUP_S3=s3://my-bucket/ufot
 ```
 
 未配置异地目标时脚本只告警（不会失败），但**本机磁盘故障会同时丢失数据与备份**——
@@ -676,8 +779,8 @@ OPENCHAT_BACKUP_S3=s3://my-bucket/openchat
 
 ```bash
 # 0) 选定一份备份（含 .sha256 与 manifest）
-B=/var/lib/openchat/backup
-LATEST=$(ls -1t "$B"/openchat-*.db.enc "$B"/openchat-*.db.age 2>/dev/null | head -1)
+B=/var/lib/ufot/backup
+LATEST=$(ls -1t "$B"/ufot-*.db.enc "$B"/ufot-*.db.age 2>/dev/null | head -1)
 echo "$LATEST"
 
 # 1) 先验密文完整性（在备份目录内执行，文件名要对得上）
@@ -685,15 +788,15 @@ echo "$LATEST"
 
 # 2) 解密到临时目录（0600）
 #    age 身份私钥由运维离线保管（install.sh 不生成）：
-#      age-keygen -o /root/.age/openchat.key && chmod 600 /root/.age/openchat.key
-#    公钥（age1...）写进 OPENCHAT_AGE_RECIPIENT 后再备份。
+#      age-keygen -o /root/.age/ufot.key && chmod 600 /root/.age/ufot.key
+#    公钥（age1...）写进 UFOT_AGE_RECIPIENT 后再备份。
 sudo install -d -m 0700 /var/tmp/oc-restore
 case "$LATEST" in
   *.age)
-    sudo age -d -i /root/.age/openchat.key -o /var/tmp/oc-restore/chatd.db "$LATEST" ;;
+    sudo age -d -i /root/.age/ufot.key -o /var/tmp/oc-restore/chatd.db "$LATEST" ;;
   *.enc)
     sudo openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 \
-      -in "$LATEST" -out /var/tmp/oc-restore/chatd.db -pass file:/etc/openchat/backup.key ;;
+      -in "$LATEST" -out /var/tmp/oc-restore/chatd.db -pass file:/etc/ufot/backup.key ;;
 esac
 
 # 3) 恢复前校验（不通过就停止，不要覆盖生产库）
@@ -701,20 +804,20 @@ sudo sqlite3 /var/tmp/oc-restore/chatd.db "PRAGMA integrity_check;"   # 必须 o
 sudo sqlite3 /var/tmp/oc-restore/chatd.db "SELECT count(*) FROM sqlite_master;"  # 表数量合理
 
 # 4) 停服，保留现场（不要直接覆盖唯一副本）
-sudo systemctl stop openchat
-sudo mv /var/lib/openchat/chatd.db "/var/lib/openchat/chatd.db.bak.$(date -u +%Y%m%dT%H%M%SZ)"
-sudo rm -f /var/lib/openchat/chatd.db-wal /var/lib/openchat/chatd.db-shm
+sudo systemctl stop ufot
+sudo mv /var/lib/ufot/chatd.db "/var/lib/ufot/chatd.db.bak.$(date -u +%Y%m%dT%H%M%SZ)"
+sudo rm -f /var/lib/ufot/chatd.db-wal /var/lib/ufot/chatd.db-shm
 
 # 5) 落盘（owner/mode 必须与矩阵一致）
-sudo install -m 0600 -o openchat -g openchat /var/tmp/oc-restore/chatd.db /var/lib/openchat/chatd.db
+sudo install -m 0600 -o ufot -g ufot /var/tmp/oc-restore/chatd.db /var/lib/ufot/chatd.db
 
 # 6) 起服
-sudo systemctl start openchat
-systemctl is-active openchat
-journalctl -u openchat -n 50 --no-pager
+sudo systemctl start ufot
+systemctl is-active ufot
+journalctl -u ufot -n 50 --no-pager
 
 # 7) 业务验证（四件事）
-sudo sqlite3 /var/lib/openchat/chatd.db "PRAGMA quick_check;"          # ok
+sudo sqlite3 /var/lib/ufot/chatd.db "PRAGMA quick_check;"          # ok
 curl -sI https://chat.example.com/ | head -1                            # 200
 adminctl --server http://127.0.0.1:7780 audit --since-id 0 --limit 5 --output json
 # 管理后台随机抽 3 个会话，确认最近消息时间点 = 备份时刻
@@ -726,7 +829,7 @@ sudo shred -u /var/tmp/oc-restore/chatd.db 2>/dev/null || sudo rm -f /var/tmp/oc
 **恢复后必须知道的两件事**：
 
 1. 热库回到备份时刻，**冷库不回滚**。归档游标可能落后于冷库已有数据，先跑
-   `openchatctl archive --dry-run` / `adminctl archive status` 核对 cutoff，再决定是否重跑归档。
+   `ufotctl archive --dry-run` / `adminctl archive status` 核对 cutoff，再决定是否重跑归档。
 2. 备份时刻之后写入的审计事件会缺失，哈希链会出现断点。这是数据丢失的**预期结果**，
    不是"被篡改"；按 §10.4 记录事件，并在审计报告里说明恢复点（附 manifest 的 `sha256_plain`）。
 
@@ -736,29 +839,29 @@ sudo shred -u /var/tmp/oc-restore/chatd.db 2>/dev/null || sudo rm -f /var/tmp/oc
 
 ## 9. 日常运维命令
 
-### 9.1 openchatctl（本机运维，直连 systemd/信号/热库）
+### 9.1 ufotctl（本机运维，直连 systemd/信号/热库）
 
-`openchatctl` 不说话给网络端口：它读 systemd 状态、给进程发信号、只读打开热库，因此**必须与
+`ufotctl` 不说话给网络端口：它读 systemd 状态、给进程发信号、只读打开热库，因此**必须与
 `chatd` 同机、通常用 root 运行**。`install.sh` 不安装 CLI，从发布包或源码装一次：
 
 ```bash
 # 从源码构建（任何安装方式都适用）
-go build -o /usr/local/bin/openchatctl ./server/cmd/openchatctl
+go build -o /usr/local/bin/ufotctl ./server/cmd/ufotctl
 go build -o /usr/local/bin/adminctl    ./server/cmd/adminctl
 
 # 用 release.sh 发布过的机器：current/bin 里已带 CLI，直接 install
-sudo install -m 0755 /opt/openchat/current/bin/openchatctl /usr/local/bin/openchatctl
+sudo install -m 0755 /opt/ufot/current/bin/ufotctl /usr/local/bin/ufotctl
 ```
 
 | 命令 | 用途 | 关键参数 |
 |---|---|---|
-| `openchatctl status` | 进程状态 + `SIGUSR1` dump 摘要 + 热库统计 | `--unit openchat`、`--hot-db /var/lib/openchat/chatd.db`、`--signal usr1\|usr2\|none`、`--no-journal` |
-| `openchatctl doctor` | 体检：热库完整性、磁盘余量、近 1h error 数、冷库 TCP 连通 | `--hot-db PATH`、`--unit NAME`、`--no-logs` |
-| `openchatctl backup --dry-run` | 只校验备份环境，不写文件 | `--db PATH`、`--script PATH`、`--to DIR` |
-| `openchatctl backup` | 调 `deploy/backup.sh`；找不到脚本则内置 `sqlite .backup` | 同上 |
-| `openchatctl archive --dry-run` / `--run` | 经管理 API 触发/预估归档 | 需先 `adminctl login` |
-| `openchatctl flags list` / `flags set KEY=VALUE` | 读/写 feature flag | `--json` 统一 JSON |
-| `openchatctl ban <uid> --days 7 --level 2 --reason spam` / `unban <uid>` | 封禁/解封（与管理 API 同一链路） | — |
+| `ufotctl status` | 进程状态 + `SIGUSR1` dump 摘要 + 热库统计 | `--unit ufot`、`--hot-db /var/lib/ufot/chatd.db`、`--signal usr1\|usr2\|none`、`--no-journal`、`--journal-lines 50` |
+| `ufotctl doctor` | 体检：热库完整性、磁盘余量、近 1h error 数、冷库 TCP 连通 | `--hot-db PATH`、`--unit NAME`、`--since -1h`、`--no-logs`、`--no-cold` |
+| `ufotctl backup --dry-run` | 只校验备份环境，不写文件 | `--db PATH`、`--script PATH`、`--to DIR` |
+| `ufotctl backup` | 调 `deploy/backup.sh`；找不到脚本则内置 `sqlite .backup` | 同上 |
+| `ufotctl archive --dry-run` / `--run` | 经管理 API 触发/预估归档 | 需先 `adminctl login` |
+| `ufotctl flags list` / `flags set KEY=VALUE` | 读/写 feature flag | `--json` 统一 JSON |
+| `ufotctl ban <uid> --days 7 --level 2 --reason spam` / `unban <uid>` | 封禁/解封（与管理 API 同一链路） | — |
 
 全局：`--json`、`--admin-url`、`--token`、`--csrf-token`、`--timeout`（默认 20s）。
 退出码：`0` 成功 / `1` 错误（doctor 有 FAIL）/ `64` 语法 / `77` 未授权或未登录。
@@ -766,18 +869,19 @@ sudo install -m 0755 /opt/openchat/current/bin/openchatctl /usr/local/bin/opench
 
 ### 9.2 adminctl（走管理 API）
 
-> `admin_listen` 默认 `127.0.0.1:7780`，而 `adminctl` 内置默认值是 `127.0.0.1:7781`，
-> **务必显式传 `--server` 或导出环境变量**，否则会连空端口：
+> `admin_listen` 默认 `127.0.0.1:7780`，`adminctl` / `ufotctl` 的内置默认地址也是
+> `http://127.0.0.1:7780`，开箱即用；如需连接其它端口（如经 SSH 隧道），显式传 `--server`
+> 或导出环境变量覆盖：
 >
 > ```bash
-> export OPENCHAT_ADMIN_URL=http://127.0.0.1:7780   # 与 openchat.toml 的 admin_listen 一致
+> export UFOT_ADMIN_URL=http://127.0.0.1:7780   # 与 ufot.toml 的 admin_listen 一致
 > ```
 >
 > `adminctl` 的路径前缀是 `/api/v1/*`（不经 Caddy 的 `/api/admin/*` 白名单），因此只在
 > 本机/内网使用；远程运维先开隧道：`ssh -L 7780:127.0.0.1:7780 ops@chat.example.com`。
 
 ```bash
-# 登录（交互式密码 + TOTP；凭据默认落 ~/.config/openchat/admin.json）
+# 登录（交互式密码 + TOTP；凭据默认落 ~/.config/ufot/adminctl.json）
 adminctl --server http://127.0.0.1:7780 login
 
 # 我是谁 / 当前 token 是否有效
@@ -802,16 +906,16 @@ adminctl --server http://127.0.0.1:7780 flags list
 adminctl --server http://127.0.0.1:7780 flags set registration false
 ```
 
-全局开关：`--output json|table`、`--token`（env `OPENCHAT_ADMIN_TOKEN`）、`--csrf-token`、
+全局开关：`--output json|table`、`--token`（env `UFOT_ADMIN_TOKEN`）、`--csrf-token`、
 `--idempotency-key`（写操作 5 分钟内幂等）。退出码：0 ok / 1 error / 64 usage / 65 not found / 77 权限。
 
 ### 9.3 journalctl（五条够用）
 
 ```bash
-journalctl -u openchat -f                                   # 实时跟随
-journalctl -u openchat --since '10 min ago' -p warning      # 近 10 分钟告警
-journalctl -u openchat -g 'trace_id=01H...'                 # 单条消息全链路
-journalctl -u openchat -o cat | jq -c 'select(.level=="ERROR")' | tail -20
+journalctl -u ufot -f                                   # 实时跟随
+journalctl -u ufot --since '10 min ago' -p warning      # 近 10 分钟告警
+journalctl -u ufot -g 'trace_id=01H...'                 # 单条消息全链路
+journalctl -u ufot -o cat | jq -c 'select(.level=="ERROR")' | tail -20
 journalctl --disk-usage && sudo journalctl --vacuum-size=200M   # 配额 200M，满了先查循环重启
 ```
 
@@ -821,13 +925,13 @@ journalctl --disk-usage && sudo journalctl --vacuum-size=200M   # 配额 200M，
 ### 9.4 systemd 与一次性检查
 
 ```bash
-systemctl status openchat --no-pager -l
-systemctl reload openchat          # SIGHUP：热载 policy + 白名单（失败保留旧策略）
-systemctl restart openchat         # 重启：TOML/env 变更后
+systemctl status ufot --no-pager -l
+systemctl reload ufot          # SIGHUP：热载 policy + 白名单（失败保留旧策略）
+systemctl restart ufot         # 重启：TOML/env 变更后
 
-sqlite3 /var/lib/openchat/chatd.db "PRAGMA wal_checkpoint(TRUNCATE);"
-sqlite3 /var/lib/openchat/chatd.db "PRAGMA quick_check;"
-du -sh /var/lib/openchat/media /var/lib/openchat/backup && df -h /var/lib/openchat
+sqlite3 /var/lib/ufot/chatd.db "PRAGMA wal_checkpoint(TRUNCATE);"
+sqlite3 /var/lib/ufot/chatd.db "PRAGMA quick_check;"
+du -sh /var/lib/ufot/media /var/lib/ufot/backup && df -h /var/lib/ufot
 ss -lntp | grep -E ':(8080|7780|9090)'
 ```
 
@@ -841,28 +945,28 @@ ss -lntp | grep -E ':(8080|7780|9090)'
 
 ```bash
 # 1) 看退出码与重启次数
-systemctl status openchat --no-pager -l | head -20
-systemctl show openchat -p ExecMainStatus -p NRestarts -p Result
+systemctl status ufot --no-pager -l | head -20
+systemctl show ufot -p ExecMainStatus -p NRestarts -p Result
 
 # 2) 看最后 100 行结构化日志（先找 msg/fields，不要只看 systemd 摘要）
-journalctl -u openchat -n 100 --no-pager
-journalctl -u openchat -o cat | jq -c 'select(.level=="ERROR" or .level=="WARN")' | tail -20
+journalctl -u ufot -n 100 --no-pager
+journalctl -u ufot -o cat | jq -c 'select(.level=="ERROR" or .level=="WARN")' | tail -20
 
 # 3) 手工前台跑（绕过 systemd，直接看 stderr；先停 unit 释放端口）
-sudo systemctl stop openchat
-sudo -u openchat env $(grep -v '^#' /etc/openchat/env | xargs) \
-  /opt/openchat/current/bin/chatd --config /etc/openchat/openchat.toml
+sudo systemctl stop ufot
+sudo -u ufot env $(grep -v '^#' /etc/ufot/env | xargs) \
+  /opt/ufot/current/bin/chatd --config /etc/ufot/ufot.toml
 ```
 
 | 现象 | 最可能原因 | 处置 |
 |---|---|---|
-| `status=1/FAILURE`，日志 `config:` | TOML 语法/引号/policy 非法 | 对照 `deploy/openchat.toml` 逐键核对；`journalctl -u openchat -o cat \| jq -c 'select(.msg\|test("config"))'` |
+| `status=1/FAILURE`，日志 `config:` | TOML 语法/引号/policy 非法 | 对照 `deploy/ufot.toml` 逐键核对；`journalctl -u ufot -o cat \| jq -c 'select(.msg\|test("config"))'` |
 | `status=2/FAILURE`，日志 `assembly failed` | 层装配失败（kind 冲突/配置缺项） | 回滚上一版本，保留 `journalctl` 现场 |
-| `status=203/EXEC` | 二进制不存在/无执行位 | `ls -l /opt/openchat/current/bin/chatd`；确认 `current` 链接 |
-| `status=226/NAMESPACE` | `ReadWritePaths` 指向的目录不存在 | `install -d -o openchat -g openchat /var/lib/openchat` |
-| `start operation timed out` + 反复重启 | `Type=notify` 未收到 `READY=1` | 见附录 A.1（临时 `Type=exec`） |
+| `status=203/EXEC` | 二进制不存在/无执行位 | `ls -l /opt/ufot/current/bin/chatd`；确认 `current` 链接 |
+| `status=226/NAMESPACE` | `ReadWritePaths` 指向的目录不存在 | `install -d -o ufot -g ufot /var/lib/ufot` |
+| `start operation timed out` + 反复重启 | 下游依赖阻塞启动（冷库 fail-fast、密钥缺失） | `journalctl -u ufot -n 100`；冷库不可用且 `require_audit_store=true` 时启动即失败是预期行为 |
 | `address already in use` | 旧进程/别的服务占用 8080/7780/9090 | `ss -lntp \| grep :8080`，`systemctl stop` 冲突单元 |
-| `permission denied` 打开 DB | 文件 owner/mode 被改（曾用 root 跑过） | 按 §6 恢复：`chown openchat:openchat`、`chmod 0600` |
+| `permission denied` 打开 DB | 文件 owner/mode 被改（曾用 root 跑过） | 按 §6 恢复：`chown ufot:ufot`、`chmod 0600` |
 
 ### 10.2 连不上（浏览器/客户端）
 
@@ -887,12 +991,12 @@ sudo nft list ruleset | head -40
 
 | 症状 | 原因 | 处置 |
 |---|---|---|
-| 502 Bad Gateway | Caddy 指向的端口没有进程 | 启 `openchat`；核对 `OPENCHAT_WS_PORT`/`listen` 一致 |
+| 502 Bad Gateway | Caddy 指向的端口没有进程 | 启 `ufot`；核对 `UFOT_WS_PORT`/`listen` 一致 |
 | `/admin/` 404，其它正常 | 来源 IP 不在白名单（Caddy 故意 404） | 改 `remote_ip` 后 `systemctl restart caddy` |
-| `/admin/` 503 `admin UI is not embedded` | 二进制是未 `make web` 的构建 | 用发布包/重新 `make release` |
+| `/admin/` 404 | 后端不托管管理 UI（v2.1 起纯后端）；管理面只有 REST `/api/v1/*`（7781） | 管理操作走 `adminctl` / `opchat`，或经 IP 白名单反代访问 REST |
 | `/ws` 握手 401 | token 放在 query（红线）、Cookie 域不符、access 过期 | token 只放 Cookie 或 `Sec-WebSocket-Protocol`；核对 `public_origin` |
 | 登录 429 / 一直失败 | 失败锁定：5 次→15min→1h→24h（§A-1） | 等锁定期；查 `auth.login_failed` 审计；不要绕过限流 |
-| 浏览器报 `Unexpected token '<'` | 静态资源 404 被回成 index.html | 确认用的是本仓库新二进制（`web.spa` 对带扩展名路径返回 404） |
+| 跨域客户端请求被浏览器拦截 | `cors_mode` 配置不符 | 见 §「CORS 与环境变量」；默认 `allow_any` 应放行 |
 | TOTP 全部失败 | 服务器时间漂移 > 30s | `timedatectl status`；开 NTP/chrony |
 
 ### 10.3 消息不落库（发得出去、刷新就没了）
@@ -904,15 +1008,15 @@ sudo nft list ruleset | head -40
 curl -s 127.0.0.1:9090/metrics | grep -E 'writech_queue_depth|writech_busy_total'
 
 # 2) SQLite 是否卡住/损坏
-sqlite3 /var/lib/openchat/chatd.db "PRAGMA wal_checkpoint(PASSIVE); PRAGMA quick_check;"
-ls -lh /var/lib/openchat/chatd.db*
-journalctl -u openchat -o cat | jq -c 'select(.msg|test("write|flush|busy";"i"))' | tail -30
+sqlite3 /var/lib/ufot/chatd.db "PRAGMA wal_checkpoint(PASSIVE); PRAGMA quick_check;"
+ls -lh /var/lib/ufot/chatd.db*
+journalctl -u ufot -o cat | jq -c 'select(.msg|test("write|flush|busy";"i"))' | tail -30
 
 # 3) 磁盘与 inode（WAL 写不进去最常见的根因）
-df -h /var/lib/openchat; df -i /var/lib/openchat
+df -h /var/lib/ufot; df -i /var/lib/ufot
 
 # 4) 文件权限（root 跑过之后 owner 变 root 会写失败）
-stat -c '%a %U:%G %n' /var/lib/openchat/chatd.db /var/lib/openchat
+stat -c '%a %U:%G %n' /var/lib/ufot/chatd.db /var/lib/ufot
 
 # 5) 冷库归档滞后（只影响历史，不影响新消息落热库）
 adminctl --server http://127.0.0.1:7780 archive status
@@ -939,9 +1043,9 @@ adminctl --server http://127.0.0.1:7780 archive status
 adminctl --server http://127.0.0.1:7780 flags set readonly true
 
 # 2) 保全现场（顺序很重要：先快照/拷贝，再分析）
-sudo systemctl stop openchat
-sudo cp -a /var/lib/openchat/chatd.db /var/lib/openchat/chatd.db.incident.$(date -u +%s)
-sudo journalctl -u openchat -n 2000 --no-pager > /var/log/openchat-incident-$(date -u +%s).log
+sudo systemctl stop ufot
+sudo cp -a /var/lib/ufot/chatd.db /var/lib/ufot/chatd.db.incident.$(date -u +%s)
+sudo journalctl -u ufot -n 2000 --no-pager > /var/log/ufot-incident-$(date -u +%s).log
 
 # 3) 定位断点：从 broken_at 往前取 5 条，记录 id/ts/type/prev_hash
 #    （走管理 API，不依赖热库表名；N 换成页面显示的断链 id）
@@ -962,14 +1066,14 @@ adminctl --server http://127.0.0.1:7780 audit --since-id $((N-5)) --limit 11 --o
 ```bash
 {
   date -u; uname -a
-  systemctl is-active openchat; systemctl show openchat -p NRestarts -p ExecMainStatus
+  systemctl is-active ufot; systemctl show ufot -p NRestarts -p ExecMainStatus
   adminctl --server http://127.0.0.1:7780 whoami 2>/dev/null || true
-  sqlite3 /var/lib/openchat/chatd.db "PRAGMA wal_checkpoint(PASSIVE); PRAGMA quick_check;"
-  df -h /var/lib/openchat; du -sh /var/lib/openchat/*
+  sqlite3 /var/lib/ufot/chatd.db "PRAGMA wal_checkpoint(PASSIVE); PRAGMA quick_check;"
+  df -h /var/lib/ufot; du -sh /var/lib/ufot/*
   ss -lntp | grep -E ':(8080|7780|9090)'
   curl -s 127.0.0.1:9090/metrics | grep -E 'writech|ratelimit|audit_chain|go_goroutines'
-  journalctl -u openchat -n 200 --no-pager
-} > /tmp/openchat-dump.txt 2>&1
+  journalctl -u ufot -n 200 --no-pager
+} > /tmp/ufot-dump.txt 2>&1
 ```
 
 外发前删除用户 ID/会话 ID/手机号；**不要**打包 `keys/`、`env`、数据库文件。
@@ -983,14 +1087,14 @@ adminctl --server http://127.0.0.1:7780 audit --since-id $((N-5)) --limit 11 --o
 - [ ] **1. systemd 加固**：`NoNewPrivileges=true`、`ProtectSystem=strict`、`ProtectHome=true`、
       `PrivateTmp/PrivateDevices=true`、`ProtectKernel{Tunables,Modules,Logs,ControlGroups,Clock}=true`、
       `RestrictSUIDSGID/LockPersonality/RestrictNamespaces=true`（§6.1 红线）。
-      验证：`systemd-analyze security --offline=true /etc/systemd/system/openchat.service`。
-- [ ] **2. 非 root 独立用户 + EnvironmentFile 0600**：embedded 用 `openchat`，split 每层独立用户；
-      `EnvironmentFile=/etc/openchat/env`（§6.1 红线）。
-      验证：`ps -o user= -p $(systemctl show -p MainPID --value openchat)`。
+      验证：`systemd-analyze security --offline=true /etc/systemd/system/ufot.service`。
+- [ ] **2. 非 root 独立用户 + EnvironmentFile 0600**：embedded 用 `ufot`（embedded-only）；
+      `EnvironmentFile=/etc/ufot/env`（§6.1 红线）。
+      验证：`ps -o user= -p $(systemctl show -p MainPID --value ufot)`。
 - [ ] **3. 最小权限边界**：`CapabilityBoundingSet=` 与 `AmbientCapabilities=` 为空；
       `ReadWritePaths` 只含本进程数据目录；配置与二进制 `ReadOnlyPaths`（§6.1 红线）。
-      验证：`systemctl cat openchat | grep -E 'Capability|ReadWritePaths|ReadOnlyPaths'`。
-- [ ] **4. 文件权限矩阵**：§6 表逐项一致；`find /etc/openchat /var/lib/openchat -perm /o+rwx` 为空
+      验证：`systemctl cat ufot | grep -E 'Capability|ReadWritePaths|ReadOnlyPaths'`。
+- [ ] **4. 文件权限矩阵**：§6 表逐项一致；`find /etc/ufot /var/lib/ufot -perm /o+rwx` 为空
       （§6.2 红线）。验证：§6.1 四条命令。
 - [ ] **5. SSH 基线**：`PermitRootLogin no`、`PasswordAuthentication no`、仅 ed25519 公钥、
       `MaxAuthTries 3`、`AllowUsers` 白名单（§6.3 红线）。
@@ -1005,9 +1109,9 @@ adminctl --server http://127.0.0.1:7780 audit --since-id $((N-5)) --limit 11 --o
       验证：`curl --data-binary @2MB.bin https://域名/api/v1/auth/login` 应 413。
 - [ ] **9. 密钥清单与轮换**：§6.4.1 清单齐全、`kid` 支持双钥轮换、私钥不入库不进镜像、
       `backup.key`/`db_disk_key` 离线保管（§6.4.1 红线）。
-      验证：`ls -l /etc/openchat/keys`；`git grep -n 'BEGIN PRIVATE KEY'` 应为空。
+      验证：`ls -l /etc/ufot/keys`；`git grep -n 'BEGIN PRIVATE KEY'` 应为空。
 - [ ] **10. 备份与审计**：备份加密 + 异地 + 至少一次成功恢复演练（§8.5）；审计链每日校验，
-      断裂按 P0 处置（§6.4.2 红线）。验证：`systemctl list-timers openchat-backup.timer`；
+      断裂按 P0 处置（§6.4.2 红线）。验证：`systemctl list-timers ufot-backup.timer`；
       后台审计页「校验哈希链」返回 ok。
 
 **密钥轮换日历**（§6.4.1）：`jwt_sign_key` 180 天、`admin_jwt_key` 90 天、`ipc_key`/`hmac_key` 90 天、
@@ -1019,22 +1123,19 @@ adminctl --server http://127.0.0.1:7780 audit --since-id $((N-5)) --limit 11 --o
 
 ## 附录 A：骨架阶段差异（联调必读）
 
-部署件按**目标形态**编写；当前仓库的 `chatd` 已具备 1.0 装配（管理 REST、冷库与归档作业、媒体上传/下载、
-内嵌 SPA 均已接线）。下表只列仍会被实测到、且会让"照文档做却起不来"的差异，逐条给绕过方式：
+部署件按**目标形态**编写；当前仓库的 `chatd` 已具备 1.0 装配（管理 REST、冷库与归档作业、媒体上传/下载均已接线）。下表只列仍会被实测到、且会让"照文档做却起不来"的差异，逐条给绕过方式：
 
 | # | 差异 | 现象 | 临时绕过 / 上线前要求 |
 |---|---|---|---|
-| A.1 | 未实现 `sd_notify(READY=1)`，但 unit 是 `Type=notify` + `WatchdogSec=15` | `start operation timed out`，`Restart=always` 反复重启 | **仅联调**：`sudo systemctl edit --full openchat`，把 `Type=notify` 改 `Type=exec`、`WatchdogSec=15` 改 `WatchdogSec=0`；**上线前必须恢复**并实现 notify + watchdog 心跳 |
 | A.2 | Prometheus `/metrics` 与 `metrics_listen` 未实现（管理 API 只有 `/api/v1/metrics` 摘要） | Caddy `/metrics` 对白名单内来源 502、对公网 404 | 先从管理 API 取指标；上线前接入 Prometheus handler 并监听 9090 |
-| A.3 | `install.sh` 只安装 `chatd`，不安装 `adminctl` / `openchatctl` | `command not found` | 按 §9.1 从 `current/bin` 或源码 `install` 到 `/usr/local/bin` |
+| A.3 | `install.sh` 只安装 `chatd`，不安装 `adminctl` / `ufotctl` | `command not found` | 按 §9.1 从 `current/bin` 或源码 `install` 到 `/usr/local/bin` |
 | A.4 | 管理 REST 已挂载：`/api/v1/*` 在 `admin_rest_listen`（默认 `127.0.0.1:7781`） | 启动日志出现 `rest_layer="admin_rest_listen"`，管理 API 由该监听提供（不再有 `not_wired`） | 无需绕过；本机/内网按 §4.4 验证。注意 REST 端口与 `admin_listen`（7780，帧注入）是两个监听 |
-| A.5 | `deploy/openchat.toml` 中部分契约字段当前二进制未消费 | 改了 `metrics_listen`/上传上限等无效果 | 见 §3.1 表后的「消费进度」注记 |
-| A.6 | SPA 已内嵌（`server/web`，`go:embed`），`chatd` 在 `listen` 为 TCP 时同时托管 `/` 与 `/admin/` | 发布包无需额外 web 目录；从源码构建若未执行 `make web`，前端资源为空，访问返回 503 `UI is not embedded` | 用发布包，或 `make web && make release`；不要手改 `server/web/*`，它由 `make web` 整目录替换 |
-| A.7 | 冷库与归档作业已接线（jobber 按 `policy.archive.cron` 调度），但 Postgres driver 需部署层注册 | `cold_dsn` 已配置但 driver 未注册时，启动日志报 `cold store disabled: driver not registered`；归档作业仅 dry-run/报错，审计降级为「只写日志不落盘」 | 部署层 import `github.com/lib/pq`（注册 `postgres` driver，匹配 `sql.Open("postgres", …)`）或注册同名 driver 的 pgx 包装（二进制按架构约定不携带 driver）；未注册前不要开启归档，审计按 security-spec §5.5 补接 |
+| A.5 | `deploy/ufot.toml` 中部分契约字段当前二进制未消费 | 改了 `metrics_listen`/上传上限等无效果 | 见 §3.1 表后的「消费进度」注记 |
+| A.6 | 后端不托管 UI：`GET /` 返回 JSON 服务描述符，`/admin/` 等 HTML 路径不存在 | 浏览器打开站点首页是 JSON 而非网页（不是故障） | 客户端是独立程序，按 client-contract.md 接入；管理走 `adminctl` / `opchat` / REST |
+| A.7 | 冷库与归档作业已接线（jobber 按 `policy.archive.cron` 调度），Postgres driver 由部署层注入 | 主二进制 `chatd` 不携带 driver（架构红线）；`cold_dsn`/`UFOT_COLD_DSN` 已配置但 driver 未注册时，启动日志报 `cold store disabled: no postgres driver registered`，归档仅 dry-run、审计降级为「只写日志不落盘」 | 用冷库变体 **`chatd-pg`**（`make build-pg`，内嵌 pgx/v5/stdlib，见 `server/cmd/chatd-pg/`），或自行注册 `postgres`/`pgx` driver；`UFOT_COLD_DSN` 经 `/etc/ufot/env`（0600）注入，覆盖 toml 的 `cold_dsn`；未接冷库前不要开启 `require_audit_store` |
 | A.8 | 媒体上传/下载已提供（MVP，无会话 ACL） | `POST /api/media/upload` 与 `GET /api/media/{id}` 可用；下载只校验登录态 + 不可枚举 `media_id`，无会话级 ACL，无异步病毒扫描 | 1.0 可用于可信小规模部署，勿把 `media_id` 外传给非会话成员；1.1 补会话 ACL 与 ClamAV |
 
-**发布前必须关闭的临时措施**：A.1 的 `Type=exec`/`WatchdogSec=0`（改回 notify 前先确认
-`READY=1` 与 `WATCHDOG=1` 已实现）。A.7 的 driver 注册与审计落盘、A.8 的媒体会话 ACL 属于生产
+**发布前必须关闭的临时措施**：A.7 的 driver 注册与审计落盘、A.8 的媒体会话 ACL 属于生产
 安全基线，上线前必须补齐或明确接受风险；其余项只影响功能完整性。
 
 ---
@@ -1042,14 +1143,13 @@ adminctl --server http://127.0.0.1:7780 audit --since-id $((N-5)) --limit 11 --o
 ## 附录 B：目录速查
 
 ```
-/opt/openchat/current/bin/chatd                 # 单二进制（含内嵌前端）
-/opt/openchat/current/{deploy,web}              # release.sh 打包时附带
-/etc/openchat/{openchat.toml,policy.json,env,Caddyfile.reference}
-/etc/openchat/keys/{*.pem,*_key,backup.key}
-/etc/openchat/config/chatd.toml -> ../openchat.toml
-/var/lib/openchat/{chatd.db,admin.db,media/,backup/}
-/run/openchat/*.sock                            # split 层间 UDS，0600
-/etc/systemd/system/openchat*.service
-/etc/systemd/journald.conf.d/openchat.conf     # SystemMaxUse=200M
-/usr/local/sbin/openchat-backup                 # §8.2 手动安装
+/opt/ufot/current/bin/chatd                 # 单二进制（纯后端）
+/opt/ufot/current/deploy                    # release.sh 打包时附带
+/etc/ufot/{ufot.toml,policy.json,env,Caddyfile.reference}
+/etc/ufot/keys/{*.pem,*_key,backup.key}
+/etc/ufot/config/chatd.toml -> ../ufot.toml
+/var/lib/ufot/{chatd.db,admin.db,media/,backup/}
+/etc/systemd/system/ufot*.service
+/etc/systemd/journald.conf.d/ufot.conf     # SystemMaxUse=200M
+/usr/local/sbin/ufot-backup                 # §8.2 手动安装
 ```

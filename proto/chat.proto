@@ -1,10 +1,10 @@
 syntax = "proto3";
 
-// OpenChat 唯一契约源：所有 kind 定义 + Envelope。
+// UFOT 唯一契约源：所有 kind 定义 + Envelope。
 // 号段总表见 docs/architecture.md「统一 kind 号段」。
 package chat.v1;
 
-option go_package = "github.com/yingo-server/OpenChat/server/internal/proto/gen/chatpb;chatpb";
+option go_package = "github.com/yingo-server/UFOT/server/internal/proto/gen/chatpb;chatpb";
 
 // ===================================================================
 // 0-99 系统层（连接生命周期 / 鉴权 / 同步 / 错误）
@@ -33,6 +33,11 @@ message Hello {
   repeated string capabilities = 3;
   string nonce = 4;
   reserved 5 to 9;
+  // pull_capable：旧客户端能力协商（lts-1.4-acceptance §B）。true = 该客户端
+  // 已实现 kind 14 WATERMARK 处理器，可在普遍拉取模式下改走水位线 + 拉取；
+  // false/缺省 = 旧客户端，服务端必须保持 inline 逐成员推（不漏消息）。
+  // 与 capabilities 里的 "pull_capable" 能力串等价（二者取或）。
+  bool pull_capable = 10;
 }
 
 message Auth {
@@ -233,7 +238,21 @@ message ConvPayload { // CONV 系列通用应答体
   fixed64 created_at = 4;
   repeated Member members = 5;
   uint32 version = 6;
-  reserved 7 to 9;
+  // 拉取模式（docs/pull-mode-spec-v1.2.md §1.4）：大群不再推全量成员快照。
+  // members_omitted=true 时 members 为空，成员数由 member_count 给出，成员列表
+  // 由客户端按需走 930/931 拉取。旧客户端忽略未知字段 → 等同"成员列表为空"，
+  // 不构成回退（原先大群快照会因超 64KB 被拒）。
+  bool members_omitted = 7;
+  uint32 member_count = 8;
+  reserved 9;
+}
+
+message Watermark { // 14 WATERMARK，服务端 → 客户端，拉取模式会话的最新 seq 通知
+  uint64 conv_id      = 1; // 会话 ID
+  uint64 latest_seq   = 2; // 该会话当前已分配的最大 seq（落库后必已可拉）
+  uint32 reason       = 3; // 0=周期(批次推进) 1=重连/首次 2=flag 切换回 inline 前最后一次
+  uint32 member_count = 4; // 发送时会话成员数（客户端展示与诊断用，不参与逻辑）
+  reserved 5 to 9;
 }
 
 message ConvCreate {
@@ -383,11 +402,24 @@ message PresenceUpdate {
   reserved 4 to 9;
 }
 
+// PresenceSubscribe is a CLIENT→SERVER intent to watch other users' presence
+// (user_ids = the peers to observe). NOTE: this message is currently UNUSED —
+// the server does not implement client-driven presence subscription. In
+// particular it is NOT what WS kind 401/402 carry.
+//
+// The real, in-use 401/402 semantics are SERVER-emitted connection-lifecycle
+// events: 401 (PRESENCE_ONLINE) = a peer came online, 402 (PRESENCE_OFFLINE) =
+// a peer went offline, fanned out to the peers sharing a conversation. Do not
+// model 401/402 as (un)subscribe requests — a client built on that reading
+// would be exactly backwards.
 message PresenceSubscribe {
   repeated uint64 user_ids = 1;
   reserved 2 to 9;
 }
 
+// PresenceUnsubscribe is the counterpart of PresenceSubscribe above and is
+// likewise UNUSED (see the note on PresenceSubscribe). WS kind 402 is the
+// server's "peer went offline" event, not a client unsubscribe request.
 message PresenceUnsubscribe {
   repeated uint64 user_ids = 1;
   reserved 2 to 9;

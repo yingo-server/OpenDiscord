@@ -1,0 +1,95 @@
+/* MD1 布局：彩色 AppBar、导航抽屉、三栏会话布局。 */
+
+.uf-shell {
+  display: grid;
+  grid-template-columns: var(--rail-w) minmax(0, 1fr);
+  height: 100dvh;
+  background: var(--bg);
+}
+
+/* 左侧导航（MD1 永久抽屉窄条） */
+.uf-rail {
+  display: flex; flex-direction: column; align-items: center;
+  gap: var(--sp-1); padding: var(--sp-2) 0;
+  background: var(--surface); box-shadow: var(--elev-1); z-index: 2;
+}
+.uf-rail__logo {
+  display: flex; align-items: center; justify-content: center;
+  width: 40px; height: 40px; margin-bottom: var(--sp-2);
+  border-radius: 50%; background: var(--primary); color: #fff;
+  font-weight: 700; font-size: var(--fs-sm);
+}
+.uf-rail__item {
+  position: relative;
+  display: flex; align-items: center; justify-content: center;
+  width: 48px; height: 48px; border: none; border-radius: 50%;
+  background: transparent; color: var(--text-dim);
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.uf-rail__item:hover { background: rgba(127,127,127,.14); color: var(--text); }
+.uf-rail__item--active { color: var(--primary); background: rgba(59,130,246,.12); }
+
+.uf-main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+
+/* MD1 AppBar：彩色主色条 + 阴影 */
+.uf-topbar {
+  display: flex; align-items: center; gap: var(--sp-2);
+  min-height: var(--topbar-h); padding: 0 var(--sp-3);
+  background: var(--appbar); color: var(--appbar-text);
+  box-shadow: var(--elev-2); position: relative; z-index: 3;
+}
+.uf-topbar__title { font-size: var(--fs-lg); font-weight: 500; }
+.uf-topbar__sub { font-size: var(--fs-xs); opacity: 0.78; }
+.uf-topbar .uf-iconbtn { color: var(--appbar-text); }
+.uf-topbar .uf-iconbtn:hover { background: rgba(255,255,255,.16); }
+.uf-topbar .uf-avatar { background: rgba(255,255,255,.2); color: var(--appbar-text); }
+
+/* 会话区：左侧列表卡片 + 右侧详情 */
+.uf-chats {
+  display: grid; grid-template-columns: var(--list-w) minmax(0, 1fr);
+  height: 100%; min-height: 0;
+}
+.uf-list {
+  display: flex; flex-direction: column; min-width: 0; min-height: 0;
+  background: var(--surface); box-shadow: var(--elev-1); z-index: 1;
+}
+.uf-list__top {
+  display: flex; align-items: center; gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--surface); border-bottom: 1px solid var(--border);
+}
+.uf-list__top .uf-topbar__title { color: var(--text); }
+.uf-list__search { padding: var(--sp-2) var(--sp-3); }
+.uf-list__scroll { flex: 1; overflow-y: auto; overscroll-behavior: contain; }
+.uf-list__footer {
+  padding: var(--sp-2) var(--sp-3) calc(var(--sp-3) + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--border); background: var(--surface);
+}
+.uf-list__section { padding: var(--sp-2) var(--sp-3) var(--sp-1); font-size: var(--fs-xs); color: var(--text-faint); }
+
+/* 底部 Tab 栏（手机） */
+.uf-bottomtabs {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
+  display: none; align-items: stretch;
+  padding-bottom: env(safe-area-inset-bottom);
+  background: var(--surface); box-shadow: 0 -2px 8px rgba(0,0,0,.16);
+}
+.uf-bottomtabs__item {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 2px;
+  min-height: var(--hit-min-mobile); border: none; background: transparent;
+  color: var(--text-dim); font-size: 11px; text-decoration: none;
+}
+.uf-bottomtabs__item--active { color: var(--primary); }
+
+@media (max-width: 1023px) {
+  .uf-chats { grid-template-columns: minmax(0, 1fr); }
+  .uf-chats[data-pane='list'] .uf-list { display: flex; }
+  .uf-chats[data-pane='list'] .uf-detail { display: none; }
+  .uf-chats[data-pane='chat'] .uf-list { display: none; }
+}
+@media (max-width: 767px) {
+  .uf-shell { grid-template-columns: minmax(0, 1fr); padding-bottom: calc(var(--hit-min-mobile) + env(safe-area-inset-bottom)); }
+  .uf-rail { display: none; }
+  .uf-bottomtabs { display: flex; }
+}

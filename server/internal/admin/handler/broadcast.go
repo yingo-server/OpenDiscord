@@ -3,8 +3,8 @@ package handler
 import (
 	"net/http"
 
-	"github.com/yingo-server/OpenChat/server/internal/admin/middleware"
-	"github.com/yingo-server/OpenChat/server/internal/admin/service"
+	"github.com/yingo-server/UFOT/server/internal/admin/middleware"
+	"github.com/yingo-server/UFOT/server/internal/admin/service"
 )
 
 func (a *API) handleBroadcast(w http.ResponseWriter, r *http.Request) {

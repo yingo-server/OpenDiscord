@@ -1,16 +1,15 @@
 #!/usr/bin/env bash
 # ---------------------------------------------------------------------------
-# OpenChat 发布脚本：构建 → 打包 → 上传 → 远程切换 → 健康检查 → 失败回滚
+# UFOT 发布脚本：构建 → 打包 → 上传 → 远程切换 → 健康检查 → 失败回滚
 #
 #   ./deploy/release.sh --target root@chat.example.com
 #   ./deploy/release.sh --target root@host --version v1.4.2 --skip-build
 #
 # 远端布局（单机）：
-#   /opt/openchat/releases/<version>/{bin,web}
-#   /opt/openchat/current -> releases/<version>     # 原子切换点
-#   /opt/openchat/last    -> releases/<上一版本>     # 回滚点
-#   /opt/openchat/bin     -> current/bin
-#   /opt/openchat/web     -> current/web
+#   /opt/ufot/releases/<version>/bin
+#   /opt/ufot/current -> releases/<version>     # 原子切换点
+#   /opt/ufot/last    -> releases/<上一版本>     # 回滚点
+#   /opt/ufot/bin     -> current/bin
 #
 # 回滚语义：健康检查（HTTP /healthz，404 时退化为 systemd is-active）失败
 #           → 把 current 指回 last → 重启 → 再次检查 → 仍失败则退出非 0 并保留现场。
@@ -21,28 +20,34 @@ set -euo pipefail
 SCRIPT_DIR=$(cd -- "$(dirname -- "$0")" && pwd)
 REPO_DIR=$(cd -- "$SCRIPT_DIR/.." && pwd)
 
-TARGET="${OPENCHAT_DEPLOY_TARGET:-}"
-REMOTE_ROOT="${OPENCHAT_REMOTE_ROOT:-/opt/openchat}"
-SERVICE="${OPENCHAT_SERVICE:-openchat.service}"
-HEALTH_URL="${OPENCHAT_HEALTH_URL:-http://127.0.0.1:8080/healthz}"
-SSH_PORT="${OPENCHAT_SSH_PORT:-22}"
+TARGET="${UFOT_DEPLOY_TARGET:-}"
+REMOTE_ROOT="${UFOT_REMOTE_ROOT:-/opt/ufot}"
+SERVICE="${UFOT_SERVICE:-ufot.service}"
+HEALTH_URL="${UFOT_HEALTH_URL:-http://127.0.0.1:8080/healthz}"
+SSH_PORT="${UFOT_SSH_PORT:-22}"
 SKIP_BUILD=0
 VERSION=""
 
-log()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
-warn() { printf '\033[1;33m[warn]\033[0m %s\n' "$*" >&2; }
-die()  { printf '\033[1;31m[error]\033[0m %s\n' "$*" >&2; exit 1; }
+# Shared output helpers; fallback for standalone copies without deploy/lib/.
+if [ -f "$SCRIPT_DIR/lib/output.sh" ]; then
+  # shellcheck source=lib/output.sh
+  . "$SCRIPT_DIR/lib/output.sh"
+else
+  log()  { printf '==> %s\n' "$*"; }
+  warn() { printf '[warn] %s\n' "$*" >&2; }
+  die()  { printf '[error] %s\n' "$*" >&2; exit 1; }
+fi
 
 usage() {
   cat <<'EOF'
 用法: release.sh --target user@host [选项]
 
-  --target USER@HOST   目标机（也可用 OPENCHAT_DEPLOY_TARGET）
+  --target USER@HOST   目标机（也可用 UFOT_DEPLOY_TARGET）
   --version VERSION    发布版本号（默认 git describe --tags --always --dirty）
-  --skip-build         复用已有 dist/ 与 apps/*/dist
-  --service NAME       systemd 单元名（默认 openchat.service）
+  --skip-build         复用已有 dist/ 产物
+  --service NAME       systemd 单元名（默认 ufot.service）
   --health-url URL     健康检查地址（默认 http://127.0.0.1:8080/healthz）
-  --remote-root DIR    远端根目录（默认 /opt/openchat）
+  --remote-root DIR    远端根目录（默认 /opt/ufot）
   --ssh-port PORT      SSH 端口（默认 22）
   -h, --help
 EOF
@@ -84,17 +89,11 @@ log "发布版本: $VERSION"
 if [ "$SKIP_BUILD" -eq 1 ]; then
   log "跳过构建（--skip-build）"
 else
-  log "构建前端（client + admin）"
-  if [ -d apps/client ]; then
-    ( cd apps/client && npm ci && npm run build )
-  else
-    warn "apps/client 不存在，跳过用户端构建"
-  fi
-  ( cd apps/admin && npm ci && npm run build )
+
 
   log "构建 Go 二进制（trimpath, -s -w）"
   mkdir -p dist
-  for bin in chatd chatd-bridge chatd-user chatd-data chatd-admin; do
+  for bin in chatd; do
     if [ -d "server/cmd/$bin" ]; then
       CGO_ENABLED="${CGO_ENABLED:-1}" go build -trimpath -ldflags "-s -w" -o "dist/$bin" "./server/cmd/$bin"
       log "  dist/$bin"
@@ -107,30 +106,25 @@ fi
 
 # ---------------------------------------------------------------------------
 # 2. 打包（tar.gz + SHA256SUMS）
+#    包布局必须与 install.sh 的查找顺序一致：二进制在包根（chatd、chatd-pg），
+#    deploy/ 需含 install.sh 实际引用的全部子目录（systemd/journald/keygen/lib）。
 # ---------------------------------------------------------------------------
 STAGE="dist/pkg-$VERSION"
 rm -rf "$STAGE"
-mkdir -p "$STAGE/bin" "$STAGE/web" "$STAGE/deploy"
+mkdir -p "$STAGE/deploy"
 
-for f in dist/chatd dist/chatd-bridge dist/chatd-user dist/chatd-data dist/chatd-admin; do
-  [ -f "$f" ] && install -m 0755 "$f" "$STAGE/bin/"
+# 二进制放包根（install.sh 依次找包根/chatd 与 dist/chatd —— 见 install.sh §6）
+for f in dist/chatd dist/chatd-pg; do
+  [ -f "$f" ] && install -m 0755 "$f" "$STAGE/"
 done
 
-if [ -d apps/admin/dist ]; then
-  mkdir -p "$STAGE/web/admin"
-  cp -R apps/admin/dist/. "$STAGE/web/admin/"
-fi
-if [ -d apps/client/dist ]; then
-  mkdir -p "$STAGE/web/client"
-  cp -R apps/client/dist/. "$STAGE/web/client/"
-fi
-
-# 部署件随包发布，保证「发布即自包含」
-cp -R deploy/systemd deploy/policy.json deploy/openchat.toml deploy/Caddyfile "$STAGE/deploy/"
-cp deploy/install.sh "$STAGE/deploy/install.sh"
+# 部署件随包发布，保证「发布即自包含」——必须包含 install.sh 无条件引用的
+# 全部路径（journald/ 缺失会让安装第 7 步硬失败）。
+cp -R deploy/systemd deploy/journald deploy/keygen deploy/lib deploy/policy.json deploy/ufot.toml deploy/Caddyfile "$STAGE/deploy/"
+cp deploy/install.sh deploy/release.sh deploy/backup.sh deploy/install-interactive deploy/logrotate.conf "$STAGE/deploy/" 2>/dev/null || true
 chmod 0755 "$STAGE/deploy/install.sh"
 
-TARBALL="dist/openchat-$VERSION-linux-$(go env GOARCH 2>/dev/null || echo amd64).tar.gz"
+TARBALL="dist/ufot-$VERSION-linux-$(go env GOARCH 2>/dev/null || echo amd64).tar.gz"
 tar -czf "$TARBALL" -C "$STAGE" .
 ( cd dist && sha256sum "$(basename "$TARBALL")" > SHA256SUMS )
 log "产物: $TARBALL"
@@ -195,7 +189,6 @@ switch_to() {
     ln -sfn '$1' '$REMOTE_ROOT/current.new'
     mv -Tf '$REMOTE_ROOT/current.new' '$REMOTE_ROOT/current'
     ln -sfn current/bin '$REMOTE_ROOT/bin'
-    ln -sfn current/web '$REMOTE_ROOT/web'
   "
 }
 

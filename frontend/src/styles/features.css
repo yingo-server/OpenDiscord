@@ -1,0 +1,87 @@
+/* MD1 功能页：会话列表卡片、消息气泡、FAB 输入、管理台卡片。 */
+
+/* 登录：MD1 居中卡片 */
+.uf-login { display: flex; align-items: center; justify-content: center; min-height: 100dvh; padding: var(--sp-5); background: var(--bg); }
+.uf-login__card {
+  width: min(420px, 100%); padding: var(--sp-5);
+  background: var(--surface); border-radius: var(--r-s); box-shadow: var(--elev-2);
+}
+.uf-login__brand { display: flex; flex-direction: column; align-items: center; gap: var(--sp-1); margin-bottom: var(--sp-5); }
+.uf-login__logo { font-size: var(--fs-2xl); font-weight: 500; letter-spacing: 0.06em; color: var(--primary); }
+.uf-login__form { display: flex; flex-direction: column; gap: var(--sp-4); margin-top: var(--sp-4); }
+
+/* 页面容器 */
+.uf-page { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.uf-page__body { flex: 1; overflow-y: auto; padding: var(--sp-4); display: flex; flex-direction: column; gap: var(--sp-3); }
+.uf-card { padding: var(--sp-4); border-radius: var(--r-s); background: var(--surface); box-shadow: var(--elev-1); }
+.uf-card__title { margin: 0 0 var(--sp-3); font-size: var(--fs-lg); font-weight: 500; color: var(--primary); }
+.uf-pre { margin: 0; padding: var(--sp-3); background: var(--surface-2); border-radius: var(--r-s); font-family: ui-monospace, monospace; font-size: var(--fs-xs); line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 22rem; overflow: auto; }
+.uf-boot { height: 100dvh; background: var(--bg); }
+
+/* 会话列表：MD1 两行卡片 */
+.uf-conv {
+  display: flex; align-items: center; gap: var(--sp-3);
+  width: 100%; min-height: 72px; padding: var(--sp-2) var(--sp-3);
+  border: none; background: transparent; text-align: left;
+  transition: background var(--dur-fast) var(--ease);
+}
+.uf-conv:hover { background: rgba(127,127,127,.08); }
+.uf-conv__body { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.uf-conv__row { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+.uf-conv__title { flex: 1; min-width: 0; font-size: var(--fs-md); font-weight: 500; }
+.uf-conv__preview { flex: 1; min-width: 0; color: var(--text-dim); font-size: var(--fs-sm); }
+
+/* 消息流：MD1 聊天气泡 */
+.uf-msglist {
+  position: relative; flex: 1; overflow-y: auto; overscroll-behavior: contain;
+  padding: var(--sp-4) var(--sp-3); display: flex; flex-direction: column; gap: var(--sp-1);
+}
+.uf-daysep {
+  align-self: center; margin: var(--sp-3) 0; padding: var(--sp-1) var(--sp-3);
+  border-radius: var(--r-full); background: var(--surface-2); color: var(--text-faint); font-size: var(--fs-xs);
+}
+.uf-bubble-row { display: flex; align-items: flex-end; gap: var(--sp-2); max-width: 100%; padding: 2px var(--sp-2); }
+.uf-bubble-row--mine { justify-content: flex-end; }
+.uf-bubble-row__spacer { width: 40px; flex: none; }
+.uf-bubble {
+  display: flex; flex-direction: column; gap: var(--sp-1);
+  max-width: min(70%, 560px); padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--r-l); background: var(--other-bubble); color: var(--text);
+  box-shadow: var(--elev-1); font-size: var(--fs-md); overflow-wrap: anywhere;
+}
+.uf-bubble--mine { background: var(--primary); color: #fff; box-shadow: var(--elev-2); }
+.uf-bubble--tomb { opacity: 0.65; font-style: italic; }
+.uf-bubble__text { white-space: pre-wrap; }
+.uf-bubble__meta { align-self: flex-end; display: inline-flex; align-items: center; gap: 3px; color: var(--text-faint); font-size: 11px; }
+.uf-bubble--mine .uf-bubble__meta { color: rgba(255,255,255,.75); }
+.uf-quote { padding: var(--sp-1) var(--sp-2); border-left: 3px solid var(--primary); border-radius: var(--r-s); background: rgba(127,127,127,.12); font-size: var(--fs-sm); }
+.uf-media { display: flex; flex-direction: column; gap: var(--sp-1); }
+.uf-media__item { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2); border-radius: var(--r-s); background: rgba(127,127,127,.12); }
+.uf-bubble__actions { display: flex; align-self: flex-end; gap: 0; margin-top: 2px; }
+.uf-bubble__actions .uf-iconbtn { width: 32px; height: 32px; }
+.uf-jump { position: sticky; bottom: var(--sp-3); align-self: center; padding: var(--sp-1) var(--sp-3); border: none; border-radius: var(--r-full); background: var(--primary); color: #fff; font-size: var(--fs-xs); box-shadow: var(--elev-2); }
+
+/* 输入区：MD1 底部栏 */
+.uf-composer { padding: var(--sp-2) var(--sp-3) calc(var(--sp-2) + env(safe-area-inset-bottom)); background: var(--surface); box-shadow: 0 -2px 8px rgba(0,0,0,.12); }
+.uf-composer__reply { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-1) var(--sp-2); margin-bottom: var(--sp-2); border-left: 3px solid var(--primary); background: var(--surface-2); font-size: var(--fs-sm); }
+.uf-composer__attachments { display: flex; gap: var(--sp-2); overflow-x: auto; padding-bottom: var(--sp-2); }
+.uf-composer__row { display: flex; align-items: flex-end; gap: var(--sp-2); }
+.uf-composer__input { flex: 1; min-height: var(--composer-min-h); max-height: 160px; padding: var(--sp-2) 0; border-bottom: 2px solid var(--border); }
+.uf-composer__input:focus { border-bottom-color: var(--primary); box-shadow: none; }
+.uf-composer__mentions { display: flex; gap: var(--sp-2); overflow-x: auto; padding-top: var(--sp-2); }
+.uf-chip { display: inline-flex; align-items: center; gap: var(--sp-1); flex: none; max-width: 12rem; padding: var(--sp-1) var(--sp-2); border-radius: var(--r-full); background: var(--surface-2); color: var(--text-dim); font-size: var(--fs-xs); }
+.uf-chip--btn { border: none; cursor: pointer; }
+
+/* 管理台：MD1 卡片网格 */
+.uf-admin { display: grid; grid-template-columns: 240px minmax(0, 1fr); height: 100dvh; }
+.uf-admin__nav { display: flex; flex-direction: column; gap: 2px; padding: var(--sp-3); background: var(--primary); color: #fff; box-shadow: var(--elev-2); }
+.uf-admin__brand { margin-bottom: var(--sp-3); padding: 0 var(--sp-2); font-size: var(--fs-lg); font-weight: 500; }
+.uf-admin__link { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-2) var(--sp-3); border-radius: var(--r-s); color: rgba(255,255,255,.82); text-decoration: none; font-size: var(--fs-sm); }
+.uf-admin__link:hover { background: rgba(255,255,255,.14); color: #fff; text-decoration: none; }
+.uf-admin__link--active { background: rgba(255,255,255,.2); color: #fff; font-weight: 500; }
+.uf-admin__main { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow-y: auto; }
+@media (max-width: 767px) {
+  .uf-admin { grid-template-columns: minmax(0,1fr); }
+  .uf-admin__nav { flex-direction: row; overflow-x: auto; }
+  .uf-admin__brand { display: none; }
+}

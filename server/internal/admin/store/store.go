@@ -14,9 +14,9 @@ import (
 
 	"github.com/mattn/go-sqlite3"
 
-	datastore "github.com/yingo-server/OpenChat/server/internal/data/store"
-	"github.com/yingo-server/OpenChat/server/internal/data/store/migrate"
-	"github.com/yingo-server/OpenChat/server/store/migrations"
+	datastore "github.com/yingo-server/UFOT/server/internal/data/store"
+	"github.com/yingo-server/UFOT/server/internal/data/store/migrate"
+	"github.com/yingo-server/UFOT/server/store/migrations"
 )
 
 // Admin mirrors adm_admins.

@@ -68,7 +68,7 @@ func TestExitCodeMapping(t *testing.T) {
 
 func TestLoginSavesCredentialsAndPrintsToken(t *testing.T) {
 	credFile := filepath.Join(t.TempDir(), "adminctl.json")
-	t.Setenv("OPENCHAT_ADMIN_CREDENTIALS", credFile)
+	t.Setenv("UFOT_ADMIN_CREDENTIALS", credFile)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/v1/login" || r.Method != http.MethodPost {
@@ -127,5 +127,126 @@ func TestCompletionBash(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "complete -F _adminctl adminctl") {
 		t.Fatalf("completion output = %s", out.String())
+	}
+}
+
+func TestSubcommandHelpExitsZero(t *testing.T) {
+	cmds := [][]string{
+		{"login", "--help"},
+		{"whoami", "--help"},
+		{"users", "list", "--help"},
+		{"users", "show", "--help"},
+		{"users", "ban", "--help"},
+		{"users", "unban", "--help"},
+		{"kick", "--help"},
+		{"reports", "list", "--help"},
+		{"reports", "show", "--help"},
+		{"reports", "handle", "--help"},
+		{"messages", "search", "--help"},
+		{"messages", "recall", "--help"},
+		{"broadcast", "preview", "--help"},
+		{"broadcast", "send", "--help"},
+		{"flags", "list", "--help"},
+		{"flags", "set", "--help"},
+		{"audit", "--help"},
+		{"archive", "status", "--help"},
+		{"archive", "run", "--help"},
+		{"metrics", "--help"},
+		{"logout", "--help"},
+	}
+	for _, args := range cmds {
+		var out, errb bytes.Buffer
+		if code := run(args, nil, &out, &errb); code != exitOK {
+			t.Fatalf("%v exit=%d want 0 (stderr=%s)", args, code, errb.String())
+		}
+		if out.Len()+errb.Len() == 0 {
+			t.Fatalf("%v printed nothing", args)
+		}
+	}
+}
+
+func TestLogoutRemovesCredentials(t *testing.T) {
+	credFile := filepath.Join(t.TempDir(), "adminctl.json")
+	t.Setenv("UFOT_ADMIN_CREDENTIALS", credFile)
+	if err := os.WriteFile(credFile, []byte(`{"server":"http://x","token":"tok"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var sawLogout bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/logout" && r.Method == http.MethodPost {
+			sawLogout = true
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	var out, errb bytes.Buffer
+	if code := run([]string{"--server", srv.URL, "--token", "tok", "logout"}, nil, &out, &errb); code != exitOK {
+		t.Fatalf("logout exit=%d err=%s", code, errb.String())
+	}
+	if !sawLogout {
+		t.Fatal("logout did not POST /api/v1/logout")
+	}
+	if _, err := os.Stat(credFile); !os.IsNotExist(err) {
+		t.Fatalf("credentials file still present: %v", err)
+	}
+}
+
+func TestMetricsRawAndJSON(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/metrics" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "text/plain")
+		_, _ = w.Write([]byte("# HELP ufot_up\nexample_metric 1\n"))
+	}))
+	defer srv.Close()
+
+	// Default (table/text) prints the Prometheus text verbatim.
+	var out, errb bytes.Buffer
+	if code := run([]string{"--server", srv.URL, "--token", "t", "metrics"}, nil, &out, &errb); code != exitOK {
+		t.Fatalf("metrics exit=%d err=%s", code, errb.String())
+	}
+	if !strings.Contains(out.String(), "example_metric 1") || strings.Contains(out.String(), "raw") {
+		t.Fatalf("metrics raw output = %q", out.String())
+	}
+
+	// --output json wraps the raw text as {"raw": "..."}.
+	out.Reset()
+	errb.Reset()
+	if code := run([]string{"--server", srv.URL, "--token", "t", "--output", "json", "metrics"}, nil, &out, &errb); code != exitOK {
+		t.Fatalf("metrics json exit=%d err=%s", code, errb.String())
+	}
+	var wrap map[string]string
+	if err := json.Unmarshal(out.Bytes(), &wrap); err != nil {
+		t.Fatalf("metrics json: %v (%s)", err, out.String())
+	}
+	if !strings.Contains(wrap["raw"], "example_metric 1") {
+		t.Fatalf("metrics json raw = %q", wrap["raw"])
+	}
+}
+
+func TestLogoutUnauthorizedMapsTo77(t *testing.T) {
+	credFile := filepath.Join(t.TempDir(), "adminctl.json")
+	t.Setenv("UFOT_ADMIN_CREDENTIALS", credFile)
+	if err := os.WriteFile(credFile, []byte(`{"server":"http://x","token":"stale"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"code":401,"reason":"unauthenticated"}`))
+	}))
+	defer srv.Close()
+
+	var out, errb bytes.Buffer
+	if code := run([]string{"--server", srv.URL, "--token", "stale", "logout"}, nil, &out, &errb); code != exitDenied {
+		t.Fatalf("logout 401 exit=%d want %d", code, exitDenied)
+	}
+	if _, err := os.Stat(credFile); err != nil {
+		t.Fatalf("credentials must survive a failed logout: %v", err)
 	}
 }

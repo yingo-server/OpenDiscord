@@ -7,9 +7,9 @@ package router
 import (
 	"sync"
 
-	"github.com/yingo-server/OpenChat/server/internal/pipedef"
-	chatpb "github.com/yingo-server/OpenChat/server/internal/proto/gen/chatpb"
-	"github.com/yingo-server/OpenChat/server/internal/proto/kinds"
+	"github.com/yingo-server/UFOT/server/internal/pipedef"
+	chatpb "github.com/yingo-server/UFOT/server/internal/proto/gen/chatpb"
+	"github.com/yingo-server/UFOT/server/internal/proto/kinds"
 )
 
 // Target 一个投递目标：层 + bus topic。
@@ -19,8 +19,12 @@ type Target = pipedef.Target
 type Router struct {
 	mu sync.RWMutex
 	// table: kind 段 → 目标。查询顺序：精确 kind → 段规则。
-	exact  map[uint32][]Target
-	ranges []rangeRule
+	exact map[uint32][]Target
+	// fromData: 当帧来源层是 data 时的覆盖表。用于「同 kind 双向转发」的信令
+	// （如通话 350-354）：客户端上行 350 → data；data 回填后下行 350 → user。
+	// 静态按 kind 查表无法区分方向，故在此按来源层分流（仍是纯表查询）。
+	fromData map[uint32][]Target
+	ranges   []rangeRule
 }
 
 type rangeRule struct {
@@ -33,7 +37,7 @@ func New(table map[uint32][]Target) *Router {
 	if table == nil {
 		table = DefaultTable()
 	}
-	r := &Router{exact: map[uint32][]Target{}}
+	r := &Router{exact: map[uint32][]Target{}, fromData: map[uint32][]Target{}}
 	for k, ts := range table {
 		cp := append([]Target(nil), ts...)
 		r.exact[k] = cp
@@ -69,6 +73,27 @@ func (r *Router) Route(kind uint32, env *chatpb.Envelope) []Target {
 		}
 	}
 	return nil
+}
+
+// RouteFrom 在 Route 基础上增加「来源层」维度：data 来源的帧先查 fromData
+// 覆盖表，其余落回普通 Route。用于同一 kind 上下行分流的信令转发。
+func (r *Router) RouteFrom(kind uint32, env *chatpb.Envelope, srcLayer string) []Target {
+	if srcLayer == "data" {
+		r.mu.RLock()
+		ts, ok := r.fromData[kind]
+		r.mu.RUnlock()
+		if ok {
+			return append([]Target(nil), ts...)
+		}
+	}
+	return r.Route(kind, env)
+}
+
+// SetFromData 设置一条「来源层=data 时」的精确路由覆盖。
+func (r *Router) SetFromData(kind uint32, ts []Target) {
+	r.mu.Lock()
+	r.fromData[kind] = append([]Target(nil), ts...)
+	r.mu.Unlock()
 }
 
 // Set 覆盖/追加一条精确规则（SIGHUP 热重载白名单：路由表）。

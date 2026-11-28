@@ -20,6 +20,18 @@ type config struct {
 	AdminListen     string // admin HTTP listen address (bridge AdminAPI: /admin/inject)
 	AdminRESTListen string // admin REST listen address (/api/v1/*) — loopback only
 	PublicOrigin    string // e.g. https://chat.example.com
+	// CORSMode: "allow_any"（默认，独立前端）/ "allow_list" / "off"。
+	CORSMode string
+	// CORSOrigins: allow_list 模式下的额外 Origin（逗号分隔）。
+	CORSOrigins []string
+	// CookieSameSite: "lax"(默认) | "none"（独立托管前端跨站携带 Cookie 时用，
+	// 仅 https public_origin 下合法——违例启动即失败）。
+	CookieSameSite string
+	// 可选 TLS 证书对（listen 直接 https 时用；部署方管理证书与续期）。
+	TLSCertFile string
+	TLSKeyFile  string
+	// AllowAnyOrigin: WS 握手放行任意 Origin（独立前端默认 true）。
+	AllowAnyOrigin bool
 
 	HotDB   string // SQLite hot database
 	AdminDB string // SQLite admin database (separate file, least privilege)
@@ -50,6 +62,14 @@ type config struct {
 	// Flags are the boot-time feature-flag defaults written into the hot DB
 	// and served to clients (SIGHUP re-publishes them).
 	Flags map[string]bool
+
+	// TurnURL 是自建 TURN 地址（turn:/turns:），仅管理面 TURN 自检用
+	//（OPS-2：admin diagnostics ProbeTURN；空 = 自检返回"未配置"）。
+	TurnURL string
+
+	// ProvidersPath 是供应商 webhook 配置文件路径（OPS-2：authsvc 适配器；
+	// 空/缺失 = 通道保持 fail-closed，不发送、不 panic）。
+	ProvidersPath string
 }
 
 func defaultConfig() *config {
@@ -59,6 +79,11 @@ func defaultConfig() *config {
 		AdminListen:     "127.0.0.1:7780",
 		AdminRESTListen: "127.0.0.1:7781",
 		PublicOrigin:    "",
+		// Backend-only deployment: the UI is a separate program, so the
+		// service answers any origin by default. Both knobs exist to tighten
+		// the posture back down (allow_list / off).
+		CORSMode:        "allow_any",
+		AllowAnyOrigin:  true,
 		HotDB:           "./data/chatd.db",
 		AdminDB:         "./data/admin.db",
 		ColdDSN:         "",
@@ -71,7 +96,10 @@ func defaultConfig() *config {
 		AccessTTLSec:    900,
 		RefreshTTLSec:   30 * 24 * 3600,
 		DevOTP:          false,
-		Flags:           map[string]bool{},
+		// Rate limiting is ON by default: flipping it off is a capacity-test
+		// switch, never a production setting (security-spec §1 红线).
+		RateLimitEnabled: true,
+		Flags:            map[string]bool{},
 	}
 }
 
@@ -103,6 +131,22 @@ func loadConfig(path string) (*config, error) {
 			cfg.AdminRESTListen = v
 		case "public_origin":
 			cfg.PublicOrigin = v
+		case "cors_mode":
+			cfg.CORSMode = v
+		case "cors_origins":
+			for _, o := range strings.Split(v, ",") {
+				if o = strings.TrimSpace(o); o != "" {
+					cfg.CORSOrigins = append(cfg.CORSOrigins, o)
+				}
+			}
+		case "cookie_same_site":
+			cfg.CookieSameSite = v
+		case "tls_cert":
+			cfg.TLSCertFile = v
+		case "tls_key":
+			cfg.TLSKeyFile = v
+		case "allow_any_origin":
+			cfg.AllowAnyOrigin = v == "true"
 		case "hot_db":
 			cfg.HotDB = v
 		case "admin_db":
@@ -137,6 +181,10 @@ func loadConfig(path string) (*config, error) {
 			if n, e := strconv.Atoi(v); e == nil && n > 0 {
 				cfg.RefreshTTLSec = n
 			}
+		case "providers_path":
+			cfg.ProvidersPath = v
+		case "turn_url":
+			cfg.TurnURL = v
 		}
 	}
 	// [feature_flags] section overrides the compiled defaults.

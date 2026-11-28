@@ -1,10 +1,11 @@
-# OpenChat 边缘网关（Caddy v2）
+# UFOT 边缘网关（Caddy v2）
 #
 # 职责边界：
 #   - 自动 HTTPS（ACME，Let's Encrypt）
 #   - /ws           → 用户层（WebSocket upgrade）
-#   - /api/admin/*  → 管理层，仅白名单 IP
-#   - 其余（含 /admin/ 静态资源与 /api/v1/*）→ chatd / usergw，SPA 由二进制内嵌托管
+#   - /api/*        → 用户面 HTTP（auth / media / push），CORS 由 chatd 统一处理
+#   - 其余          → chatd（GET / 返回服务描述 JSON —— 后端不托管任何页面；
+#                     用户界面是独立的客户端程序，经 env 指向本服务）
 #
 # 限流：Caddy 核心没有 rate_limit 指令。三条路任选其一（详见文末注释）：
 #   (a) 编译 caddy-ratelimit 插件（推荐，按 IP/路径做令牌桶）
@@ -12,17 +13,17 @@
 #   (c) 云厂商 WAF / CDN 边缘规则
 # 本文件保留 (a) 的配置位置，默认注释掉以保证 stock caddy 可直接加载。
 {
-	email {$OPENCHAT_ACME_EMAIL:ops@example.com}
+	email {$UFOT_ACME_EMAIL:ops@example.com}
 	# 关掉版本头，减少指纹
 	servers {
 		trusted_proxies static private_ranges
 	}
-	# 管理端 SPA 与 API 不允许被搜索引擎索引
+	# 管理 API 不允许被搜索引擎索引
 	admin off
 }
 
-# 站点域名从环境变量注入：OPENCHAT_DOMAIN=chat.example.com
-{$OPENCHAT_DOMAIN:chat.example.com} {
+# 站点域名从环境变量注入：UFOT_DOMAIN=chat.example.com
+{$UFOT_DOMAIN:chat.example.com} {
 	encode zstd gzip
 
 	# ------------------------------------------------------------------
@@ -81,9 +82,9 @@
 		#     }
 		# }
 
-		# 端口：split 形态的用户层默认 8081；embedded 单进程用
-		# OPENCHAT_WS_PORT=8080 覆盖（与 openchat.toml 的 listen 一致）。
-		reverse_proxy 127.0.0.1:{$OPENCHAT_WS_PORT:8081} {
+		# 端口：embedded 单进程默认 8080（与 ufot.toml 的 listen 一致）。
+		# embedded-only：split 用户层 8081 形态未实现，勿改默认端口。
+		reverse_proxy 127.0.0.1:{$UFOT_WS_PORT:8080} {
 			# WS 需要长连接：关闭响应缓冲与超时
 			flush_interval -1
 			transport http {
@@ -141,8 +142,8 @@
 	handle @metrics {
 		@metricsDenied not remote_ip 127.0.0.1/32 10.0.0.0/8 192.168.0.0/16
 		respond @metricsDenied "Not Found" 404
-		# 指到 openchat.toml 的 metrics_listen（默认 9090），不是用户层端口。
-		reverse_proxy 127.0.0.1:{$OPENCHAT_METRICS_PORT:9090}
+		# 指到 ufot.toml 的 metrics_listen（默认 9090），不是用户层端口。
+		reverse_proxy 127.0.0.1:{$UFOT_METRICS_PORT:9090}
 	}
 
 	# ------------------------------------------------------------------
@@ -173,13 +174,11 @@
 	}
 
 	# ------------------------------------------------------------------
-	# 5) 其余全部：chatd 内嵌 SPA（用户端 /，管理端 /admin/）
-	#    静态文件由二进制 embed.FS 托管，不需要 Caddy file_server。
+	# 5) 其余全部 → chatd（后端；/ 返回服务描述 JSON，未知路径返回 JSON 404）
 	# ------------------------------------------------------------------
 	handle {
 		reverse_proxy 127.0.0.1:8080 {
 			header_up X-Real-IP {remote_host}
 		}
-		# 缓存策略由 chatd 内嵌服务器设置（index.html no-cache，hash 资源 immutable）
 	}
 }

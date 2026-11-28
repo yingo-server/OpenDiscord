@@ -17,10 +17,11 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/yingo-server/OpenChat/server/internal/data/cache"
-	"github.com/yingo-server/OpenChat/server/internal/data/pipe/wire"
-	"github.com/yingo-server/OpenChat/server/internal/data/store"
-	"github.com/yingo-server/OpenChat/server/internal/proto/kinds"
+	"github.com/yingo-server/UFOT/server/internal/data/cache"
+	"github.com/yingo-server/UFOT/server/internal/data/pipe/wire"
+	"github.com/yingo-server/UFOT/server/internal/data/store"
+	"github.com/yingo-server/UFOT/server/internal/pkg/featureflags"
+	"github.com/yingo-server/UFOT/server/internal/proto/kinds"
 )
 
 // ops for the 930 CONV_DATA lane.
@@ -31,6 +32,10 @@ const (
 	convOpSetRole      = 4
 	convOpGetMeta      = 5
 	convOpListMembers  = 6
+	// convOpListMine 列出「我参与的会话」。独立客户端此前没有任何办法
+	// 枚举自己的会话（用户面无 HTTP 列举端点，930 又不在用户层能力表内），
+	// 只能被动等 202 事件——新设备登录后会话列表是空的。
+	convOpListMine = 7
 )
 
 // Conversation types (proto chat.v1: 1 direct, 2 group).
@@ -55,6 +60,16 @@ type convDomain struct {
 	conv  store.ConvStore
 	id    store.IdentityStore
 	cache *cache.Cache
+	// members is the cached member-LIST view (the fan-out recipient set).
+	// It is invalidated EXPLICITLY on every membership mutation — the
+	// write path never guesses.
+	members *memberCache
+	// maxMembers is the group member ceiling (0 = default). Enforced on
+	// addMember so a group can never grow past the frame-size bound.
+	maxMembers int
+	// flags carries pull_mode_threshold for the 202 snapshot substitution
+	// (§1.4/§3.4). nil = disabled (threshold 0) → full snapshots as before.
+	flags *featureflags.Flags
 }
 
 type convEvent struct {
@@ -87,6 +102,8 @@ func (d *convDomain) handle(ctx context.Context, senderUID int64, op uint32, cid
 		return d.getMeta(ctx, senderUID, cid)
 	case convOpListMembers:
 		return d.listMembers(ctx, senderUID, cid)
+	case convOpListMine:
+		return d.listMine(ctx, senderUID)
 	}
 	return convResult{Op: op, Error: "unknown op"}
 }
@@ -118,7 +135,7 @@ func (d *convDomain) create(ctx context.Context, actor int64, body []byte) convR
 				return convResult{Op: convOpCreate, Error: err.Error()}
 			}
 			return convResult{Op: convOpCreate, OK: true, Cid: existing, Payload: pl,
-				Events: convEvents(existing, members, pl)}
+				Events: d.convEvents(existing, members, pl)}
 		} else if err != nil && !errors.Is(err, store.ErrNotFound) {
 			return convResult{Op: convOpCreate, Error: err.Error()}
 		}
@@ -142,7 +159,7 @@ func (d *convDomain) create(ctx context.Context, actor int64, body []byte) convR
 			return convResult{Op: convOpCreate, Error: err.Error()}
 		}
 		return convResult{Op: convOpCreate, OK: true, Cid: newCid, Payload: pl,
-			Events: convEvents(newCid, members, pl)}
+			Events: d.convEvents(newCid, members, pl)}
 	}
 
 	// Group chat: title is mandatory and at most 30 runes; creator becomes
@@ -181,12 +198,13 @@ func (d *convDomain) create(ctx context.Context, actor int64, body []byte) convR
 		}
 		d.cache.InvalidateMember(cache.MemberKey{Cid: newCid, UID: uid})
 	}
+	d.invalidateMembers(newCid)
 	pl, members, err := d.snapshot(ctx, newCid)
 	if err != nil {
 		return convResult{Op: convOpCreate, Error: err.Error()}
 	}
 	return convResult{Op: convOpCreate, OK: true, Cid: newCid, Payload: pl,
-		Events: convEvents(newCid, members, pl)}
+		Events: d.convEvents(newCid, members, pl)}
 }
 
 func (d *convDomain) addMember(ctx context.Context, actor int64, cid uint64, body []byte) convResult {
@@ -220,12 +238,19 @@ func (d *convDomain) addMember(ctx context.Context, actor int64, cid uint64, bod
 		}
 		d.cache.InvalidateMember(cache.MemberKey{Cid: int64(cid), UID: uid})
 	}
+	d.invalidateMembers(int64(cid))
 	pl, members, err := d.snapshot(ctx, int64(cid))
 	if err != nil {
 		return convResult{Op: convOpAddMember, Error: err.Error()}
 	}
-	return convResult{Op: convOpAddMember, OK: true, Cid: int64(cid), Payload: pl,
-		Events: convEvents(int64(cid), members, pl)}
+	evs := d.convEvents(int64(cid), members, pl)
+	for _, rawUID := range p.UserIDs {
+		uid := int64(rawUID)
+		if m, ok := memberRow(members, uid); ok {
+			evs = append(evs, d.memberUpdateEvents(int64(cid), "add", *m, actor, members, d.lastSeqFor(ctx, int64(cid)))...)
+		}
+	}
+	return convResult{Op: convOpAddMember, OK: true, Cid: int64(cid), Payload: pl, Events: evs}
 }
 
 func (d *convDomain) removeMember(ctx context.Context, actor int64, cid uint64, body []byte) convResult {
@@ -235,9 +260,6 @@ func (d *convDomain) removeMember(ctx context.Context, actor int64, cid uint64, 
 	}
 	if cid == 0 {
 		cid = p.ConvID
-	}
-	if _, err := d.conv.GetConvMeta(ctx, int64(cid)); err != nil {
-		return convResult{Op: convOpRemoveMember, Error: err.Error()}
 	}
 	actorMember, err := d.conv.CheckMember(ctx, int64(cid), actor)
 	if err != nil || actorMember.Role < 1 {
@@ -253,12 +275,17 @@ func (d *convDomain) removeMember(ctx context.Context, actor int64, cid uint64, 
 		}
 		d.cache.InvalidateMember(cache.MemberKey{Cid: int64(cid), UID: uid})
 	}
+	d.invalidateMembers(int64(cid))
 	pl, members, err := d.snapshot(ctx, int64(cid))
 	if err != nil {
 		return convResult{Op: convOpRemoveMember, Error: err.Error()}
 	}
-	return convResult{Op: convOpRemoveMember, OK: true, Cid: int64(cid), Payload: pl,
-		Events: convEvents(int64(cid), members, pl)}
+	evs := d.convEvents(int64(cid), members, pl)
+	for _, rawUID := range p.UserIDs {
+		removed := store.Member{Cid: int64(cid), UID: int64(rawUID)}
+		evs = append(evs, d.memberUpdateEvents(int64(cid), "remove", removed, actor, members, d.lastSeqFor(ctx, int64(cid)))...)
+	}
+	return convResult{Op: convOpRemoveMember, OK: true, Cid: int64(cid), Payload: pl, Events: evs}
 }
 
 func (d *convDomain) setRole(ctx context.Context, actor int64, cid uint64, body []byte) convResult {
@@ -282,7 +309,17 @@ func (d *convDomain) setRole(ctx context.Context, actor int64, cid uint64, body 
 		}
 		d.cache.InvalidateMember(cache.MemberKey{Cid: int64(cid), UID: int64(rawUID)})
 	}
-	return convResult{Op: convOpSetRole, OK: true, Cid: int64(cid)}
+	d.invalidateMembers(int64(cid))
+	members, lerr := d.conv.ListMembers(ctx, int64(cid))
+	if lerr != nil {
+		return convResult{Op: convOpSetRole, Error: lerr.Error()}
+	}
+	var evs []convEvent
+	for _, rawUID := range p.UserIDs {
+		m := store.Member{Cid: int64(cid), UID: int64(rawUID), Role: int(p.Role)}
+		evs = append(evs, d.memberUpdateEvents(int64(cid), "role", m, actor, members, d.lastSeqFor(ctx, int64(cid)))...)
+	}
+	return convResult{Op: convOpSetRole, OK: true, Cid: int64(cid), Events: evs}
 }
 
 func (d *convDomain) getMeta(ctx context.Context, actor int64, cid uint64) convResult {
@@ -293,10 +330,12 @@ func (d *convDomain) getMeta(ctx context.Context, actor int64, cid uint64) convR
 	if err != nil {
 		return convResult{Op: convOpGetMeta, Error: err.Error()}
 	}
-	pl, _ := wire.Marshal(wire.ConvPayload{
+	out := wire.ConvPayload{
 		ConvID: uint64(meta.Cid), Title: meta.Title, ConvType: uint32(meta.CType),
 		CreatedAt: meta.CreatedAt,
-	})
+	}
+	out.LastSeq = d.lastSeqFor(ctx, int64(cid))
+	pl, _ := wire.Marshal(out)
 	return convResult{Op: convOpGetMeta, OK: true, Cid: int64(cid), Payload: pl}
 }
 
@@ -318,8 +357,77 @@ func (d *convDomain) listMembers(ctx context.Context, actor int64, cid uint64) c
 			UserID: uint64(m.UID), Role: uint32(m.Role), JoinedAt: m.JoinedAt, MutedUntil: m.MutedUntil,
 		})
 	}
+	out.Version = convVersion(len(ms))
+	out.LastSeq = d.lastSeqFor(ctx, int64(cid))
 	pl, _ := wire.Marshal(out)
 	return convResult{Op: convOpListMembers, OK: true, Cid: int64(cid), Payload: pl}
+}
+
+// listMine returns every conversation the actor participates in, each as a
+// full snapshot (title, members, lastSeq). It is the read path a client needs
+// on a fresh device: without it the only way to learn a conversation is to
+// wait for a membership-change event, which never fires for conversations
+// joined before the device existed.
+//
+// Authorization is implicit and total: the store query joins through
+// conv_members, so the result contains exactly the actor's own
+// conversations and nothing else.
+func (d *convDomain) listMine(ctx context.Context, actor int64) convResult {
+	if actor <= 0 {
+		return convResult{Op: convOpListMine, Error: "unauthenticated"}
+	}
+	metas, err := d.conv.ConvsForUser(ctx, actor)
+	if err != nil {
+		return convResult{Op: convOpListMine, Error: err.Error()}
+	}
+	items := make([]wire.ConvPayload, 0, len(metas))
+	for _, meta := range metas {
+		ms, err := d.conv.ListMembers(ctx, meta.Cid)
+		if err != nil {
+			continue // a conversation that vanished mid-list is skipped, not fatal
+		}
+		item := wire.ConvPayload{
+			ConvID: uint64(meta.Cid), Title: meta.Title,
+			ConvType: uint32(meta.CType), CreatedAt: meta.CreatedAt,
+		}
+		for _, m := range ms {
+			item.Members = append(item.Members, wire.Member{
+				UserID: uint64(m.UID), Role: uint32(m.Role),
+				JoinedAt: m.JoinedAt, MutedUntil: m.MutedUntil,
+			})
+		}
+		item.Version = convVersion(len(ms))
+		item.LastSeq = d.lastSeqFor(ctx, meta.Cid)
+		items = append(items, item)
+	}
+	pl, _ := wire.Marshal(wire.ConvList{Items: items})
+	return convResult{Op: convOpListMine, OK: true, Payload: pl}
+}
+
+// lastSeqFor returns the conversation's current high-water mark: the highest
+// COMMITTED seq, i.e. conv_seq.next_seq - 1 (next_seq is the next unconsumed
+// slot). A conversation with no messages (next_seq <= 1) reports 0.
+//
+// This is the field the client's conv-payload handler compares against its
+// local cursor; when the server is ahead the client fires a SYNC gap pull —
+// which is exactly how a fresh device learns it is missing history.
+func (d *convDomain) lastSeqFor(ctx context.Context, cid int64) uint64 {
+	next, err := d.conv.NextSeq(ctx, cid)
+	if err != nil || next <= 1 {
+		return 0
+	}
+	return uint64(next - 1)
+}
+
+// convVersion derives the snapshot revision. We do NOT have a monotonic
+// version column on the conv row, so we use the MEMBER COUNT as a coarse
+// revision proxy: it changes on every add/remove (the common membership
+// mutation) and lets the client discard a stale cached snapshot superseded by
+// a newer CONV_PAYLOAD. It is NOT a per-write counter: a role-only change that
+// keeps the count constant does not bump it (acceptable — the client's
+// MemberUpdate(212) event carries the role delta directly).
+func convVersion(memberCount int) uint64 {
+	return uint64(memberCount)
 }
 
 // snapshot returns the full ConvPayload and current member rows for cid.
@@ -340,11 +448,139 @@ func (d *convDomain) snapshot(ctx context.Context, cid int64) ([]byte, []store.M
 			UserID: uint64(m.UID), Role: uint32(m.Role), JoinedAt: m.JoinedAt, MutedUntil: m.MutedUntil,
 		})
 	}
+	out.Version = convVersion(len(ms))
+	out.LastSeq = d.lastSeqFor(ctx, cid)
 	pl, err := wire.Marshal(out)
 	return pl, ms, err
 }
 
-func convEvents(cid int64, members []store.Member, payload []byte) []convEvent {
+// memberRow finds one member in a snapshot list.
+func memberRow(members []store.Member, uid int64) (*store.Member, bool) {
+	for i := range members {
+		if members[i].UID == uid {
+			return &members[i], true
+		}
+	}
+	return nil, false
+}
+
+// memberLimit returns the group member ceiling (0 = the default).
+func (d *convDomain) memberLimit() int {
+	if d.maxMembers > 0 {
+		return d.maxMembers
+	}
+	return defaultMaxGroupMembers
+}
+
+// memberUpdateEvents(cid, op, target, byUID, members) fans one 212 per member
+// plus one full 202 snapshot, for op-driven member-change events. lastSeq is
+// the conversation watermark the 202 snapshot must carry (so a member that was
+// offline during the change still gets the correct high-water mark).
+func (d *convDomain) memberUpdateEvents(cid int64, op string, target store.Member, byUID int64, members []store.Member, lastSeq uint64) []convEvent {
+	body, err := wire.Marshal(wire.MemberUpdate{
+		ConvID: uint64(cid), Op: op, ByUserID: uint64(byUID),
+		Member: &wire.Member{
+			UserID: uint64(target.UID), Role: uint32(target.Role),
+			JoinedAt: target.JoinedAt, MutedUntil: target.MutedUntil,
+		},
+	})
+	if err != nil {
+		return nil
+	}
+	// Both kinds ride along: 212 MEMBER_UPDATE (the dedicated event kind) and
+	// 202 CONV_PAYLOAD (the full-snapshot refresh every client already
+	// handles). Delivering both keeps old and new consumers in sync.
+	full, ferr := wire.Marshal(fullConvPayloadForEvents(cid, members, lastSeq))
+	if ferr == nil {
+		full = d.eventPayload(members, full)
+	}
+	evs := make([]convEvent, 0, 2*len(members))
+	for _, m := range members {
+		evs = append(evs, convEvent{
+			Kind: uint32(kinds.KindMemberUpdate), UserID: uint64(m.UID), ConvID: uint64(cid), Payload: body,
+		})
+		if ferr == nil {
+			evs = append(evs, convEvent{
+				Kind: uint32(kinds.KindConvPayload), UserID: uint64(m.UID), ConvID: uint64(cid), Payload: full,
+			})
+		}
+	}
+	return evs
+}
+
+// fullConvPayloadForEvents reuses the convDomain's snapshot marshal shape
+// (wire.ConvPayload camelCase) without re-querying the store. It carries the
+// watermark fields (version from the member count, lastSeq from the caller)
+// so the 202 event matches a fresh snapshot() exactly.
+func fullConvPayloadForEvents(cid int64, members []store.Member, lastSeq uint64) wire.ConvPayload {
+	out := wire.ConvPayload{ConvID: uint64(cid)}
+	for _, m := range members {
+		out.Members = append(out.Members, wire.Member{
+			UserID: uint64(m.UID), Role: uint32(m.Role), JoinedAt: m.JoinedAt, MutedUntil: m.MutedUntil,
+		})
+	}
+	out.Version = convVersion(len(members))
+	out.LastSeq = lastSeq
+	return out
+}
+
+// pullThreshold returns the compiled/effective pull_mode_threshold
+// (0 = disabled → full snapshots, the pre-v1.2 behaviour).
+func (d *convDomain) pullThreshold() int {
+	if d.flags == nil {
+		return 0
+	}
+	return d.flags.Int(featureflags.KeyPullModeThreshold, 0)
+}
+
+// pullSnapshot reports whether a conversation with n members must not receive
+// full member snapshots in its 202 events.
+//
+// CORE-2 (universal-pull-spec §1.2): the 202 snapshot protection is a FIXED
+// member-count rule — ">100 members ⇒ members_omitted" — and must NOT read
+// pull_mode_threshold any more (the threshold's delivery-split semantics is
+// cancelled, but the snapshot protection is NOT). A fixed local bound of 100
+// keeps the behaviour identical to v1.2.1's compiled default in both regimes:
+//   - universal pull on: identical (threshold flag ignored, rule stays >100);
+//   - flag-off rollback (S-7): the threshold path reads the flag as before.
+func (d *convDomain) pullSnapshot(n int) bool {
+	if d.flags != nil && d.flags.Bool(featureflags.KeyUniversalPullEnabled, false) {
+		return n > universalSnapshotMemberBound
+	}
+	th := d.pullThreshold()
+	return th > 0 && n > th
+}
+
+// universalSnapshotMemberBound is the fixed 202 snapshot protection bound of
+// universal-pull-spec §1.2 ("202 CONV_PAYLOAD 仍按固定成员数判定 >100").
+const universalSnapshotMemberBound = 100
+
+// eventPayload applies the §1.4 snapshot substitution to a 202 CONV_PAYLOAD
+// body: pull-mode conversations carry members_omitted=true + member_count
+// instead of the full member list (500 members ≈ 60–80 KB JSON, over the
+// 64 KB frame cap). Every other field (version/lastSeq) is preserved, and the
+// 931 convOpListMembers path is untouched — clients pull the member list on
+// demand.
+func (d *convDomain) eventPayload(members []store.Member, full []byte) []byte {
+	if !d.pullSnapshot(len(members)) {
+		return full
+	}
+	var p wire.ConvPayload
+	if err := wire.Unmarshal(full, &p); err != nil {
+		return full
+	}
+	p.Members = nil
+	p.MembersOmitted = true
+	p.MemberCount = uint32(len(members))
+	out, err := wire.Marshal(p)
+	if err != nil {
+		return full
+	}
+	return out
+}
+
+func (d *convDomain) convEvents(cid int64, members []store.Member, payload []byte) []convEvent {
+	payload = d.eventPayload(members, payload)
 	evs := make([]convEvent, 0, len(members))
 	for _, m := range members {
 		evs = append(evs, convEvent{
@@ -414,3 +650,20 @@ func (d *sysDomain) handleFlag(ctx context.Context, req wire.FlagRequest) (wire.
 }
 
 var _ = kinds.KindFlagSet
+
+// defaultMaxGroupMembers mirrors policy.Default().Group.MaxMembers. The pipe
+// keeps its own constant so it does not import the policy package (policy is
+// loaded by the assembly and injected via convDomain.maxMembers).
+const defaultMaxGroupMembers = 500
+
+// invalidateMembers drops the cached member-list (and peer-set) views for cid
+// after a membership mutation, so the fan-out recipient set and any permission
+// hint are rebuilt on the next read. Falls back to the generic member cache
+// when the typed memberCache is not wired.
+func (d *convDomain) invalidateMembers(cid int64) {
+	if d.members != nil {
+		d.members.InvalidateConv(cid)
+		return
+	}
+	d.cache.InvalidateMemberList(cid)
+}

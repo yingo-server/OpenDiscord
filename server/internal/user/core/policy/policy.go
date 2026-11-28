@@ -8,8 +8,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/yingo-server/OpenChat/server/internal/proto/kinds"
-	"github.com/yingo-server/OpenChat/server/internal/user/net/limit"
+	"github.com/yingo-server/UFOT/server/internal/proto/kinds"
+	"github.com/yingo-server/UFOT/server/internal/user/net/limit"
 )
 
 // Heartbeat 心跳参数（policy 可热更：HELLO 超时从 10s 调 3s 无需改代码）。
@@ -59,6 +59,7 @@ func Default() Config {
 		Limits: limit.DefaultConfig(),
 		LocalKinds: map[uint32]bool{
 			kinds.KindHello:        true,
+			kinds.KindClientCaps:   true,
 			kinds.KindAuth:         true,
 			kinds.KindPing:         true,
 			kinds.KindPong:         true,

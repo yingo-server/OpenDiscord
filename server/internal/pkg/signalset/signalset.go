@@ -7,7 +7,6 @@ import (
 	"context"
 	"os"
 	"os/signal"
-	"syscall"
 )
 
 // Semantics 信号语义类别。
@@ -36,16 +35,8 @@ type Set struct {
 	mapping map[os.Signal]Semantics
 }
 
-// DefaultMapping 返回设计文档规定的默认映射。
-func DefaultMapping() map[os.Signal]Semantics {
-	return map[os.Signal]Semantics{
-		syscall.SIGHUP:  Reload,
-		syscall.SIGUSR1: Snapshot,
-		syscall.SIGUSR2: Custom,
-		syscall.SIGTERM: Quit,
-		syscall.SIGINT:  Quit,
-	}
-}
+// DefaultMapping is defined per platform: Windows has no SIGHUP/SIGUSR1/2, so
+// the unix table cannot compile there. See signalset_unix.go / _windows.go.
 
 // NewSet 用默认映射构造。
 func NewSet() *Set {

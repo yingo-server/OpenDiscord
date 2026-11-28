@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yingo-server/OpenChat/server/internal/proto"
-	"github.com/yingo-server/OpenChat/server/internal/proto/kinds"
-	"github.com/yingo-server/OpenChat/server/internal/transport"
+	"github.com/yingo-server/UFOT/server/internal/proto"
+	"github.com/yingo-server/UFOT/server/internal/proto/kinds"
+	"github.com/yingo-server/UFOT/server/internal/transport"
 )
 
 func freeTCPPort(t *testing.T) string {

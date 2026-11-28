@@ -5,8 +5,9 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 
-	"github.com/yingo-server/OpenChat/server/internal/data/store"
+	"github.com/yingo-server/UFOT/server/internal/data/store"
 )
 
 // identityStore implements store.IdentityStore over the identity_* tables.
@@ -38,6 +39,42 @@ func (s *identityStore) UpsertUser(ctx context.Context, u *store.User) error {
 		return fmt.Errorf("sqlite: upsert user uid=%d: %w", u.UID, err)
 	}
 	return nil
+}
+
+// SearchUsers implements store.IdentityStore.SearchUsers. Only public profile
+// columns are returned, and only active (status=0, not anonymized) accounts.
+// Parameterized query only; the keyword is passed through LIKE with escaped
+// wildcards so a client cannot turn a search into a full table scan.
+func (s *identityStore) SearchUsers(ctx context.Context, keyword string, limit int) ([]store.User, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 30
+	}
+	kw := strings.ReplaceAll(strings.ReplaceAll(strings.TrimSpace(keyword), `\`, `\\`), `%`, `\%`)
+	kw = strings.ReplaceAll(kw, `_`, `\_`)
+	if kw == "" {
+		return nil, nil
+	}
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT uid, display_name, avatar_media_id, status, created_at, anonymous_at
+FROM identity_users
+WHERE status = 0 AND anonymous_at IS NULL AND display_name LIKE ? ESCAPE '\'
+ORDER BY uid ASC LIMIT ?`, "%"+kw+"%", limit)
+	if err != nil {
+		return nil, fmt.Errorf("sqlite: search users: %w", err)
+	}
+	defer rows.Close()
+	var out []store.User
+	for rows.Next() {
+		var u store.User
+		var avatar, anon sql.NullInt64
+		if err := rows.Scan(&u.UID, &u.DisplayName, &avatar, &u.Status, &u.CreatedAt, &anon); err != nil {
+			return nil, fmt.Errorf("sqlite: scan search result: %w", err)
+		}
+		u.AvatarMediaID = avatar.Int64
+		u.AnonymousAt = anon.Int64
+		out = append(out, u)
+	}
+	return out, rows.Err()
 }
 
 func (s *identityStore) LookupByIdentity(ctx context.Context, idType int, idValue string) (int64, error) {

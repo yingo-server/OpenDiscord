@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/yingo-server/OpenChat/server/internal/admin/auditshim"
-	"github.com/yingo-server/OpenChat/server/internal/admin/bridgeproxy"
-	"github.com/yingo-server/OpenChat/server/internal/admin/identity"
-	"github.com/yingo-server/OpenChat/server/internal/proto/kinds"
+	"github.com/yingo-server/UFOT/server/internal/admin/auditshim"
+	"github.com/yingo-server/UFOT/server/internal/admin/bridgeproxy"
+	"github.com/yingo-server/UFOT/server/internal/admin/identity"
+	"github.com/yingo-server/UFOT/server/internal/proto/kinds"
 )
 
 // MessageService implements admin message search and recall. Search is a read

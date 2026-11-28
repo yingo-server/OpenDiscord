@@ -73,6 +73,49 @@ func Validate(p Policy) []error {
 		errs = append(errs, fieldErr("rate_limit.login_per_ip_per_min", "must be >= 1"))
 	}
 
+	// write_path: batch size and flush interval only affect performance, but
+	// out-of-range values must never slip in silently (a 0 batch would stall
+	// every commit; a huge interval would blow up write ACK latency).
+	// 0 means "unset → use Default()" (Load merges the document onto defaults),
+	// so only an explicit out-of-range value is an error. Without this a bare
+	// Policy literal (e.g. constructed in tests) would fail validation.
+	if p.WritePath.BatchSize != 0 &&
+		(p.WritePath.BatchSize < MinWriteBatchSize || p.WritePath.BatchSize > MaxWriteBatchSize) {
+		errs = append(errs, fieldErr("write_path.batch_size",
+			fmt.Sprintf("must be within %d..%d", MinWriteBatchSize, MaxWriteBatchSize)))
+	}
+	if p.WritePath.FlushIntervalMS != 0 &&
+		(p.WritePath.FlushIntervalMS < MinWriteFlushIntervalMS || p.WritePath.FlushIntervalMS > MaxWriteFlushIntervalMS) {
+		errs = append(errs, fieldErr("write_path.flush_interval_ms",
+			fmt.Sprintf("must be within %d..%d", MinWriteFlushIntervalMS, MaxWriteFlushIntervalMS)))
+	}
+
+	// group: the member ceiling must stay inside the 64KB frame budget.
+	// The full CONV_PAYLOAD snapshot is ~60 bytes per member; above ~1090
+	// members the frame is rejected by the codec.
+	// 0 means "unset → use Default()" (the document is merged onto defaults),
+	// so only a negative or out-of-range explicit value is an error.
+	if p.Group.MaxMembers < 0 {
+		errs = append(errs, fieldErr("group.max_members", "must be >= 1 when set"))
+	}
+	if p.Group.MaxMembers > MaxGroupMembersHardLimit {
+		errs = append(errs, fieldErr("group.max_members",
+			fmt.Sprintf("must be <= %d (a larger group would overflow the 64KB WS frame limit)", MaxGroupMembersHardLimit)))
+	}
+
+	// capacity: global admission axes (docs/capacity-contract.md). 0 means
+	// "unset → disabled" (the historical behavior); a negative value is a
+	// policy typo and is rejected so it can never silently disable a limit
+	// the operator meant to set.
+	if p.Capacity.MaxConcurrentConns < 0 {
+		errs = append(errs, fieldErr("capacity.max_concurrent_conns",
+			"negative value (0 = disabled; set >= 1 to enable)"))
+	}
+	if p.Capacity.AdmissionQPS < 0 {
+		errs = append(errs, fieldErr("capacity.admission_qps",
+			"negative value (0 = disabled; set >= 1 to enable)"))
+	}
+
 	return errs
 }
 

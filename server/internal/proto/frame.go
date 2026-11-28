@@ -7,7 +7,7 @@ package proto
 import (
 	"time"
 
-	chatpb "github.com/yingo-server/OpenChat/server/internal/proto/gen/chatpb"
+	chatpb "github.com/yingo-server/UFOT/server/internal/proto/gen/chatpb"
 )
 
 // Frame 是全流水线唯一流通货币（定义在本包，FrameRW 产出，Egress 消费）。
@@ -21,6 +21,14 @@ type Frame struct {
 	Kind uint32           // 冗余缓存 Envelope.Kind，Router 查表免解 payload
 	Env  *chatpb.Envelope // 业务帧本体（payload 按 kind 二次解码）
 	Meta *FrameMeta       // FrameRW 打上，全程只读
+
+	// PreEncoded is the optional, immutable, recipient-independent encoded
+	// envelope body (kind + request_id + payload) produced ONCE by the data
+	// layer fan-out (perf-spec v1.2 §2.1). When set, the delivery layer writes
+	// it verbatim after appending the per-recipient target field, instead of
+	// re-serialising Env per member. Always READ-ONLY; shared by reference
+	// across many frames. nil on the classic single-recipient path.
+	PreEncoded []byte
 }
 
 // FrameMeta 是帧的入界快照：trace_id、入口连接、入队时间戳。

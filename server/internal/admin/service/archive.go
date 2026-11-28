@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/yingo-server/OpenChat/server/internal/admin/auditshim"
-	"github.com/yingo-server/OpenChat/server/internal/admin/bridgeproxy"
-	"github.com/yingo-server/OpenChat/server/internal/admin/identity"
-	"github.com/yingo-server/OpenChat/server/internal/proto/kinds"
+	"github.com/yingo-server/UFOT/server/internal/admin/auditshim"
+	"github.com/yingo-server/UFOT/server/internal/admin/bridgeproxy"
+	"github.com/yingo-server/UFOT/server/internal/admin/identity"
+	"github.com/yingo-server/UFOT/server/internal/proto/kinds"
 )
 
 // ArchiveService fronts the archive job ledger. The job itself is a data-layer

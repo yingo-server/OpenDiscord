@@ -5,10 +5,10 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/yingo-server/OpenChat/server/internal/admin/service"
-	"github.com/yingo-server/OpenChat/server/internal/data/store"
-	"github.com/yingo-server/OpenChat/server/internal/data/store/pg"
-	"github.com/yingo-server/OpenChat/server/internal/pkg/log"
+	"github.com/yingo-server/UFOT/server/internal/admin/service"
+	"github.com/yingo-server/UFOT/server/internal/data/store"
+	"github.com/yingo-server/UFOT/server/internal/data/store/pg"
+	"github.com/yingo-server/UFOT/server/internal/pkg/log"
 )
 
 // AuditReader adapts the cold journal (sys.audit_log) to the admin read port.

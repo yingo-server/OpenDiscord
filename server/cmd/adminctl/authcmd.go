@@ -9,6 +9,8 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/yingo-server/UFOT/server/internal/pkg/i18n"
 )
 
 func cmdLogin(g globals, args []string, in io.Reader, out, errw io.Writer) error {
@@ -25,7 +27,14 @@ func cmdLogin(g globals, args []string, in io.Reader, out, errw io.Writer) error
 	reader := bufio.NewReader(in)
 	user := strings.TrimSpace(*username)
 	if user == "" {
-		fmt.Fprint(errw, "Username: ")
+		// TTY → prompt; non-TTY → list the required flag and exit 64.
+		// Flags are the source of truth: --username is the equivalent of
+		// this prompt; interaction only fills flags in.
+		if !i18n.StdinIsTTY() {
+			i18n.RequiredFlags(errw, "login", []string{"username"})
+			return &usageError{msg: "username is required"}
+		}
+		fmt.Fprint(errw, i18n.T("ui.admin_user"))
 		line, err := readLine(reader)
 		if err != nil {
 			return err

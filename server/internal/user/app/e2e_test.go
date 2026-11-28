@@ -12,12 +12,12 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"github.com/yingo-server/OpenChat/server/internal/proto"
-	"github.com/yingo-server/OpenChat/server/internal/proto/gen/chatpb"
-	"github.com/yingo-server/OpenChat/server/internal/proto/kinds"
-	"github.com/yingo-server/OpenChat/server/internal/user/core/authn"
-	"github.com/yingo-server/OpenChat/server/internal/user/net/frame"
-	"github.com/yingo-server/OpenChat/server/internal/user/net/ws"
+	"github.com/yingo-server/UFOT/server/internal/proto"
+	"github.com/yingo-server/UFOT/server/internal/proto/gen/chatpb"
+	"github.com/yingo-server/UFOT/server/internal/proto/kinds"
+	"github.com/yingo-server/UFOT/server/internal/user/core/authn"
+	"github.com/yingo-server/UFOT/server/internal/user/net/frame"
+	"github.com/yingo-server/UFOT/server/internal/user/net/ws"
 )
 
 // ---------- fake bridge peer（内存 chan） ----------
@@ -172,6 +172,15 @@ func TestEndToEnd(t *testing.T) {
 	case upstream = <-bridgePeer.up:
 	case <-time.After(3 * time.Second):
 		t.Fatal("bridge did not receive MSG_SEND")
+	}
+	// The connect lifecycle now emits a 401 presence event before user
+	// traffic; skip it (and only it) so the assertion below sees MSG_SEND.
+	if upstream.Kind == kinds.KindPresenceOnline {
+		select {
+		case upstream = <-bridgePeer.up:
+		case <-time.After(3 * time.Second):
+			t.Fatal("bridge did not receive MSG_SEND after presence event")
+		}
 	}
 	if upstream.Kind != kinds.KindMsgSend {
 		t.Fatalf("bridge kind = %d", upstream.Kind)

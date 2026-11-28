@@ -1,6 +1,6 @@
-// Command keygen 生成 OpenChat 所需密钥（无 openssl 时的等价工具）。
+// Command keygen 生成 UFOT 所需密钥（无 openssl 时的等价工具）。
 //
-//	go run ./deploy/keygen -dir /etc/openchat/keys -group openchat
+//	go run ./deploy/keygen -dir /etc/ufot/keys -group ufot
 //
 // 生成：
 //
@@ -31,7 +31,7 @@ import (
 )
 
 func main() {
-	dir := flag.String("dir", "/etc/openchat/keys", "密钥输出目录")
+	dir := flag.String("dir", "/etc/ufot/keys", "密钥输出目录")
 	pemOnly := flag.Bool("pem-only", false, "只生成 Ed25519 密钥对（不生成对称密钥）")
 	flag.Parse()
 

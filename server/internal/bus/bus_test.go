@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yingo-server/OpenChat/server/internal/proto"
-	chatpb "github.com/yingo-server/OpenChat/server/internal/proto/gen/chatpb"
+	"github.com/yingo-server/UFOT/server/internal/proto"
+	chatpb "github.com/yingo-server/UFOT/server/internal/proto/gen/chatpb"
 )
 
 func frame(kind uint32) *proto.Frame {

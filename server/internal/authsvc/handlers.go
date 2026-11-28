@@ -33,6 +33,9 @@ type passwordSetRequest struct {
 // handlePasswordLogin authenticates account + password (account may be a
 // phone number, an email or a username).
 func (s *Service) handlePasswordLogin(w http.ResponseWriter, r *http.Request) *apiError {
+	if !s.methodAllowed("password") {
+		return errMethodDisabled("password")
+	}
 	var req passwordRequest
 	if e := s.decode(w, r, &req); e != nil {
 		return e
@@ -111,6 +114,9 @@ func (s *Service) handlePasswordLogin(w http.ResponseWriter, r *http.Request) *a
 // the caller already holds one from a previous guest login (security-spec
 // §2.6: 设备 ID 服务端首次签发，不可客户端自定义).
 func (s *Service) handleGuest(w http.ResponseWriter, r *http.Request) *apiError {
+	if !s.methodAllowed("guest") {
+		return errMethodDisabled("guest")
+	}
 	var req guestRequest
 	if e := s.decode(w, r, &req); e != nil {
 		return e

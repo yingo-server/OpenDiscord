@@ -6,10 +6,10 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/yingo-server/OpenChat/server/internal/admin/auditshim"
-	"github.com/yingo-server/OpenChat/server/internal/admin/bridgeproxy"
-	"github.com/yingo-server/OpenChat/server/internal/admin/identity"
-	"github.com/yingo-server/OpenChat/server/internal/proto/kinds"
+	"github.com/yingo-server/UFOT/server/internal/admin/auditshim"
+	"github.com/yingo-server/UFOT/server/internal/admin/bridgeproxy"
+	"github.com/yingo-server/UFOT/server/internal/admin/identity"
+	"github.com/yingo-server/UFOT/server/internal/proto/kinds"
 )
 
 // BroadcastService implements preview/send for admin broadcasts. Preview is a

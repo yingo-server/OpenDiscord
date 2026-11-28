@@ -1,0 +1,87 @@
+/**
+ * WS kind 常量（对齐 docs/ws-protocol.md §4 的 85 个常量）。
+ * 只声明编号，不声明语义；语义见 docs/ws-protocol.md。
+ */
+export const Kind = {
+  HELLO: 1,
+  AUTH: 2,
+  AUTH_RESULT: 3,
+  PING: 4,
+  PONG: 5,
+  RESUME: 6,
+  RESUME_RESULT: 7,
+  SYNC_REQUEST: 8,
+  SYNC_RESULT: 9,
+  ERROR: 10,
+  KICKED: 11,
+  FEATURE_FLAGS: 12,
+  RATE_LIMITED: 13,
+  WATERMARK: 14,
+  MAILBOX_ACK: 15,
+  MAILBOX_PAUSE: 16,
+  MAILBOX_RESUME: 17,
+  CLIENT_CAPS: 18,
+
+  MSG_SEND: 101,
+  MSG_NEW: 102,
+  MSG_ACK: 103,
+  MSG_READ: 104,
+  MSG_DELIVERED: 105,
+  MSG_EDIT: 106,
+  MSG_DELETE: 107,
+  MSG_RECALL: 108,
+  MSG_FORWARD: 109,
+  MSG_SYNC: 110,
+  MSG_SEARCH: 111,
+
+  CONV_CREATE: 200,
+  CONV_UPDATE: 201,
+  CONV_PAYLOAD: 202,
+  MEMBER_ADD: 210,
+  MEMBER_REMOVE: 211,
+  MEMBER_UPDATE: 212,
+  ROLE_SET: 213,
+  MUTE: 220,
+  PIN: 221,
+  TYPING: 230,
+  DRAFT: 231,
+
+  // 层间数据请求/应答（用户面可达的只有 200/201/210/211 走这条路，
+  // 其余由服务端内部使用；931 是 200/201/210/211 的**回执**）。
+  CONV_DATA_REQUEST: 930,
+  CONV_DATA_RESULT: 931,
+  IDENTITY_REQUEST: 940,
+  IDENTITY_RESULT: 941,
+  READ_HISTORY: 920,
+  READ_HISTORY_RESULT: 921,
+
+  CALL_OFFER: 350,
+  CALL_ANSWER: 351,
+  CALL_CANDIDATE: 352,
+  CALL_BUSY: 353,
+  CALL_HANGUP: 354,
+
+  PRESENCE_UPDATE: 400,
+  PRESENCE_ONLINE: 401,
+  PRESENCE_OFFLINE: 402,
+
+  PROFILE_UPDATE: 450,
+  BLOCK: 451,
+  UNBLOCK: 452,
+  REPORT: 453,
+
+  ADMIN_BROADCAST: 500,
+  ANNOUNCE: 501,
+  MAINTENANCE: 502,
+} as const;
+
+export type KindValue = (typeof Kind)[keyof typeof Kind];
+
+/** 服务端错误帧 code（docs/ws-protocol.md §7）。 */
+export const WsErrorCode = {
+  BAD_FRAME: 4000,
+  NOT_MEMBER: 403,
+  BUSY: 503,
+  RATE_LIMIT: 4290,
+  CALLS_DISABLED: 403,
+} as const;

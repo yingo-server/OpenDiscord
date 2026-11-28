@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/yingo-server/OpenChat/server/internal/admin/auditshim"
-	"github.com/yingo-server/OpenChat/server/internal/admin/identity"
+	"github.com/yingo-server/UFOT/server/internal/admin/auditshim"
+	"github.com/yingo-server/UFOT/server/internal/admin/identity"
 )
 
 // AuditService serves the append-only journal as a sequential cursor stream

@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yingo-server/OpenChat/server/internal/proto"
-	chatpb "github.com/yingo-server/OpenChat/server/internal/proto/gen/chatpb"
-	kinds "github.com/yingo-server/OpenChat/server/internal/proto/kinds"
+	"github.com/yingo-server/UFOT/server/internal/proto"
+	chatpb "github.com/yingo-server/UFOT/server/internal/proto/gen/chatpb"
+	kinds "github.com/yingo-server/UFOT/server/internal/proto/kinds"
 )
 
 func mkf(layer string, kind uint32) *proto.Frame {

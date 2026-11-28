@@ -275,12 +275,25 @@ func (r *Runner) applyOne(ctx context.Context, m Migration) error {
 	}
 	defer tx.Rollback() // no-op after commit
 
-	if _, err := tx.ExecContext(ctx, m.SQL); err != nil {
+	// pgx 的 extended protocol 不接受「整段多语句 + $n 占位符」混用，而
+	// 按分号拆分又会被 SQL 注释/字符串/$$ 函数体里的分号破坏。正解：让 pgx
+	// 用 simple protocol（Migrate 打开的连接 DSN 加了
+	// default_query_exec_mode=simple_protocol），整段 SQL 一次 Exec，由
+	// PostgreSQL 服务端解析多语句。SQLite 驱动原生支持整段多语句。
+	_, err = tx.ExecContext(ctx, m.SQL)
+	if err != nil {
 		return fmt.Errorf("migrate: exec %s: %w", m.Name, err)
 	}
-	ins := fmt.Sprintf("INSERT INTO %s (domain, version, name, applied_at, checksum) VALUES (?, ?, ?, ?, ?)",
-		r.quote(migrTable))
-	if _, err := tx.ExecContext(ctx, ins, m.Domain, m.Version, m.Name, timeNowUnix(), m.Checksum); err != nil {
+	// Placeholder style is dialect-specific: SQLite accepts ?, PostgreSQL
+	// only $n. Using ? on PG is the classic "syntax error near ," source.
+	vals := []any{m.Domain, m.Version, m.Name, timeNowUnix(), m.Checksum}
+	ins := ""
+	if r.Dialect == DialectPostgres {
+		ins = fmt.Sprintf("INSERT INTO %s (domain, version, name, applied_at, checksum) VALUES ($1, $2, $3, $4, $5)", r.quote(migrTable))
+	} else {
+		ins = fmt.Sprintf("INSERT INTO %s (domain, version, name, applied_at, checksum) VALUES (?, ?, ?, ?, ?)", r.quote(migrTable))
+	}
+	if _, err := tx.ExecContext(ctx, ins, vals...); err != nil {
 		return fmt.Errorf("migrate: record %s: %w", m.Name, err)
 	}
 	return tx.Commit()

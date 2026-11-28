@@ -17,15 +17,15 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yingo-server/OpenChat/server/internal/admin/auditshim"
-	"github.com/yingo-server/OpenChat/server/internal/admin/bridgeproxy"
-	"github.com/yingo-server/OpenChat/server/internal/admin/handler"
-	"github.com/yingo-server/OpenChat/server/internal/admin/middleware"
-	"github.com/yingo-server/OpenChat/server/internal/admin/service"
-	adminstore "github.com/yingo-server/OpenChat/server/internal/admin/store"
-	"github.com/yingo-server/OpenChat/server/internal/data/store"
-	"github.com/yingo-server/OpenChat/server/internal/pkg/log"
-	"github.com/yingo-server/OpenChat/server/internal/user/core/authn"
+	"github.com/yingo-server/UFOT/server/internal/admin/auditshim"
+	"github.com/yingo-server/UFOT/server/internal/admin/bridgeproxy"
+	"github.com/yingo-server/UFOT/server/internal/admin/handler"
+	"github.com/yingo-server/UFOT/server/internal/admin/middleware"
+	"github.com/yingo-server/UFOT/server/internal/admin/service"
+	adminstore "github.com/yingo-server/UFOT/server/internal/admin/store"
+	"github.com/yingo-server/UFOT/server/internal/data/store"
+	"github.com/yingo-server/UFOT/server/internal/pkg/log"
+	"github.com/yingo-server/UFOT/server/internal/user/core/authn"
 )
 
 // Config is the admin server's operational configuration. Every tunable that
@@ -47,6 +47,9 @@ type Config struct {
 	BridgeRetries    int
 	BreakerThreshold int
 	BreakerOpen      time.Duration
+
+	// TurnURL is the TURN URI used by the admin diagnostics self-check.
+	TurnURL string
 
 	Now func() time.Time
 }
@@ -231,6 +234,7 @@ func New(cfg Config, deps Deps) (*Server, error) {
 		OpLimiter:     opLimiter,
 		AuditShim:     shim,
 		Logger:        logger,
+		TurnURL:       cfg.TurnURL,
 	})
 
 	s := &Server{

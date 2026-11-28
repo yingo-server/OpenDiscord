@@ -26,6 +26,10 @@ type PendingMsg struct {
 	ClientMsgID string // dedup key; UNIQUE(cid,sender_id,client_msg_id)
 	Content     []byte // Envelope payload verbatim; store never parses it
 	SentAt      int64
+	// Recalled mirrors msg_messages_hot.recalled: 0 = not recalled, else the
+	// unix-second timestamp of the recall. The live downlink carries it so a
+	// member that was offline during the recall still sees the tombstone.
+	Recalled int64
 }
 
 // HotMsg is a message row read from the hot store. Content is opaque bytes;
@@ -57,6 +61,19 @@ type MsgWriter interface {
 	// returns the inclusive start (range = [start, start+n-1]). Implemented as
 	// UPDATE conv_seq ... RETURNING; must be safe under concurrent writers.
 	AllocateSeq(ctx context.Context, cid int64, n int) (start int64, err error)
+
+	// MarkRecalled soft-deletes one hot message: sets recalled = at (unix sec)
+	// when the (cid, msg_id, sender_id) row exists and is not already
+	// recalled. Returns the matched row (or ErrNotFound). Authorization and
+	// the time window are domain logic ABOVE the store — this is mechanism.
+	MarkRecalled(ctx context.Context, cid, msgID, senderID, at int64) (*HotMsg, error)
+
+	// MarkEdited soft-updates one hot message's content (FE-1a #1): rewrites
+	// content and sets edited = at (unix sec) when the (cid, msg_id,
+	// sender_id) row exists and is not recalled/already-edited-guarded by the
+	// caller. Returns the matched row (or ErrNotFound). Authorization (sender
+	// himself) and the time window are domain logic ABOVE the store.
+	MarkEdited(ctx context.Context, cid, msgID, senderID int64, content []byte, at int64) (*HotMsg, error)
 }
 
 // MsgReader is the hot read path, used by readrouter and archiver.
@@ -130,6 +147,13 @@ type IdentityStore interface {
 	// SetBan records (or, with Level<=0, lifts) a ban record. Append-style:
 	// history rows are kept, effectiveness is derived by expiry.
 	SetBan(ctx context.Context, b *Ban) error
+
+	// SearchUsers returns users whose display name matches the keyword
+	// (case-insensitive prefix/substring match), excluding banned and
+	// deleted accounts. It is the read primitive behind user search
+	// (940 op5): without it a client cannot pick anyone to talk to.
+	// The result is capped by limit (0 = store default).
+	SearchUsers(ctx context.Context, keyword string, limit int) ([]User, error)
 }
 
 // --------------------------------------------------------------- conv domain
@@ -178,6 +202,13 @@ type ConvStore interface {
 	// ListMembers returns all members of cid.
 	ListMembers(ctx context.Context, cid int64) ([]Member, error)
 
+	// ConvsForUser returns every conversation uid is a member of, newest
+	// activity first is NOT guaranteed — the caller sorts. It is the read
+	// primitive behind "list my conversations" (930 op7): a client must be
+	// able to enumerate its own conversations on a fresh device instead of
+	// waiting for a membership event that may never come again.
+	ConvsForUser(ctx context.Context, uid int64) ([]ConvMeta, error)
+
 	// SetMemberRole updates one member's role. Authorization happened above.
 	SetMemberRole(ctx context.Context, cid, uid int64, role int) error
 
@@ -193,6 +224,11 @@ type ConvStore interface {
 	// it (peek). Range reservation belongs to MsgWriter.AllocateSeq; this
 	// exists for readers/inspect tooling.
 	NextSeq(ctx context.Context, cid int64) (int64, error)
+
+	// MemberPeersOf returns the DEDUPLICATED set of other uids sharing at
+	// least one conversation with uid — the recipient set for presence
+	// fan-out (上线/下线广播给"该用户所有会话的成员去重集").
+	MemberPeersOf(ctx context.Context, uid int64) ([]int64, error)
 }
 
 // -------------------------------------------------------------- media domain
@@ -212,6 +248,21 @@ type Media struct {
 	SHA256     string
 	CreatedAt  int64
 	RefCount   int64
+	// ThumbData is a tiny inline thumbnail: a base64 data-URI or bare base64
+	// (≤8KB accepted). Waveform is a JSON array of 0-100 ints (≤32 elements)
+	// used to render the audio scrubber without a second round-trip. Both are
+	// metadata only — the media bytes themselves still live on disk.
+	//
+	// NEW (0003): ThumbData is LEGACY — new uploads keep the thumbnail in a
+	// FILE (media_dir/thumbs/.../<sha>.thumb) and ThumbPath carries its path
+	// (tens of bytes instead of ~10.7KB of TEXT per row). ThumbData is still
+	// populated by readers as a FALLBACK for existing rows whose file was
+	// never written; writers must write the file and set ThumbPath = "".
+	ThumbData string
+	// ThumbPath is the on-disk thumbnail path (relative to media_dir) when the
+	// thumbnail is stored as a file. Empty for legacy rows.
+	ThumbPath string
+	Waveform  string
 }
 
 // MediaStore is the media domain's storage surface.
@@ -235,6 +286,16 @@ type MediaStore interface {
 	// AddRef is shorthand for IncRefCount(+1) after a message referencing the
 	// media commits; implementations may assert existence.
 	AddRef(ctx context.Context, mediaID string) error
+}
+
+// MediaQuota is the quota accounting surface (SUM(size) over media_media).
+// The LIMITS themselves are policy/config (mediasvc), never store logic.
+type MediaQuota interface {
+	// UsageOf returns the total stored bytes owned by uid.
+	UsageOf(ctx context.Context, uid int64) (int64, error)
+
+	// TotalUsage returns the total stored bytes across all users.
+	TotalUsage(ctx context.Context) (int64, error)
 }
 
 // ---------------------------------------------------------------- sys domain
@@ -273,6 +334,16 @@ type Penalty struct {
 //
 // Red line: RateLimitIncr is ONLY a counter primitive. Whether a count is
 // "too many" is decided by the caller reading policy — never by the store.
+// ------------------------------------------------------------ reports domain
+
+// ReportStore is the sys_reports write sink (FE-1a #4). Implemented by the
+// hot SQLite DB; the admin plane reads the same table.
+type ReportStore interface {
+	// InsertReport appends one pending report row. reason is an enum,
+	// detail is a bounded, caller-sanitised string (ids/enum only — no PII).
+	InsertReport(ctx context.Context, reporter, targetMsg, targetUser int64, reason int, detail string, at int64) error
+}
+
 type SysStore interface {
 	// UpsertFlag stores a feature flag / policy-flag document, bumping its
 	// version for incremental frame fan-out.
@@ -301,20 +372,42 @@ type SysStore interface {
 	SetPenalty(ctx context.Context, p *Penalty) error
 }
 
-// ------------------------------------------------------- archive (cold) target
+// ------------------------------------------------------- archive (cold) source
 
-// ArchiveTarget is what the archiver pushes hot rows into. The archiver knows
-// ONLY this interface plus MsgReader — swap the cold schema, swap one impl.
-type ArchiveTarget interface {
+// ArchiveSource is the COLD side of the archiver: hot rows are copied into
+// it. The archiver knows ONLY this interface plus the hot-side ports — swap
+// the cold schema, swap one impl.
+//
+// Red line: an archive source NEVER deletes hot rows. The hot side is
+// deleted by a HotPruner (the hot store), after the copy committed.
+type ArchiveSource interface {
 	// CopyBatch inserts rows into the cold archive idempotently
 	// (ON CONFLICT DO NOTHING semantics); returns how many rows were newly
 	// moved. Retries must be safe: re-copying a batch must not duplicate.
 	CopyBatch(ctx context.Context, rows []HotMsg) (int64, error)
+}
 
-	// DeleteHot removes hot rows for the caller-provided cutoff boundary.
-	// Careful: only ever called after CopyBatch committed for those rows —
-	// the ordering is the archiver's contract, not this interface's.
-	DeleteHot(ctx context.Context, before int64) (int64, error)
+// HotPruner is the HOT side of the archiver: it deletes rows from the hot
+// store. Only the hot store can implement this — the hot messages live in
+// SQLite, so a cold (Postgres) handle must NOT expose a delete-hot method.
+//
+// The ordering is the archiver's contract: prune only after the copy of
+// exactly those rows COMMITTED.
+type HotPruner interface {
+	// DeleteHotBefore removes hot rows whose sent_at is strictly older than
+	// the cutoff; returns the number of rows removed.
+	DeleteHotBefore(ctx context.Context, before int64) (int64, error)
+}
+
+// ------------------------------------------------------------- trim (expiry)
+
+// TrimTarget deletes expired rows from ONE whitelisted table. The table name
+// is a KEY, never SQL text: implementations map it to a fixed statement
+// (like orderSQL does for ORDER BY) and reject anything unknown.
+type TrimTarget interface {
+	// TrimTable deletes rows of the named table that expired before the
+	// cutoff; returns the number of rows removed.
+	TrimTable(ctx context.Context, table string, olderThan int64) (int64, error)
 }
 
 // ------------------------------------------------------------ audit (cold)

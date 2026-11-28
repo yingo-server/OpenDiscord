@@ -6,12 +6,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yingo-server/OpenChat/server/internal/data/pipe/pipefakes"
-	"github.com/yingo-server/OpenChat/server/internal/data/pipe/wire"
-	"github.com/yingo-server/OpenChat/server/internal/data/store"
-	"github.com/yingo-server/OpenChat/server/internal/pkg/log"
-	"github.com/yingo-server/OpenChat/server/internal/proto"
-	"github.com/yingo-server/OpenChat/server/internal/proto/kinds"
+	"github.com/yingo-server/UFOT/server/internal/data/pipe/pipefakes"
+	"github.com/yingo-server/UFOT/server/internal/data/pipe/wire"
+	"github.com/yingo-server/UFOT/server/internal/data/store"
+	"github.com/yingo-server/UFOT/server/internal/pkg/log"
+	"github.com/yingo-server/UFOT/server/internal/proto"
+	"github.com/yingo-server/UFOT/server/internal/proto/kinds"
 )
 
 // hotBundle adapts the fakes into HotStores (one struct, per-domain fields).
@@ -21,6 +21,16 @@ type hotBundle struct {
 	conv store.ConvStore
 	sys  store.SysStore
 }
+
+// The pipe under test never touches media or identity storage; these stubs
+// only satisfy HotStores so the fake assembly compiles.
+func (h hotBundle) Insert(context.Context, *store.Media) error { return nil }
+func (h hotBundle) Get(context.Context, string) (*store.Media, error) {
+	return nil, store.ErrNotFound
+}
+func (h hotBundle) UpdateStatus(context.Context, string, int) error  { return nil }
+func (h hotBundle) IncRefCount(context.Context, string, int64) error { return nil }
+func (h hotBundle) AddRef(context.Context, string) error             { return nil }
 
 func (h hotBundle) AppendMessages(ctx context.Context, b []store.PendingMsg) error {
 	return h.w.AppendMessages(ctx, b)
@@ -58,6 +68,14 @@ func (h hotBundle) CheckMember(ctx context.Context, cid, uid int64) (*store.Memb
 func (h hotBundle) ListMembers(ctx context.Context, cid int64) ([]store.Member, error) {
 	return h.conv.ListMembers(ctx, cid)
 }
+
+func (h hotBundle) ConvsForUser(ctx context.Context, uid int64) ([]store.ConvMeta, error) {
+	return h.conv.ConvsForUser(ctx, uid)
+}
+
+func (h hotBundle) SearchUsers(ctx context.Context, keyword string, limit int) ([]store.User, error) {
+	return nil, nil
+}
 func (h hotBundle) SetMemberRole(ctx context.Context, cid, uid int64, role int) error {
 	return h.conv.SetMemberRole(ctx, cid, uid, role)
 }
@@ -88,6 +106,18 @@ func (h hotBundle) GetPenalty(ctx context.Context, s, p string) (*store.Penalty,
 }
 func (h hotBundle) SetPenalty(ctx context.Context, p *store.Penalty) error {
 	return h.sys.SetPenalty(ctx, p)
+}
+func (h hotBundle) MarkRecalled(ctx context.Context, cid, msgID, senderID, at int64) (*store.HotMsg, error) {
+	return h.w.MarkRecalled(ctx, cid, msgID, senderID, at)
+}
+func (h hotBundle) MarkEdited(ctx context.Context, cid, msgID, senderID int64, content []byte, at int64) (*store.HotMsg, error) {
+	return h.w.MarkEdited(ctx, cid, msgID, senderID, content, at)
+}
+func (h hotBundle) InsertReport(ctx context.Context, reporter, targetMsg, targetUser int64, reason int, detail string, at int64) error {
+	return nil // report sink stub: the FE-1a tests assert via their own fake
+}
+func (h hotBundle) MemberPeersOf(ctx context.Context, uid int64) ([]int64, error) {
+	return h.conv.MemberPeersOf(ctx, uid)
 }
 
 func newTestPipe(t *testing.T) (*Pipe, *pipefakes.FakeMsgStore, *pipefakes.FakeConvStore, *pipefakes.FakeSysStore) {
@@ -286,6 +316,72 @@ func TestReadHistory(t *testing.T) {
 	}
 }
 
+// readrouter "older" direction: beforeSeq returns the page strictly older
+// than the cursor, in ASCENDING seq order, excludes the cursor row itself,
+// and reports hasMore honestly. Also re-checks the member gate (403).
+func TestReadHistoryBeforeSeq(t *testing.T) {
+	p, msgs, convs, _ := newTestPipe(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cid, _ := convs.CreateConv(ctx, &store.ConvMeta{CType: 2, CreatedBy: 7, CreatedAt: 1}, 7)
+	for i := 1; i <= 6; i++ {
+		_ = msgs.AppendMessages(ctx, []store.PendingMsg{{MsgID: int64(i), Cid: cid, Seq: int64(i), SenderID: 7,
+			ClientMsgID: "b" + itoa(int64(i)), Content: []byte("m"), SentAt: int64(100 + i)}})
+	}
+
+	// beforeSeq=6 limit=2 → the two rows immediately older (seq 4,5), ASC.
+	p.dispatchReq(ctx, Req{Kind: 920, ConvID: uint64(cid), UserID: 7,
+		Payload: []byte(`{"convId":` + itoa(cid) + `,"beforeSeq":6,"limit":2}`)})
+	e := waitEnv(t, p.Outbound())
+	if e.Kind != 921 {
+		t.Fatalf("want 921, got %d (%s)", e.Kind, e.Payload)
+	}
+	var res wire.ReadHistoryResult
+	if err := wire.Unmarshal(e.Payload, &res); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(res.Messages) != 2 {
+		t.Fatalf("want 2 msgs, got %d (%s)", len(res.Messages), e.Payload)
+	}
+	// ASC order and strictly < beforeSeq (cursor row 6 itself excluded).
+	if res.Messages[0].Seq != 4 || res.Messages[1].Seq != 5 {
+		t.Fatalf("want seq [4 5] ascending, got [%d %d]", res.Messages[0].Seq, res.Messages[1].Seq)
+	}
+	if res.Messages[0].Seq >= 6 || res.Messages[1].Seq >= 6 {
+		t.Fatalf("cursor row (seq=6) must be excluded: %+v", res.Messages)
+	}
+	if !res.HasMore {
+		t.Fatalf("full page (2/2) should report hasMore=true")
+	}
+
+	// beforeSeq=2 limit=10 → only seq 1 remains, short page ⇒ hasMore=false.
+	p.dispatchReq(ctx, Req{Kind: 920, ConvID: uint64(cid), UserID: 7,
+		Payload: []byte(`{"convId":` + itoa(cid) + `,"beforeSeq":2,"limit":10}`)})
+	e = waitEnv(t, p.Outbound())
+	var res2 wire.ReadHistoryResult
+	if err := wire.Unmarshal(e.Payload, &res2); err != nil {
+		t.Fatalf("unmarshal2: %v", err)
+	}
+	if len(res2.Messages) != 1 || res2.Messages[0].Seq != 1 {
+		t.Fatalf("want single seq=1, got %+v", res2.Messages)
+	}
+	if res2.HasMore {
+		t.Fatalf("short page (1/10) should report hasMore=false")
+	}
+
+	// non-member beforeSeq read → 403.
+	p.dispatchReq(ctx, Req{Kind: 920, ConvID: uint64(cid), UserID: 99,
+		Payload: []byte(`{"convId":` + itoa(cid) + `,"beforeSeq":6,"limit":2}`)})
+	e = waitEnv(t, p.Outbound())
+	var er struct {
+		Code uint32 `json:"code,omitempty"`
+	}
+	wire.Unmarshal(e.Payload, &er)
+	if er.Code != 403 {
+		t.Fatalf("non-member beforeSeq read should 403, got %s", e.Payload)
+	}
+}
+
 // flag get/set round trip (970/971 → 972).
 func TestFlagLane(t *testing.T) {
 	p, _, _, sys := newTestPipe(t)
@@ -315,12 +411,11 @@ func TestRunWithPeer(t *testing.T) {
 	p.FrameSource = func(*proto.Frame) Req { return req }
 
 	var got *proto.Frame
-	Emit = func(e *env) *proto.Frame {
+	p.emit = func(e *env) *proto.Frame {
 		f := &proto.Frame{Kind: e.Kind}
 		got = f
 		return f
 	}
-	defer func() { Emit = DefaultEmit }()
 
 	go p.Run(ctx)
 	peer.Inject(&proto.Frame{Kind: 101})
@@ -377,13 +472,23 @@ func TestMsgSendMediaPersistAndFanout(t *testing.T) {
 
 	// Drain the outbound lane: ack (sender) then MSG_NEW (uid 8). The commit
 	// happens before either is emitted, so snapshot is valid afterwards.
+	// The ACK arrives on the reply lane; the broadcast copy on the fan-out
+	// lane. They are separate queues by design, so read both.
 	var msgNew []byte
-	for i := 0; i < 3; i++ {
-		e := waitEnv(t, p.Outbound())
-		if e.Kind == uint32(kinds.KindMsgNew) {
-			msgNew = e.Payload
-			break
+	for i := 0; i < 3 && msgNew == nil; i++ {
+		select {
+		case e := <-p.Outbound():
+			_ = e // ACK for the sender
+		case e := <-p.OutboundFan():
+			if e.Kind == uint32(kinds.KindMsgNew) {
+				msgNew = e.Payload
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatalf("timed out waiting for ACK / MSG_NEW")
 		}
+	}
+	if msgNew == nil {
+		t.Fatalf("no MSG_NEW observed on the fan-out lane")
 	}
 
 	// 1) stored content keeps the media reference.

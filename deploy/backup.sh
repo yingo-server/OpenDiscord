@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
 # ---------------------------------------------------------------------------
-# OpenChat 热库备份：sqlite3 .backup → 加密 → 异地 → 保留 N 天
+# UFOT 热库备份：sqlite3 .backup → 加密 → 异地 → 保留 N 天
 #
 #   sudo ./deploy/backup.sh            # 立即备份
 #   sudo ./deploy/backup.sh --dry-run  # 只校验环境与估算空间，不写任何文件
 #
-# 策略来源：/etc/openchat/policy.json 的 backup 段
-#   { "cron": "30 5 * * *", "dir": "/var/lib/openchat/backup", "keep_days": 14 }
+# 策略来源：/etc/ufot/policy.json 的 backup 段
+#   { "cron": "30 5 * * *", "dir": "/var/lib/ufot/backup", "keep_days": 14 }
 # 环境变量覆盖（便于测试与异地场景）：
-#   OPENCHAT_DB              热库路径（默认 /var/lib/openchat/chatd.db）
-#   OPENCHAT_BACKUP_DIR      本地备份目录（默认取 policy.backup.dir）
-#   OPENCHAT_BACKUP_KEY      加密口令文件（默认 /etc/openchat/backup.key）
-#   OPENCHAT_BACKUP_RSYNC    异地 rsync 目标（user@host:/path）
-#   OPENCHAT_BACKUP_S3       对象存储 URI（s3://bucket/prefix，用 aws 或 rclone）
-#   OPENCHAT_AGE_RECIPIENT   age 公钥（age1...）；设置则优先用 age 加密
+#   UFOT_DB              热库路径（默认 /var/lib/ufot/chatd.db）
+#   UFOT_BACKUP_DIR      本地备份目录（默认取 policy.backup.dir）
+#   UFOT_BACKUP_KEY      加密口令文件（默认 /etc/ufot/backup.key）
+#   UFOT_BACKUP_RSYNC    异地 rsync 目标（user@host:/path）
+#   UFOT_BACKUP_S3       对象存储 URI（s3://bucket/prefix，用 aws 或 rclone）
+#   UFOT_AGE_RECIPIENT   age 公钥（age1...）；设置则优先用 age 加密
 #
 # 加密：优先 age（收件人公钥，适合异地不可信存储）；否则 openssl
 #       AES-256-CBC + PBKDF2(200k) + salt，口令来自 backup.key。
@@ -23,20 +23,48 @@
 set -euo pipefail
 umask 077
 
-ETC="${OPENCHAT_ETC:-/etc/openchat}"
+SCRIPT_DIR=$(cd -- "$(dirname -- "$0")" && pwd)
+ETC="${UFOT_ETC:-/etc/ufot}"
 POLICY="$ETC/policy.json"
-DB="${OPENCHAT_DB:-/var/lib/openchat/chatd.db}"
-KEY="${OPENCHAT_BACKUP_KEY:-$ETC/backup.key}"
+DB="${UFOT_DB:-/var/lib/ufot/chatd.db}"
+KEY="${UFOT_BACKUP_KEY:-$ETC/backup.key}"
 DRY_RUN=0
 
-log()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
-warn() { printf '\033[1;33m[warn]\033[0m %s\n' "$*" >&2; }
-die()  { printf '\033[1;31m[error]\033[0m %s\n' "$*" >&2; exit 1; }
+# Shared output helpers; fallback for standalone copies without deploy/lib/.
+if [ -f "$SCRIPT_DIR/lib/output.sh" ]; then
+  # shellcheck source=lib/output.sh
+  . "$SCRIPT_DIR/lib/output.sh"
+else
+  log()  { printf '==> %s\n' "$*"; }
+  warn() { printf '[warn] %s\n' "$*" >&2; }
+  die()  { printf '[error] %s\n' "$*" >&2; exit 1; }
+fi
+
+usage() {
+  cat <<'EOF'
+用法: backup.sh [--dry-run]
+
+  --dry-run     只校验环境与估算空间，不写任何文件
+  -h, --help    显示本帮助
+
+策略来源：/etc/ufot/policy.json 的 backup 段（cron/dir/keep_days）。
+环境变量覆盖：
+  UFOT_ETC          配置目录（默认 /etc/ufot）
+  UFOT_DB           热库路径（默认 /var/lib/ufot/chatd.db）
+  UFOT_BACKUP_DIR   本地备份目录（默认取 policy.backup.dir）
+  UFOT_BACKUP_KEY   加密口令文件（默认 /etc/ufot/backup.key）
+  UFOT_BACKUP_RSYNC 异地 rsync 目标（user@host:/path）
+  UFOT_BACKUP_S3    S3 URI（s3://bucket/prefix）
+  UFOT_AGE_RECIPIENT age 公钥（设置则优先 age 加密）
+
+退出码：0 成功 / 1 任一步失败（systemd timer 记录 failed）
+EOF
+}
 
 for arg in "$@"; do
   case "$arg" in
     --dry-run) DRY_RUN=1 ;;
-    -h|--help) sed -n '2,30p' "$0"; exit 0 ;;
+    -h|--help) usage; exit 0 ;;
     *) die "未知参数: $arg（只支持 --dry-run）" ;;
   esac
 done
@@ -59,9 +87,9 @@ policy_str() {
 }
 
 KEEP_DAYS=$(policy_int keep_days 14)
-BACKUP_DIR="${OPENCHAT_BACKUP_DIR:-$(policy_str dir /var/lib/openchat/backup)}"
+BACKUP_DIR="${UFOT_BACKUP_DIR:-$(policy_str dir /var/lib/ufot/backup)}"
 STAMP=$(date -u +%Y%m%dT%H%M%SZ)
-BASE="openchat-$STAMP"
+BASE="ufot-$STAMP"
 
 log "备份开始 stamp=$STAMP db=$DB dir=$BACKUP_DIR keep_days=$KEEP_DAYS"
 
@@ -80,8 +108,8 @@ if [ "$DRY_RUN" -eq 1 ]; then
   command -v age >/dev/null 2>&1 && echo "  encrypt          : age (可用)" || echo "  encrypt          : openssl (age 未安装)"
   command -v openssl >/dev/null 2>&1 || warn "openssl 不可用，且 age 未必可用"
   [ -f "$KEY" ] && echo "  key              : $KEY（存在）" || warn "密钥文件不存在: $KEY"
-  [ -n "${OPENCHAT_BACKUP_RSYNC:-}" ] && echo "  offsite(rsync)   : $OPENCHAT_BACKUP_RSYNC"
-  [ -n "${OPENCHAT_BACKUP_S3:-}" ] && echo "  offsite(object)  : $OPENCHAT_BACKUP_S3"
+  [ -n "${UFOT_BACKUP_RSYNC:-}" ] && echo "  offsite(rsync)   : $UFOT_BACKUP_RSYNC"
+  [ -n "${UFOT_BACKUP_S3:-}" ] && echo "  offsite(object)  : $UFOT_BACKUP_S3"
   exit 0
 fi
 
@@ -126,7 +154,7 @@ EOF
 # ---------------------------------------------------------------------------
 log "2/5 加密"
 # age 收件人：环境变量优先；否则把 backup.key 当作公钥文件（age1...）解读
-AGE_RECIPIENT="${OPENCHAT_AGE_RECIPIENT:-}"
+AGE_RECIPIENT="${UFOT_AGE_RECIPIENT:-}"
 if [ -z "$AGE_RECIPIENT" ] && [ -s "$KEY" ] && head -c 4 "$KEY" | grep -q '^age1'; then
   AGE_RECIPIENT=$(tr -d '\n' < "$KEY")
 fi
@@ -169,38 +197,38 @@ log "     sha256=$ENC_SHA"
 # ---------------------------------------------------------------------------
 log "4/5 异地副本"
 OFFSITE_DONE=0
-if [ -n "${OPENCHAT_BACKUP_RSYNC:-}" ]; then
-  command -v rsync >/dev/null 2>&1 || die "配置了 OPENCHAT_BACKUP_RSYNC 但缺少 rsync"
+if [ -n "${UFOT_BACKUP_RSYNC:-}" ]; then
+  command -v rsync >/dev/null 2>&1 || die "配置了 UFOT_BACKUP_RSYNC 但缺少 rsync"
   rsync -az --partial --timeout=300 \
     "$BACKUP_DIR/$ENC_FILE" "$BACKUP_DIR/$ENC_FILE.sha256" \
-    "${OPENCHAT_BACKUP_RSYNC%/}/"
+    "${UFOT_BACKUP_RSYNC%/}/"
   OFFSITE_DONE=1
-  log "     rsync → $OPENCHAT_BACKUP_RSYNC"
+  log "     rsync → $UFOT_BACKUP_RSYNC"
 fi
 
-if [ -n "${OPENCHAT_BACKUP_S3:-}" ]; then
+if [ -n "${UFOT_BACKUP_S3:-}" ]; then
   if command -v aws >/dev/null 2>&1; then
-    aws s3 cp "$BACKUP_DIR/$ENC_FILE" "${OPENCHAT_BACKUP_S3%/}/$ENC_FILE" --only-show-errors
-    aws s3 cp "$BACKUP_DIR/$ENC_FILE.sha256" "${OPENCHAT_BACKUP_S3%/}/$ENC_FILE.sha256" --only-show-errors
+    aws s3 cp "$BACKUP_DIR/$ENC_FILE" "${UFOT_BACKUP_S3%/}/$ENC_FILE" --only-show-errors
+    aws s3 cp "$BACKUP_DIR/$ENC_FILE.sha256" "${UFOT_BACKUP_S3%/}/$ENC_FILE.sha256" --only-show-errors
   elif command -v rclone >/dev/null 2>&1; then
-    rclone copyto "$BACKUP_DIR/$ENC_FILE" "${OPENCHAT_BACKUP_S3%/}/$ENC_FILE"
-    rclone copyto "$BACKUP_DIR/$ENC_FILE.sha256" "${OPENCHAT_BACKUP_S3%/}/$ENC_FILE.sha256"
+    rclone copyto "$BACKUP_DIR/$ENC_FILE" "${UFOT_BACKUP_S3%/}/$ENC_FILE"
+    rclone copyto "$BACKUP_DIR/$ENC_FILE.sha256" "${UFOT_BACKUP_S3%/}/$ENC_FILE.sha256"
   else
-    die "配置了 OPENCHAT_BACKUP_S3 但既无 aws 也无 rclone"
+    die "配置了 UFOT_BACKUP_S3 但既无 aws 也无 rclone"
   fi
   OFFSITE_DONE=1
-  log "     object storage → $OPENCHAT_BACKUP_S3"
+  log "     object storage → $UFOT_BACKUP_S3"
 fi
 
 if [ "$OFFSITE_DONE" -eq 0 ]; then
-  warn "未配置异地目标（OPENCHAT_BACKUP_RSYNC / OPENCHAT_BACKUP_S3）：本机故障会同时丢失备份"
+  warn "未配置异地目标（UFOT_BACKUP_RSYNC / UFOT_BACKUP_S3）：本机故障会同时丢失备份"
 fi
 
 # ---------------------------------------------------------------------------
 # 5. 保留 N 天（策略来自 policy.json 的 backup.keep_days）
 # ---------------------------------------------------------------------------
 log "5/5 清理超过 $KEEP_DAYS 天的本地备份"
-DELETED=$(find "$BACKUP_DIR" -maxdepth 1 -type f -name 'openchat-*' -mtime "+$KEEP_DAYS" -print -delete | wc -l | tr -d ' ')
+DELETED=$(find "$BACKUP_DIR" -maxdepth 1 -type f -name 'ufot-*' -mtime "+$KEEP_DAYS" -print -delete | wc -l | tr -d ' ')
 log "     删除 $DELETED 个过期文件"
 find "$BACKUP_DIR" -maxdepth 1 -type d -name '.tmp.*' -mtime +1 -exec rm -rf {} + 2>/dev/null || true
 

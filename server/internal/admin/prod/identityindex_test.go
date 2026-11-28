@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/yingo-server/OpenChat/server/internal/admin/service"
+	"github.com/yingo-server/UFOT/server/internal/admin/service"
 )
 
 func TestNormalizeIdentifier(t *testing.T) {

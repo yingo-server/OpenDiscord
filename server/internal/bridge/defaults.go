@@ -2,7 +2,7 @@
 // 单独成文件只为让装配文件 pipeline.go 保持 <300 行；不得在此写逻辑。
 package bridge
 
-import "github.com/yingo-server/OpenChat/server/internal/proto/kinds"
+import "github.com/yingo-server/UFOT/server/internal/proto/kinds"
 
 func defaultCaps() map[string][]kinds.Kind {
 	return map[string][]kinds.Kind{
@@ -16,11 +16,24 @@ func defaultCaps() map[string][]kinds.Kind {
 			// direct/embedded frame source with SrcLayer=data passes the
 			// verifier instead of being dropped as "outside capability".
 			kinds.KindConvCreate, kinds.KindConvUpdate, kinds.KindMemberAdd, kinds.KindMemberRemove,
+			kinds.KindMemberUpdate,
 			// 数据层回程：提交后的 ack / 错误 / 读结果必须能上行到 bridge，
 			// 否则 101 的 ack 会被 Verifier 以「能力外」丢弃。
 			kinds.KindMsgAck, kinds.KindMsgNew, kinds.KindError,
+			// 14 WATERMARK 是数据层生成的下行控制帧（拉取模式，v1.2 §1.1）：
+			// 不在能力表里会被 Verifier 以「能力外」丢弃，客户端永远收不到。
+			kinds.KindWatermark,
 			kinds.KindReadHistoryResult, kinds.KindConvDataResult, kinds.KindConvPayload,
 			kinds.KindIdentityResult, kinds.KindFlagResult, kinds.KindJobStatus,
+			// 回执/输入中/presence/撤回：上行请求与下行事件共用这些 kind
+			// （能力表按层不按方向区分；回程帧 SrcLayer=data 也须通过）。
+			kinds.KindMsgRead, kinds.KindMsgDelivered, kinds.KindMsgDelete, kinds.KindMsgRecall,
+			// FE-1a 消息域：106/109 上行请求与下行事件共用（能力表按层不按方向）。
+			kinds.KindMsgEdit, kinds.KindMsgForward,
+			kinds.KindTyping, kinds.KindPresenceUpdate, kinds.KindPresenceOnline, kinds.KindPresenceOffline,
+			// 通话信令回程（data → user）：OFFER/ANSWER/CANDIDATE/BUSY/HANGUP。
+			kinds.KindCallOffer, kinds.KindCallAnswer, kinds.KindCallCandidate,
+			kinds.KindCallBusy, kinds.KindCallHangup,
 		},
 		"admin": {
 			kinds.KindAdminBroadcast, kinds.KindAnnounce, kinds.KindMaintenance, kinds.KindTopology,
@@ -39,14 +52,26 @@ func defaultCaps() map[string][]kinds.Kind {
 func allUserKinds() []kinds.Kind {
 	return []kinds.Kind{
 		kinds.KindMsgSend, kinds.KindSyncRequest, kinds.KindMsgNew, kinds.KindMsgAck, kinds.KindMsgRead, kinds.KindMsgDelivered,
+		// 14 WATERMARK：数据层 → 用户层 → 客户端的水位线下行（v1.2 §1.1）。
+		kinds.KindWatermark,
 		kinds.KindMsgEdit, kinds.KindMsgDelete, kinds.KindMsgRecall, kinds.KindMsgForward, kinds.KindMsgSync, kinds.KindMsgSearch,
 		kinds.KindConvCreate, kinds.KindConvUpdate, kinds.KindConvPayload, kinds.KindMemberAdd, kinds.KindMemberRemove,
 		kinds.KindMemberUpdate, kinds.KindRoleSet, kinds.KindMute, kinds.KindPin, kinds.KindTyping, kinds.KindDraft,
 		kinds.KindConvDataResult,
+		// 930/920/940：客户端直连数据层的三个读/写通道。放在用户层能力表里
+		// 是为了让独立前端能主动取会话列表（930 op7）、翻历史（920）、
+		// 读写自己的资料（940）——此前这三者只对服务端内部可达，
+		// 独立客户端没有任何办法列出自己的会话。
+		kinds.KindConvDataRequest, kinds.KindReadHistory, kinds.KindIdentityRequest,
 		kinds.KindMediaPresignRequest, kinds.KindMediaReady, kinds.KindMediaExpire, kinds.KindMediaThumb,
-		kinds.KindPresenceUpdate, kinds.KindPresenceSubscribe, kinds.KindPresenceUnsubscribe,
+		kinds.KindPresenceUpdate, kinds.KindPresenceOnline, kinds.KindPresenceOffline,
 		kinds.KindProfileUpdate, kinds.KindBlock, kinds.KindUnblock, kinds.KindReport,
 		kinds.KindAdminBroadcast, kinds.KindAnnounce, kinds.KindMaintenance,
+		// FE-1a 下行到客户端：106/109 事件与 202 提及定向通知。
+		kinds.KindMsgEdit, kinds.KindMsgForward, kinds.KindConvPayload,
 		kinds.KindShutdownNotice, kinds.KindFlagSync, kinds.KindConfigUpdate,
+		// 通话信令上行（client → data）：OFFER/ANSWER/CANDIDATE/BUSY/HANGUP。
+		kinds.KindCallOffer, kinds.KindCallAnswer, kinds.KindCallCandidate,
+		kinds.KindCallBusy, kinds.KindCallHangup,
 	}
 }

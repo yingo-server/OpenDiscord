@@ -16,7 +16,7 @@ func init() {
 	if _, err := rand.Read(fingerprintKey[:]); err != nil {
 		// crypto/rand failure is unrecoverable for security code, but a fixed
 		// salt only degrades cross-process unlinkability, not lockout logic.
-		copy(fingerprintKey[:], []byte("openchat-admin-fingerprint-key"))
+		copy(fingerprintKey[:], []byte("ufot-admin-fingerprint-key"))
 	}
 }
 

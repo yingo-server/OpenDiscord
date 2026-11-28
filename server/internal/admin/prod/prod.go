@@ -29,12 +29,12 @@ import (
 	"os"
 	"time"
 
-	"github.com/yingo-server/OpenChat/server/internal/admin"
-	"github.com/yingo-server/OpenChat/server/internal/admin/service"
-	"github.com/yingo-server/OpenChat/server/internal/data/policy"
-	"github.com/yingo-server/OpenChat/server/internal/data/store"
-	"github.com/yingo-server/OpenChat/server/internal/data/store/pg"
-	"github.com/yingo-server/OpenChat/server/internal/pkg/log"
+	"github.com/yingo-server/UFOT/server/internal/admin"
+	"github.com/yingo-server/UFOT/server/internal/admin/service"
+	"github.com/yingo-server/UFOT/server/internal/data/policy"
+	"github.com/yingo-server/UFOT/server/internal/data/store"
+	"github.com/yingo-server/UFOT/server/internal/data/store/pg"
+	"github.com/yingo-server/UFOT/server/internal/pkg/log"
 )
 
 // Options carries the seams tests and specialized deployments need. The zero
@@ -76,7 +76,7 @@ type Options struct {
 //	lg        logger; nil uses log.For("admin.prod")
 //
 // It migrates admin.db, wires every read port, runs the first-run bootstrap
-// (OPENCHAT_ADMIN_USER / OPENCHAT_ADMIN_PASSWORD, argon2id + TOTP) and returns
+// (UFOT_ADMIN_USER / UFOT_ADMIN_PASSWORD, argon2id + TOTP) and returns
 // a runnable *admin.Server. It never starts listening — the caller runs it.
 func NewAdminServer(cfg admin.Config, hot *sql.DB, adminDB *sql.DB, cold *pg.ColdDB, dispatch admin.Dispatcher, pol *policy.Store, lg *log.Logger) (*admin.Server, error) {
 	return NewAdminServerWithOptions(cfg, hot, adminDB, cold, dispatch, pol, lg, Options{})

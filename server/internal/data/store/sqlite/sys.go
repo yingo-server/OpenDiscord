@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/yingo-server/OpenChat/server/internal/data/store"
+	"github.com/yingo-server/UFOT/server/internal/data/store"
 )
 
 // sysStore implements store.SysStore over sys_* tables.
@@ -48,6 +48,20 @@ func (s *sysStore) AllFlags(ctx context.Context) ([]store.Flag, error) {
 		out = append(out, f)
 	}
 	return out, rows.Err()
+}
+
+// InsertReport appends one row to sys_reports (FE-1a #4, ADDITIVE ONLY — the
+// table already exists via store/migrations/hot/sys/0002_reports.sql). The
+// detail string is bounded by the caller; ids + reason enum only.
+func (s *sysStore) InsertReport(ctx context.Context, reporter, targetMsg, targetUser int64, reason int, detail string, at int64) error {
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO sys_reports (reporter, target_msg, target_user, reason, status, at)
+VALUES (?, ?, ?, ?, 0, ?)`,
+		reporter, targetMsg, targetUser, reason, detail, at)
+	if err != nil {
+		return fmt.Errorf("sqlite: insert report reporter=%d msg=%d: %w", reporter, targetMsg, err)
+	}
+	return nil
 }
 
 func (s *sysStore) UpsertPresence(ctx context.Context, p *store.Presence) error {

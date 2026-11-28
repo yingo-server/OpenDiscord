@@ -4,8 +4,8 @@ package pipe
 // envelopes {msg_id, seq, client_msg_id, status}.
 
 import (
-	"github.com/yingo-server/OpenChat/server/internal/data/pipe/wire"
-	"github.com/yingo-server/OpenChat/server/internal/proto/kinds"
+	"github.com/yingo-server/UFOT/server/internal/data/pipe/wire"
+	"github.com/yingo-server/UFOT/server/internal/proto/kinds"
 )
 
 // buildAckEnv composes the ack env for a committed (or replayed) message.

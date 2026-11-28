@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yingo-server/OpenChat/server/internal/proto/kinds"
+	"github.com/yingo-server/UFOT/server/internal/proto/kinds"
 )
 
 func near(a, b float64) bool { return math.Abs(a-b) < 1e-9 }
@@ -185,5 +185,40 @@ func TestRemoveConn(t *testing.T) {
 	l.RemoveConn(6)
 	if n := l.ConnCount(600); n != 1 {
 		t.Fatalf("conns after remove = %d", n)
+	}
+}
+
+// TestAdmissionQPSGlobalBucket：V2-0 准入容量——全局 QPS 桶只对 MSG_SEND 生效，
+// 默认 0 时逐字节等价旧行为。
+func TestAdmissionQPSGlobalBucket(t *testing.T) {
+	now := time.Now()
+	// 默认（GlobalQPS=0）：不受全局桶影响，按 per-conn 规则（放宽到不限）。
+	cfg := DefaultConfig()
+	cfg.Rules[uint32(kinds.KindMsgSend)] = Rule{Rate: 100, Burst: 100, Capacity: 100}
+	l0 := New(cfg)
+	for i := 0; i < 5; i++ {
+		if v := l0.AllowAt(1, 100, uint32(kinds.KindMsgSend), 0, now); v != OK {
+			t.Fatalf("admission-off: got %v at i=%d", v, i)
+		}
+	}
+	// 开启：GlobalQPS=2，Burst/Cap=2 → 前 2 帧 OK，第 3 帧 Throttle（全局桶）。
+	cfg.GlobalQPS = 2
+	l := New(cfg)
+	if v := l.AllowAt(2, 200, uint32(kinds.KindMsgSend), 0, now); v != OK {
+		t.Fatalf("admission first = %v", v)
+	}
+	if v := l.AllowAt(2, 200, uint32(kinds.KindMsgSend), 0, now); v != OK {
+		t.Fatalf("admission second = %v", v)
+	}
+	if v := l.AllowAt(2, 200, uint32(kinds.KindMsgSend), 0, now); v != Throttle {
+		t.Fatalf("admission third = %v, want Throttle", v)
+	}
+	// 非 MSG_SEND（typing）不消耗全局桶：仍按自身规则（不限）放行。
+	if v := l.AllowAt(2, 200, uint32(kinds.KindTyping), 0, now); v != OK {
+		t.Fatalf("typing must not consume global bucket: %v", v)
+	}
+	// 时间推进后令牌恢复。
+	if v := l.AllowAt(2, 200, uint32(kinds.KindMsgSend), 0, now.Add(time.Second)); v != OK {
+		t.Fatalf("admission after 1s = %v", v)
 	}
 }

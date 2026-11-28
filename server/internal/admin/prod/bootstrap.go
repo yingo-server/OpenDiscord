@@ -7,22 +7,29 @@ import (
 	"encoding/base32"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
-	"github.com/yingo-server/OpenChat/server/internal/admin"
-	"github.com/yingo-server/OpenChat/server/internal/admin/identity"
-	"github.com/yingo-server/OpenChat/server/internal/pkg/log"
-	"github.com/yingo-server/OpenChat/server/internal/user/core/authn"
+	"github.com/yingo-server/UFOT/server/internal/admin"
+	"github.com/yingo-server/UFOT/server/internal/admin/identity"
+	"github.com/yingo-server/UFOT/server/internal/pkg/log"
+	"github.com/yingo-server/UFOT/server/internal/user/core/authn"
 )
 
 // Bootstrap environment variables. They are read ONCE, on the first start of
 // an admin.db that has no administrator, and never stored anywhere.
 const (
 	// EnvAdminUser is the bootstrap super-admin username.
-	EnvAdminUser = "OPENCHAT_ADMIN_USER"
+	EnvAdminUser = "UFOT_ADMIN_USER"
 	// EnvAdminPassword is the bootstrap password (>= PasswordMinLen chars).
-	EnvAdminPassword = "OPENCHAT_ADMIN_PASSWORD"
+	// Legacy path: the password lives in the process environment. It is kept
+	// for compatibility but prints a warning.
+	EnvAdminPassword = "UFOT_ADMIN_PASSWORD"
+	// EnvAdminPasswordFile points at a file holding the bootstrap password.
+	// Preferred: the secret never appears in the environment or in `ps` output.
+	// The file must be a regular file, owned by the running user, mode 0600.
+	EnvAdminPasswordFile = "UFOT_ADMIN_PASS_FILE"
 )
 
 // bootstrapTimeout bounds the whole first-run provisioning.
@@ -32,7 +39,7 @@ const bootstrapTimeout = 30 * time.Second
 // empty (first start of a fresh admin.db).
 //
 // Contract (docs/security-spec.md §3.3):
-//   - credentials come from OPENCHAT_ADMIN_USER / OPENCHAT_ADMIN_PASSWORD;
+//   - credentials come from UFOT_ADMIN_USER / UFOT_ADMIN_PASSWORD;
 //   - the password is stored as argon2id (authn.Hasher), never in clear;
 //   - a TOTP secret is generated and printed exactly once — TOTP is mandatory
 //     at login, so the account is unusable until the operator enrolls it;
@@ -118,7 +125,40 @@ func adminBootstrapVars(getenv func(string) string) (user, pass string) {
 	if getenv == nil {
 		return "", ""
 	}
-	return strings.TrimSpace(getenv(EnvAdminUser)), getenv(EnvAdminPassword)
+	user = strings.TrimSpace(getenv(EnvAdminUser))
+	// Preferred: a password file (the secret never enters the environment).
+	if path := strings.TrimSpace(getenv(EnvAdminPasswordFile)); path != "" {
+		if raw, err := readPasswordFile(path); err == nil {
+			return user, raw
+		} else {
+			return user, ""
+		}
+	}
+	return user, getenv(EnvAdminPassword)
+}
+
+// readPasswordFile reads a bootstrap password from disk. The file must be a
+// regular file (not a symlink), owned by the current user, and not readable by
+// group or others — otherwise the secret is exposed to other local users.
+func readPasswordFile(path string) (string, error) {
+	fi, err := os.Lstat(path)
+	if err != nil {
+		return "", err
+	}
+	if fi.Mode()&os.ModeSymlink != 0 {
+		return "", errors.New("password file must not be a symlink")
+	}
+	if !fi.Mode().IsRegular() {
+		return "", errors.New("password file must be a regular file")
+	}
+	if fi.Mode().Perm()&0o077 != 0 {
+		return "", fmt.Errorf("password file mode %o is too permissive (want 0600)", fi.Mode().Perm())
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimRight(string(raw), "\r\n"), nil
 }
 
 // newTOTPSecret returns a 160-bit base32 secret (RFC 4226 recommends >= 128
@@ -133,6 +173,6 @@ func newTOTPSecret() (string, error) {
 
 // otpauthURI builds the provisioning URI an authenticator app scans.
 func otpauthURI(user, secret string) string {
-	return "otpauth://totp/OpenChat:" + user +
-		"?secret=" + secret + "&issuer=OpenChat&algorithm=SHA1&digits=6&period=30"
+	return "otpauth://totp/UFOT:" + user +
+		"?secret=" + secret + "&issuer=UFOT&algorithm=SHA1&digits=6&period=30"
 }

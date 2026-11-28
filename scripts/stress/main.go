@@ -1,14 +1,23 @@
-// Command stress is the CI load generator for OpenChat: it boots a real chatd,
-// then drives HTTP endpoints and the WebSocket channel concurrently and prints
-// a compact result table. Deliberately single-file: this is a CI tool, not a
-// product surface (see docs/architecture.md: tools are small and composed).
 package main
+
+// Command stress is the CI load generator for UFOT. It boots a real chatd,
+// pre-registers a user pool ONCE, seeds N-member conversations, then drives the
+// WS channel (and optionally HTTP) and prints an honest, auditable capacity
+// report. See docs/architecture.md: tools are small and composed.
+//
+// Design goals (vs the previous 800-line single-file tool):
+//   - registration and connection are separated (phase 0 pre-registers a pool);
+//   - every worker keeps its OWN latency ring (real p50/p95/p99);
+//   - availability = ACKs / attempted sends, with write_err and server_drop as
+//     independent columns;
+//   - --mode=mixed injects MSG_SEND/TYPING/RECEIPT/PRESENCE;
+//   - --conv-members makes fanout O(N) instead of O(1);
+//   - rate limiting is ON by default (production parity), --no-ratelimit opts out
+//     and the run is prominently flagged as such.
 
 import (
 	"bytes"
-	"crypto/rand"
 	"database/sql"
-	"encoding/base64"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -27,59 +36,90 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
-type stats struct {
-	mu     sync.Mutex
-	lat    []time.Duration
-	ok     atomic.Int64
-	fail   atomic.Int64
-	errs   map[string]int
-	byName map[string]*stats1
+// ---------------------------------------------------------------------------
+// HTTP identity
+// ---------------------------------------------------------------------------
+
+type client struct {
+	hc  *http.Client
+	tok string
+	uid int64
 }
 
-type stats1 struct{ ok, fail int64; lat []time.Duration }
-
-func newStats() *stats {
-	return &stats{errs: map[string]int{}, byName: map[string]*stats1{}}
-}
-
-func (s *stats) add(name string, d time.Duration, err error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	st := s.byName[name]
-	if st == nil {
-		st = &stats1{}
-		s.byName[name] = st
-	}
+func guest(base string) (*client, error) {
+	jar, _ := cookiejar.New(nil)
+	hc := &http.Client{Jar: jar, Timeout: 15 * time.Second}
+	resp, err := hc.Post(base+"/api/auth/guest", "application/json",
+		bytes.NewReader([]byte(`{"device_id":"stress-`+randHex(8)+`"}`)))
 	if err != nil {
-		s.fail.Add(1)
-		st.fail++
-		s.errs[err.Error()]++
-		return
+		return nil, err
 	}
-	s.ok.Add(1)
-	st.ok++
-	st.lat = append(st.lat, d)
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("guest status %d", resp.StatusCode)
+	}
+	var out struct {
+		AccessToken string `json:"access_token"`
+		UserID      int64  `json:"user_id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	if out.AccessToken == "" || out.UserID <= 0 {
+		return nil, fmt.Errorf("guest returned empty token/uid")
+	}
+	return &client{hc: hc, tok: out.AccessToken, uid: out.UserID}, nil
 }
 
-func pct(lat []time.Duration, p float64) time.Duration {
-	if len(lat) == 0 {
-		return 0
+// preregister registers n users with bounded concurrency (32), retrying a few
+// times, and returns a dense pool. Registration happens exactly once — the ramp
+// phase never registers (defect #1/#8).
+func preregister(base string, n, conc int) ([]*client, error) {
+	if conc <= 0 {
+		conc = 32
 	}
-	cp := append([]time.Duration(nil), lat...)
-	for i := 1; i < len(cp); i++ {
-		for j := i; j > 0 && cp[j] < cp[j-1]; j-- {
-			cp[j], cp[j-1] = cp[j-1], cp[j]
-		}
+	pool := make([]*client, n)
+	jobs := make(chan int)
+	var wg sync.WaitGroup
+	var failCount int64
+	for w := 0; w < conc; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := range jobs {
+				var c *client
+				var err error
+				for attempt := 0; attempt < 5; attempt++ {
+					if c, err = guest(base); err == nil {
+						break
+					}
+					time.Sleep(50 * time.Millisecond)
+				}
+				if err != nil {
+					atomic.AddInt64(&failCount, 1)
+					continue
+				}
+				pool[i] = c
+			}
+		}()
 	}
-	idx := int(float64(len(cp)-1) * p)
-	return cp[idx]
+	for i := 0; i < n; i++ {
+		jobs <- i
+	}
+	close(jobs)
+	wg.Wait()
+	if failCount > 0 {
+		return pool, fmt.Errorf("%d/%d guest registrations failed", failCount, n)
+	}
+	return pool, nil
 }
 
-// --- server boot -------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// server boot + seeding
+// ---------------------------------------------------------------------------
 
-func runChatd(dir string) (*exec.Cmd, string, error) {
+func runChatd(dir string, rateLimit bool) (*exec.Cmd, string, error) {
 	cfg := filepath.Join(dir, "chatd.toml")
-	rl := os.Getenv("STRESS_RATE_LIMIT") != "false"
 	toml := fmt.Sprintf(`mode = "embedded"
 listen = "127.0.0.1:18080"
 admin_listen = "127.0.0.1:17780"
@@ -92,7 +132,7 @@ media_dir = "%[1]s/media"
 log_level = "info"
 dev_otp = true
 rate_limit_enabled = %[2]t
-`, dir, rl)
+`, dir, rateLimit)
 	if err := os.WriteFile(cfg, []byte(toml), 0o600); err != nil {
 		return nil, "", err
 	}
@@ -111,7 +151,7 @@ rate_limit_enabled = %[2]t
 		return nil, "", err
 	}
 	base := "http://127.0.0.1:18080"
-	deadline := time.Now().Add(15 * time.Second)
+	deadline := time.Now().Add(20 * time.Second)
 	for time.Now().Before(deadline) {
 		if r, err := http.Get(base + "/healthz"); err == nil {
 			r.Body.Close()
@@ -124,91 +164,49 @@ rate_limit_enabled = %[2]t
 	return nil, "", fmt.Errorf("chatd did not become healthy")
 }
 
-// seedConv creates a single-chat conversation with both members directly in the
-// hot DB; the user-plane CONV_CREATE path is exercised elsewhere, the stress
-// tool only needs a valid cid to send into.
-func seedConv(dbPath string, a, b int64) (int64, error) {
+// seedConvs creates numConvs conversations, each with convMembers members drawn
+// from uids, directly in the hot DB. A wider member set makes MSG_NEW fanout
+// actually O(members) instead of O(1) (defect #5).
+func seedConvs(dbPath string, uids []int64, convMembers, numConvs int) ([]int64, error) {
 	db, err := sql.Open("sqlite3", dbPath+"?_journal_mode=WAL&_busy_timeout=5000")
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	defer db.Close()
-	var cid int64
+	cids := make([]int64, 0, numConvs)
 	now := time.Now().Unix()
-	if err := db.QueryRow(`INSERT INTO conv_conversations(ctype,title,created_by,created_at) VALUES(1,'stress',?,?) RETURNING cid`, a, now).Scan(&cid); err != nil {
-		return 0, err
-	}
-	for _, u := range []int64{a, b} {
-		if _, err := db.Exec(`INSERT INTO conv_members(cid,uid,role,joined_at) VALUES(?,?,0,?)`, cid, u, now); err != nil {
-			return 0, err
+	for c := 0; c < numConvs; c++ {
+		lo := c * convMembers
+		hi := lo + convMembers
+		if hi > len(uids) {
+			hi = len(uids)
 		}
+		members := uids[lo:hi]
+		if len(members) == 0 {
+			break
+		}
+		var cid int64
+		if err := db.QueryRow(
+			`INSERT INTO conv_conversations(ctype,title,created_by,created_at) VALUES(1,'stress',?,?) RETURNING cid`,
+			members[0], now).Scan(&cid); err != nil {
+			return nil, err
+		}
+		for _, u := range members {
+			if _, err := db.Exec(`INSERT INTO conv_members(cid,uid,role,joined_at) VALUES(?,?,0,?)`, cid, u, now); err != nil {
+				return nil, err
+			}
+		}
+		if _, err := db.Exec(`INSERT INTO conv_seq(cid,next_seq) VALUES(?,1)`, cid); err != nil {
+			return nil, err
+		}
+		cids = append(cids, cid)
 	}
-	if _, err := db.Exec(`INSERT INTO conv_seq(cid,next_seq) VALUES(?,1)`, cid); err != nil {
-		return 0, err
-	}
-	return cid, nil
+	return cids, nil
 }
 
-// --- HTTP load ---------------------------------------------------------------
-
-type client struct {
-	hc  *http.Client
-	tok string
-	uid int64
-}
-
-func guest(base string) (*client, error) {
-	jar, _ := cookiejar.New(nil)
-	hc := &http.Client{Jar: jar, Timeout: 10 * time.Second}
-	resp, err := hc.Post(base+"/api/auth/guest", "application/json",
-		bytes.NewReader([]byte(`{"device_id":"stress-`+randHex(6)+`"}`)))
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	var out struct {
-		AccessToken string `json:"access_token"`
-		UserID      int64  `json:"user_id"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return nil, err
-	}
-	return &client{hc: hc, tok: out.AccessToken, uid: out.UserID}, nil
-}
-
-func randHex(n int) string {
-	b := make([]byte, n)
-	rand.Read(b)
-	return base64.RawURLEncoding.EncodeToString(b)[:n]
-}
-
-func (c *client) do(method, url string, body []byte, hdr map[string]string) (*http.Response, error) {
-	req, err := http.NewRequest(method, url, bytes.NewReader(body))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Cookie", "access_token="+c.tok)
-	for k, v := range hdr {
-		req.Header.Set(k, v)
-	}
-	return c.hc.Do(req)
-}
-
-// --- WS load -----------------------------------------------------------------
-
-// jsonEnvelope mirrors apps/client/src/net/proto/codec.ts envelopeToJson:
-// snake_case fields, payload as base64.
-type jsonEnvelope struct {
-	ID        uint64 `json:"id,omitempty"`
-	AckID     uint64 `json:"ack_id,omitempty"`
-	Kind      uint32 `json:"kind"`
-	Version   uint32 `json:"version,omitempty"`
-	RequestID string `json:"request_id,omitempty"`
-	Flags     uint32 `json:"flags,omitempty"`
-	SentAt    uint64 `json:"sent_at,omitempty"`
-	ConvID    uint64 `json:"conv_id,omitempty"`
-	Payload   string `json:"payload,omitempty"`
-}
+// ---------------------------------------------------------------------------
+// WS dial
+// ---------------------------------------------------------------------------
 
 func dialWS(base, token string) (*websocket.Conn, error) {
 	u := "ws" + base[len("http"):] + "/ws"
@@ -217,41 +215,301 @@ func dialWS(base, token string) (*websocket.Conn, error) {
 	return conn, err
 }
 
-func mkSend(cid uint64, text string) []byte {
-	pl, _ := json.Marshal(map[string]any{"text": text, "clientMsgId": randHex(12)})
-	env := jsonEnvelope{ID: 1, Kind: 101, Version: 1, RequestID: randHex(10),
-		SentAt: uint64(time.Now().UnixMilli()), ConvID: cid,
-		Payload: base64.StdEncoding.EncodeToString(pl)}
-	b, _ := json.Marshal(env)
-	return b
+// reportPullCapability sends CLIENT_CAPS(18) with pull_capable=true so the
+// server's universal-pull split treats this connection as a modern client
+// (watermark path instead of inline 102). Without this, stress runs measure
+// the legacy inline path even with universal_pull_enabled=true.
+func (w *worker) reportPullCapability() error {
+	pl, _ := json.Marshal(map[string]bool{"pull_capable": true})
+	b, err := encodeEnvelope(&envelope{Kind: 18, Payload: pl})
+	if err != nil {
+		return err
+	}
+	w.writeMu.Lock()
+	defer w.writeMu.Unlock()
+	return w.conn.WriteMessage(websocket.TextMessage, b)
 }
 
-// --- main --------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Level runner
+// ---------------------------------------------------------------------------
+
+type levelResult struct {
+	Conns       int
+	RampMs      int64
+	Handshakes  int
+	RampErr     int64
+	Ops         map[string]*opAgg
+	ServerDrop  int64
+	PeerSamples []time.Duration
+	WindowSecs  float64
+	RampTimeout bool
+	// pull-mode statistics (§4.4 item 2). All zero in push-mode runs.
+	PullMode        bool
+	DownWatermarks  int64           // watermark frames/s denominator: DownWatermarks/WindowSecs
+	DownMsgNew      int64           // msg_new frames (live fanout + catch-up replay)
+	DownCtrl        int64           // every other downstream frame (ack/typing/presence/error/...)
+	SyncRequests    int64           // uplink kind 8 pulls (client QPS numerator)
+	DownRateLimited int64           // kind 13 RATE_LIMITED frames observed (S-6 adaptive evidence)
+	SlowInjected    int             // S-4: connections pacing slowFactor× slower
+	Convergence     []time.Duration // watermark latestSeq → lastSeq caught-up samples
+	ConvergenceOpen int64           // watermarks still unsettled at window end
+}
+
+// perSec guards division for the per-second frame rates.
+func perSec(n int64, secs float64) float64 {
+	if secs <= 0 {
+		return 0
+	}
+	return float64(n) / secs
+}
+
+type levelPlan struct {
+	conns       int
+	convMembers int
+	convIDs     []int64
+	pool        []*client
+	base        string
+	duration    time.Duration
+	interval    time.Duration
+	mix         *mixer
+	rampBudget  time.Duration
+	pullMode    bool
+	// S-4 slow-consumer injection (REL): a deterministic subset of workers
+	// paces their ops slowFactor× slower. Reads are untouched — a slow
+	// consumer here is a connection whose send loop stalls, exercising server
+	// backpressure, not a closed TCP window.
+	slowRatio  float64
+	slowFactor float64
+}
+
+func runLevel(p levelPlan) *levelResult {
+	res := &levelResult{Conns: p.conns, Ops: map[string]*opAgg{}, WindowSecs: p.duration.Seconds()}
+	for _, n := range opNames {
+		res.Ops[n] = &opAgg{}
+	}
+
+	// ---- phase A: ramp (handshake only, tokens already registered) ----
+	var (
+		mu      sync.Mutex
+		workers []*worker
+		rampErr int64
+	)
+	rampStart := time.Now()
+	sem := make(chan struct{}, 256)
+	var rwg sync.WaitGroup
+	for i := 0; i < p.conns; i++ {
+		rwg.Add(1)
+		go func(id int) {
+			defer rwg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			tok := p.pool[id].tok
+			convIdx := id / p.convMembers
+			if convIdx >= len(p.convIDs) {
+				convIdx = len(p.convIDs) - 1
+			}
+			conv := uint64(p.convIDs[convIdx])
+			var conn *websocket.Conn
+			var err error
+			for attempt := 0; attempt < 4; attempt++ {
+				conn, err = dialWS(p.base, tok)
+				if err == nil {
+					break
+				}
+				time.Sleep(150 * time.Millisecond)
+			}
+			if err != nil {
+				atomic.AddInt64(&rampErr, 1)
+				return
+			}
+			mu.Lock()
+			w := newWorker(id, tok, p.pool[id].uid, conv, conn)
+			if p.pullMode {
+				w.pull = newPullTracker()
+				// 上报能力：universal pull 服务端据此把本连接归入水位线分支，
+				// 压测才反映真实浏览器客户端的投递路径（否则全走 inline 102）。
+				if err := w.reportPullCapability(); err != nil {
+					atomic.AddInt64(&rampErr, 1)
+				}
+			}
+			workers = append(workers, w)
+			mu.Unlock()
+		}(i)
+	}
+	done := make(chan struct{})
+	go func() { rwg.Wait(); close(done) }()
+	budget := p.rampBudget
+	if budget <= 0 {
+		budget = 120 * time.Second
+	}
+	select {
+	case <-done:
+	case <-time.After(budget):
+		res.RampTimeout = true
+	}
+	res.RampMs = time.Since(rampStart).Milliseconds()
+	res.Handshakes = len(workers)
+	res.RampErr = atomic.LoadInt64(&rampErr)
+
+	if res.RampTimeout || len(workers) == 0 {
+		// still drain any late workers so we don't leak conns
+		for _, w := range workers {
+			w.conn.Close()
+		}
+		return res
+	}
+
+	// ---- phase B: steady-state mixed load ----
+	peer := newPeerRecorder()
+	deadline := time.Now().Add(p.duration)
+	var swg sync.WaitGroup
+	for _, w := range workers {
+		slow, mult := slowFor(w.id, len(workers), p.slowRatio, p.slowFactor)
+		w.slowMult = mult
+		if slow {
+			w.isSlow = true
+			res.SlowInjected++
+		}
+		go w.readLoop(peer)
+		swg.Add(1)
+		go func(w *worker) {
+			defer swg.Done()
+			w.run(deadline, p.interval, p.mix, peer)
+		}(w)
+	}
+	swg.Wait()
+	// grace: let outstanding ACKs / peer frames settle before we tear down.
+	time.Sleep(800 * time.Millisecond)
+
+	// aggregate per worker
+	for _, w := range workers {
+		drop := w.serverDrop.Load()
+		atomic.AddInt64(&res.ServerDrop, drop)
+		for _, n := range opNames {
+			att, ok, werr, samples := w.ops[n].snapshot()
+			a := res.Ops[n]
+			a.Attempted += att
+			a.OK += ok
+			a.WriteErr += werr
+			a.Samples = append(a.Samples, samples...)
+		}
+	}
+	// msg_send "OK" is ACK-based; keep it in Acked for the availability rule.
+	res.Ops["msg_send"].Acked = res.Ops["msg_send"].OK
+	res.PeerSamples = peer.snapshot()
+	res.WindowSecs = p.duration.Seconds()
+	res.PullMode = p.pullMode
+	if p.pullMode {
+		var conv [][]time.Duration
+		for _, w := range workers {
+			res.DownWatermarks += w.downWM.Load()
+			res.DownMsgNew += w.downMsgNew.Load()
+			res.DownCtrl += w.downCtrl.Load()
+			res.SyncRequests += w.syncQPS.Load()
+			res.DownRateLimited += w.downRateLimited.Load()
+			if w.pull != nil {
+				conv = append(conv, w.pull.convergence())
+			}
+		}
+		res.Convergence = mergeSamples(conv)
+		for _, w := range workers {
+			if w.pull != nil {
+				res.ConvergenceOpen += int64(w.pull.outstanding())
+			}
+		}
+	}
+
+	for _, w := range workers {
+		w.conn.Close()
+	}
+	return res
+}
+
+// ---------------------------------------------------------------------------
+// main
+// ---------------------------------------------------------------------------
 
 func main() {
 	var (
-		mode     = flag.String("mode", "both", "http|ws|both")
-		conns    = flag.Int("conns", 64, "concurrent workers")
-		secs     = flag.Int("duration", 10, "seconds per phase")
-		skipBoot = flag.Bool("no-boot", false, "use an already-running chatd at -base")
-		base     = flag.String("base", "http://127.0.0.1:18080", "chatd base URL")
-		out      = flag.String("out", "result.json", "result file")
-		assert   = flag.Bool("assert", false, "exit 1 when thresholds are missed")
-		ladder   = flag.String("ladder", "", "auto-scale: comma conn counts; stop when availability < 70%")
+		mode       = flag.String("mode", "both", "load mode: http | ws | both | mixed (mixed = WS with MSG_SEND/TYPING/RECEIPT/PRESENCE)")
+		conns      = flag.Int("conns", 64, "concurrent WS connections (workers)")
+		secs       = flag.Int("duration", 10, "steady-state measurement window in seconds, per level")
+		interval   = flag.Duration("interval", 100*time.Millisecond, "per-worker pacing between ops (raise to stay under per-conn rate limits)")
+		convMem    = flag.Int("conv-members", 2, "members per seeded conversation (fanout width); each sender is a member of its conv")
+		skipBoot   = flag.Bool("no-boot", false, "use an already-running chatd at -base (set CHATD_DB to its hot.db)")
+		base       = flag.String("base", "http://127.0.0.1:18080", "chatd base URL (used with -no-boot)")
+		out        = flag.String("out", "result.json", "result JSON file")
+		assert     = flag.Bool("assert", false, "exit 1 when thresholds are missed")
+		ladder     = flag.String("ladder", "", "auto-scale: 'start=N,max=M'; doubles conns until availability < 70%")
+		noRL       = flag.Bool("no-ratelimit", false, "DISABLE rate limiting (raw-ceiling mode; the run is flagged)")
+		metrics    = flag.String("metrics-url", "", "optional admin REST /api/v1/metrics URL to scrape server-side counters")
+		sendR      = flag.Int("send-ratio", 70, "mixed mode: % of MSG_SEND")
+		typingR    = flag.Int("typing-ratio", 15, "mixed mode: % of TYPING")
+		receiptR   = flag.Int("receipt-ratio", 10, "mixed mode: % of RECEIPT")
+		presR      = flag.Int("presence-ratio", 5, "mixed mode: % of PRESENCE")
+		pullMode   = flag.Bool("pull-mode", false, "enable pull-mode client behaviour: handle kind 14 WATERMARK, reply with 8 SYNC pulls (spec pull-mode-spec §4.4); default false = push-mode, byte-identical to pre-§4.4 behaviour")
+		univPull   = flag.Bool("universal-pull", false, "REL/lts-1.4: universal-pull stress mode — ALL sessions watermark-driven (kind 14 → 8 SYNC, reuses pullTracker); implies --pull-mode. Reports watermark/s, SYNC QPS, convergence latency and the 3-way downstream frame split (spec universal-pull-spec §4)")
+		slowRatio  = flag.Float64("slow-ratio", 0, "S-4: fraction of connections injected as slow consumers (0..1), e.g. 0.05 = 50/1000")
+		slowFactor = flag.Float64("slow-factor", 5, "S-4: pacing multiplier applied to slow-consumer connections (>=1)")
+		adaptCmp   = flag.String("adaptive-compare", "", "S-6: compare two recorded --universal-pull result JSONs (static.json,adaptive.json), print batch/interval evidence + rate-limit hits, then exit (no load is generated)")
 	)
 	flag.Parse()
 
-	if *ladder != "" {
-		runLadder(*base, *ladder, *secs, *out)
+	// S-6 offline comparison: no load, just merge the two recorded runs.
+	if *adaptCmp != "" {
+		runAdaptiveCompare(*adaptCmp)
 		return
+	}
+
+	// universal-pull is watermark-driven end to end, so it implies pull-mode.
+	if *univPull {
+		*pullMode = true
+	}
+
+	rateLimit := !*noRL
+
+	if *mode == "restart-storm" {
+		runRestartStorm(*base, *conns, *convMem, *secs, *interval, rateLimit, *skipBoot, *out)
+		return
+	}
+
+	mkMixer := func() *mixer {
+		if *mode == "mixed" || *mode == "both" || *mode == "ws" {
+			if *mode == "mixed" {
+				return newMixer(*sendR, *typingR, *receiptR, *presR)
+			}
+		}
+		return newMixer(100, 0, 0, 0) // pure msg_send
+	}
+
+	// ---- decide pool size & conv plan ----
+	convMembers := *convMem
+	if convMembers < 2 {
+		convMembers = 2
+	}
+
+	if *ladder != "" {
+		start, maxConns := parseLadder(*ladder)
+		numConvs := (maxConns + convMembers - 1) / convMembers
+		poolSize := numConvs * convMembers
+		runLadder(*base, start, maxConns, *secs, *interval, convMembers, poolSize, rateLimit, *skipBoot, *pullMode, *slowRatio, *slowFactor, mkMixer(), *out, *metrics)
+		return
+	}
+
+	numConvs := (*conns + convMembers - 1) / convMembers
+	poolSize := numConvs * convMembers
+	if poolSize < *conns {
+		poolSize = *conns
 	}
 
 	dir, _ := os.MkdirTemp("", "ocstress-")
 	defer os.RemoveAll(dir)
 	var chatd *exec.Cmd
+	dbPath := filepath.Join(dir, "hot.db")
 	if !*skipBoot {
 		var err error
-		chatd, *base, err = runChatd(dir)
+		chatd, *base, err = runChatd(dir, rateLimit)
 		if err != nil {
 			fmt.Println("boot:", err)
 			os.Exit(2)
@@ -262,414 +520,478 @@ func main() {
 				chatd.Process.Wait()
 			}
 		}()
-	}
-
-	// Prepare identities + a conversation to send into.
-	a, _ := guest(*base)
-	b, _ := guest(*base)
-	dbPath := filepath.Join(dir, "hot.db")
-	if *skipBoot {
+	} else {
 		dbPath = os.Getenv("CHATD_DB")
 	}
-	cid, err := seedConv(dbPath, a.uid, b.uid)
+
+	fmt.Printf("== UFOT stress: %s mode=%s conns=%d duration=%ds conv_members=%d rate_limit=%s ==\n",
+		*base, *mode, *conns, *secs, convMembers, rlLabel(rateLimit))
+
+	// phase 0: pre-register the pool (once)
+	t0 := time.Now()
+	pool, perr := preregister(*base, poolSize, 32)
+	preregDur := time.Since(t0)
+	if perr != nil {
+		fmt.Printf("pre-register: %v (proceeding with %d ok)\n", perr, countNonNil(pool))
+		pool = compact(pool)
+		if len(pool) < poolSize {
+			poolSize = len(pool)
+			numConvs = (poolSize + convMembers - 1) / convMembers
+		}
+	}
+	uids := make([]int64, len(pool))
+	for i, c := range pool {
+		uids[i] = c.uid
+	}
+	fmt.Printf("pre-registered users: %d (in %s, concurrency 32)\n", len(pool), preregDur.Round(time.Millisecond))
+
+	// seed conversations (once)
+	convIDs, err := seedConvs(dbPath, uids, convMembers, numConvs)
 	if err != nil {
-		fmt.Println("seed conv:", err)
+		fmt.Println("seed convs:", err)
 		os.Exit(2)
 	}
-	fmt.Printf("== stress: %s conns=%d duration=%ds conv=%d (a=%d b=%d) ==\n",
-		*base, *conns, *secs, cid, a.uid, b.uid)
+	fmt.Printf("seeded conversations: %d (members/conv=%d)\n", len(convIDs), convMembers)
 
-	st := newStats()
-	deadline := time.Now().Add(time.Duration(*secs) * time.Second)
-
-	var wg sync.WaitGroup
-	// phase 1: HTTP API（独占跑完再开 WS，否则 guest 注册风暴会挤掉 WS 握手）
-	if *mode != "ws" {
-		for i := 0; i < *conns; i++ {
-			wg.Add(1)
-			go func(id int) {
-				defer wg.Done()
-				c := a
-				for time.Now().Before(deadline) {
-					t0 := time.Now()
-					r, err := c.do("GET", *base+"/healthz", nil, nil)
-					if err != nil {
-						st.add("http.healthz", 0, err)
-						continue
-					}
-					io.Copy(io.Discard, r.Body)
-					r.Body.Close()
-					st.add("http.healthz", time.Since(t0), nil)
-
-					t0 = time.Now()
-					r, err = c.do("POST", *base+"/api/auth/guest", []byte(`{"device_id":"w-`+randHex(6)+`"}`),
-						map[string]string{"Content-Type": "application/json"})
-					if err != nil {
-						st.add("http.guest", 0, err)
-						continue
-					}
-					io.Copy(io.Discard, r.Body)
-					r.Body.Close()
-					st.add("http.guest", time.Since(t0), nil)
-
-					// media: small PNG round trip
-					t0 = time.Now()
-					png := []byte("\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde")
-					boundary := "----stress" + randHex(8)
-					body := bytes.NewBufferString("--" + boundary + "\r\nContent-Disposition: form-data; name=\"file\"; filename=\"s.png\"\r\nContent-Type: image/png\r\n\r\n")
-					body.Write(png)
-					body.WriteString("\r\n--" + boundary + "--\r\n")
-					r, err = c.do("POST", *base+"/api/media/upload", body.Bytes(),
-						map[string]string{"Content-Type": "multipart/form-data; boundary=" + boundary})
-					if err == nil {
-						var up struct {
-							MediaID string `json:"media_id"`
-						}
-						json.NewDecoder(r.Body).Decode(&up)
-						r.Body.Close()
-						if up.MediaID != "" {
-							r2, err2 := c.do("GET", *base+"/api/media/"+up.MediaID, nil, nil)
-							if err2 == nil {
-								io.Copy(io.Discard, r2.Body)
-								r2.Body.Close()
-							}
-							err = err2
-						}
-					}
-					st.add("http.media", time.Since(t0), err)
-				}
-			}(i)
-		}
+	// optional HTTP phase
+	if *mode == "http" || *mode == "both" {
+		runHTTPPhase(*base, pool, *conns, *secs)
 	}
 
-	wg.Wait()
-	fmt.Println("== phase 2: WebSocket ==")
-
-	// phase 2: WebSocket
+	var res *levelResult
 	if *mode != "http" {
-		for i := 0; i < *conns; i++ {
-			wg.Add(1)
-			go func(id int) {
-				defer wg.Done()
-				c := a
-				if id%2 == 1 {
-					c = b
-				}
-				var conn *websocket.Conn
-				t0 := time.Now()
-				// 压力下瞬时握手失败应重试（用户基数大 ≠ 攻击；这正是被测目标）。
-				for attempt := 0; attempt < 5; attempt++ {
-					var resp *http.Response
-					var derr error
-					u := "ws" + (*base)[len("http"):] + "/ws"
-					hdr := http.Header{"Cookie": []string{"access_token=" + c.tok}}
-					conn, resp, derr = websocket.DefaultDialer.Dial(u, hdr)
-					if derr != nil && resp != nil {
-						fmt.Printf("  dial fail: http=%d\n", resp.StatusCode)
-					}
-					if derr == nil {
-						break
-					}
-					err = derr
-					time.Sleep(300 * time.Millisecond)
-				}
-				st.add("ws.connect", time.Since(t0), err)
-				if err != nil {
-					return
-				}
-				defer conn.Close()
-				var sent atomic.Int64
-				var acked atomic.Int64
-				// reader
-				go func() {
-					for {
-						_, data, err := conn.ReadMessage()
-						if err != nil {
-							return
-						}
-						var env struct {
-							Kind uint32 `json:"kind"`
-						}
-						if json.Unmarshal(data, &env) == nil {
-							if env.Kind == 103 { // MSG_ACK
-								acked.Add(1)
-							}
-						}
-					}
-				}()
-				for time.Now().Before(deadline) {
-					s0 := time.Now()
-					if err := conn.WriteMessage(websocket.TextMessage, mkSend(uint64(cid), "s")); err != nil {
-						// 服务端限流/心跳超时会断连（L4 语义，security-spec §1.2.3）；
-						// 记录一次后退出本 worker，不再制造噪音。
-						st.add("ws.send", 0, err)
-						return
-					}
-					sent.Add(1)
-					st.add("ws.send", time.Since(s0), nil)
-					time.Sleep(125 * time.Millisecond)
-					// heartbeat
-					p0 := time.Now()
-					ping := jsonEnvelope{ID: 2, Kind: 4, SentAt: uint64(time.Now().UnixMilli())}
-					pb, _ := json.Marshal(ping)
-					conn.WriteMessage(websocket.TextMessage, pb)
-					st.add("ws.ping", time.Since(p0), nil)
-				}
-				fmt.Printf("  ws worker %d sent=%d acked=%d\n", id, sent.Load(), acked.Load())
-			}(i)
-		}
-	}
+		res = runLevel(levelPlan{
+			conns: *conns, convMembers: convMembers, convIDs: convIDs, pool: pool,
+			base: *base, duration: time.Duration(*secs) * time.Second,
+			interval: *interval, mix: mkMixer(), rampBudget: 120 * time.Second,
+			pullMode:  *pullMode,
+			slowRatio: *slowRatio, slowFactor: *slowFactor,
+		})
+		fmt.Printf("\nws handshakes: %d / %d\n", res.Handshakes, *conns)
+		printLevelDetail(res, convMembers, rateLimit)
+		printPullStats(res)
+		writeJSON(*out, false, []*levelResult{res}, len(pool), rateLimit, convMembers)
+		fmt.Println("wrote", *out)
 
-	wg.Wait()
-
-	// report
-	fmt.Printf("\n%-20s %8s %8s %10s %10s %10s\n", "endpoint", "ok", "fail", "p50", "p95", "p99")
-	for name, s := range st.byName {
-		fmt.Printf("%-20s %8d %8d %10s %10s %10s\n", name, s.ok, s.fail,
-			pct(s.lat, 0.50), pct(s.lat, 0.95), pct(s.lat, 0.99))
-	}
-	if len(st.errs) > 0 {
-		fmt.Println("errors:")
-		for e, n := range st.errs {
-			fmt.Printf("  %4d x %s\n", n, e)
+		if *metrics != "" {
+			scrapeMetrics(*metrics)
 		}
-	}
-	res := map[string]any{"total_ok": st.ok.Load(), "total_fail": st.fail.Load(), "conns": *conns, "duration": *secs, "base": *base}
-	for name, s := range st.byName {
-		res[name] = map[string]any{"ok": s.ok, "fail": s.fail,
-			"p50_ms": pct(s.lat, .5).Milliseconds(), "p95_ms": pct(s.lat, .95).Milliseconds(), "p99_ms": pct(s.lat, .99).Milliseconds()}
-	}
-	blob, _ := json.MarshalIndent(res, "", "  ")
-	os.WriteFile(*out, blob, 0o644)
-	fmt.Println("wrote", *out)
+		printCredibility(len(pool), []*levelResult{res}, rateLimit)
 
-	if *assert {
-		// conservative thresholds: this is a smoke load, not a benchmark rig.
-		ws := st.byName["ws.send"]
-		if ws != nil && pct(ws.lat, .99) > 500*time.Millisecond {
-			fmt.Println("ASSERT FAIL: ws.send p99 > 500ms")
-			os.Exit(1)
-		}
-		if st.fail.Load()*100 > st.ok.Load() {
-			fmt.Println("ASSERT FAIL: error rate > 1%")
-			os.Exit(1)
+		if *assert {
+			ms := res.Ops["msg_send"]
+			if len(ms.Samples) > 0 && percentile(ms.Samples, 0.99) > 500*time.Millisecond {
+				fmt.Println("ASSERT FAIL: msg_send p99 > 500ms")
+				os.Exit(1)
+			}
+			if availability(ms.Acked, ms.Attempted) < 99 && ms.Attempted > 0 {
+				fmt.Println("ASSERT FAIL: availability < 99%")
+				os.Exit(1)
+			}
 		}
 	}
 }
 
-// runLadder boots one chatd, then scales concurrency geometrically (×2) until
-// availability drops below 70% OR the host is saturated (all workers hit
-// connection errors). No fixed ceiling — the ladder grows until the server
-// breaks. Prints a capacity table; writes the curve to out.
-// 全局 RPM 同时统计：每档记录 (成功发送+ACK)/分钟。
-func runLadder(base, ladder string, secs int, out string) {
-	// 自动扩展：从 start 倍增，无固定上限。start/max 可由 ladder 字符串覆盖
-	//（"start=128,max=1_000_000" 形式），默认 256 → 直到崩。
-	start, maxConns := 256, 1<<20
-	n2 := 0
-	for _, part := range strings.Split(ladder, ",") {
+// osExit is an indirection for os.Exit so testable files (storm.go) can call
+// it without making the whole package exit during tests.
+func osExit(code int) { os.Exit(code) }
+
+// dbPathFromEnv returns the hot.db path for -no-boot runs (empty otherwise).
+func dbPathFromEnv() string { return os.Getenv("CHATD_DB") }
+
+// writeJSONAny writes an arbitrary JSON document (used by the S-5 subcommand;
+// the ladder/mixed modes use writeJSON with their level-row schema).
+func writeJSONAny(path string, v any) {
+	blob, _ := json.MarshalIndent(v, "", "  ")
+	os.WriteFile(path, blob, 0o644)
+}
+
+func parseLadder(s string) (start, maxConns int) {
+	start, maxConns = 256, 1<<20
+	for _, part := range strings.Split(s, ",") {
 		part = strings.TrimSpace(part)
-		if v, err := fmt.Sscanf(part, "start=%d", &n2); err == nil && v == 1 {
-			start = n2
+		if _, err := fmt.Sscanf(part, "start=%d", &start); err == nil {
 			continue
 		}
-		if v, err := fmt.Sscanf(part, "max=%d", &n2); err == nil && v == 1 {
-			maxConns = n2
-		}
+		fmt.Sscanf(part, "max=%d", &maxConns)
 	}
+	return
+}
+
+// runLadder boots one chatd, pre-registers the whole pool once, seeds the max
+// conv set once, then doubles concurrency until availability < 70% or ramp
+// fails. Identity/conversation tables stay fixed across levels (defect #8).
+func runLadder(base string, start, maxConns, secs int, interval time.Duration, convMembers, poolSize int, rateLimit, skipBoot, pullMode bool, slowRatio, slowFactor float64, mix *mixer, out, metricsURL string) {
 	dir, _ := os.MkdirTemp("", "ocladder-")
 	defer os.RemoveAll(dir)
-
-	cfg := filepath.Join(dir, "chatd.toml")
-	toml := fmt.Sprintf(`mode = "embedded"
-listen = "127.0.0.1:18080"
-admin_listen = "127.0.0.1:17780"
-admin_rest_listen = "127.0.0.1:17781"
-hot_db = "%[1]s/hot.db"
-admin_db = "%[1]s/admin.db"
-policy_path = "%[1]s/policy.json"
-jwt_key_path = "%[1]s/keys/jwt.pem"
-media_dir = "%[1]s/media"
-log_level = "info"
-dev_otp = true
-rate_limit_enabled = false
-`, dir)
-	os.WriteFile(cfg, []byte(toml), 0o600)
-	os.WriteFile(filepath.Join(dir, "policy.json"), []byte(`{"hot_retention_days": 90}`), 0o600)
-	os.MkdirAll(filepath.Join(dir, "keys"), 0o750)
-	os.MkdirAll(filepath.Join(dir, "media"), 0o750)
-
-	cmd := exec.Command(os.Getenv("CHATD_BIN"), "-config", cfg)
-	cmd.Env = append(os.Environ(), "APP_ENV=dev")
-	logf, _ := os.Create(filepath.Join(dir, "chatd.log"))
-	cmd.Stdout, cmd.Stderr = logf, logf
-	if err := cmd.Start(); err != nil {
-		fmt.Println("boot:", err)
-		os.Exit(2)
-	}
-	defer cmd.Process.Signal(os.Interrupt)
-	baseURL := "http://127.0.0.1:18080"
-	deadline := time.Now().Add(20 * time.Second)
-	for time.Now().Before(deadline) {
-		if r, err := http.Get(baseURL + "/healthz"); err == nil {
-			r.Body.Close()
-			if r.StatusCode == 200 {
-				break
-			}
+	var chatd *exec.Cmd
+	if !skipBoot {
+		var err error
+		chatd, base, err = runChatd(dir, rateLimit)
+		if err != nil {
+			fmt.Println("boot:", err)
+			os.Exit(2)
 		}
-		time.Sleep(300 * time.Millisecond)
 	}
+	defer func() {
+		if chatd != nil && chatd.Process != nil {
+			chatd.Process.Signal(os.Interrupt)
+			chatd.Process.Wait()
+		}
+	}()
 
-	a2, _ := guest(baseURL)
-	b2, _ := guest(baseURL)
-	cid, err := seedConv(filepath.Join(dir, "hot.db"), a2.uid, b2.uid)
+	fmt.Printf("== UFOT stress ladder: start=%d max=%d duration=%ds conv_members=%d rate_limit=%s ==\n",
+		start, maxConns, secs, convMembers, rlLabel(rateLimit))
+
+	t0 := time.Now()
+	pool, perr := preregister(base, poolSize, 32)
+	if perr != nil {
+		fmt.Printf("pre-register: %v\n", perr)
+		pool = compact(pool)
+	}
+	uids := make([]int64, len(pool))
+	for i, c := range pool {
+		uids[i] = c.uid
+	}
+	numConvsMax := (poolSize + convMembers - 1) / convMembers
+	fmt.Printf("pre-registered users: %d (in %s)\n", len(pool), time.Since(t0).Round(time.Millisecond))
+
+	// -no-boot：chatd 由 workflow 预先启动，其 hot.db 经 CHATD_DB 传入；
+	// 必须 seed 到那一份库（临时 dir 下的 hot.db 是空库）。内部 boot 模式
+	// 才用 runChatd 返回的临时库。
+	seedDB := dbPathFromEnv()
+	if seedDB == "" {
+		seedDB = filepath.Join(dir, "hot.db")
+	}
+	convIDs, err := seedConvs(seedDB, uids, convMembers, numConvsMax)
 	if err != nil {
-		fmt.Println("seed:", err)
+		fmt.Println("seed convs:", err)
 		os.Exit(2)
 	}
-	fmt.Printf("%8s %10s %9s %12s %10s %6s %10s %10s %10s\n", "conns", "sends", "avail%", "global RPM", "conn p95", "samp", "avg lat", "p95 lat", "verdict")
-	type row struct {
-		Conns  int     `json:"conns"`
-		Sends  int64   `json:"sends"`
-		Fails  int64   `json:"fails"`
-		Avail  float64 `json:"avail_pct"`
-		RPM    float64 `json:"global_rpm"`
-		ConnP95 int64  `json:"conn_p95_ms"`
-		Pass   bool    `json:"pass"`
-	}
-	var rows []row
-	limit := 0.70
-	for n := start; n <= maxConns; n *= 2 {
-		st := newStats()
-		var wg sync.WaitGroup
-		// 全局发送计数（RPM 用）
-		var globalSent atomic.Int64
-		dl := time.Now().Add(time.Duration(secs) * time.Second)
-		// 延迟采样：每档采 100 份（均匀分布在时间窗内），计入平均/分位数。
-		sampleN := 100
-		sampleEvery := time.Duration(int64(time.Duration(secs)*time.Second) / int64(sampleN))
-		if sampleEvery < time.Millisecond {
-			sampleEvery = time.Millisecond
-		}
-		var nextSample atomic.Int64
-		var (
-			pendingSample atomic.Int64
-			latMu         sync.Mutex
-			latSamples    []time.Duration
-		)
-		for i := 0; i < n; i++ {
-			wg.Add(1)
-			go func(id int) {
-				defer wg.Done()
-				c, err := guest(baseURL)
-				if err != nil {
-					return
-				}
-				var conn *websocket.Conn
-				for attempt := 0; attempt < 5; attempt++ {
-					hdr := http.Header{"Cookie": []string{"access_token=" + c.tok}}
-					conn, _, err = websocket.DefaultDialer.Dial("ws"+baseURL[len("http"):]+"/ws", hdr)
-					if err == nil {
-						break
-					}
-					time.Sleep(200 * time.Millisecond)
-				}
-				if err != nil {
-					st.add("ws.connect", 0, err)
-					return
-				}
-				var sent atomic.Int64
-				go func() {
-					for {
-						_, data, err := conn.ReadMessage()
-						if err != nil {
-							return
-						}
-						var env struct {
-							Kind uint32 `json:"kind"`
-						}
-						if json.Unmarshal(data, &env) == nil && env.Kind == 103 {
-							sent.Add(1)
-							// 完成最早的待采样发送：记录 send→ack 延迟。
-							if t := pendingSample.Swap(0); t != 0 {
-								lat := time.Since(time.Unix(0, t))
-								latMu.Lock()
-								latSamples = append(latSamples, lat)
-								latMu.Unlock()
-							}
-						}
-					}
-				}()
-				for time.Now().Before(dl) {
-					t0 := time.Now()
-					if err := conn.WriteMessage(websocket.TextMessage, mkSend(uint64(cid), "l")); err != nil {
-						st.add("ws.send", 0, err)
-						return
-					}
-					globalSent.Add(1)
-					// 全局 ACK 回流时间 = send→ack 的真实投递延迟；
-					// 采样窗内的发送才计入 100 份样本（recordAck 里判断）。
-					if int(nextSample.Load()) < sampleN && time.Since(t0) >= 0 && id == int(nextSample.Load())%n {
-						pendingSample.Store(t0.UnixNano())
-						nextSample.Add(1)
-					}
-					st.add("ws.send", time.Since(t0), nil)
-					time.Sleep(20 * time.Millisecond)
-				}
-			}(i)
-		}
-		wg.Wait()
-		// 等待 ACK 回流
-		time.Sleep(2 * time.Second)
-		s := st.byName["ws.send"]
-		sends := int64(0)
-		if s != nil {
-			sends = s.ok
-		}
-		fails := int64(0)
-		if s != nil {
-			fails = s.fail
-		}
-		total := sends + fails
-		avail := 100.0
-		if total > 0 {
-			avail = float64(sends) / float64(total) * 100
-		}
-		rpm := float64(globalSent.Load()) / float64(secs) * 60
-		connP95 := int64(0)
-		if c := st.byName["ws.connect"]; c != nil {
-			connP95 = pct(c.lat, .95).Milliseconds()
-		}
-		latMu.Lock()
-		avgLat := time.Duration(0)
-		if len(latSamples) > 0 {
-			var sum time.Duration
-			for _, d := range latSamples {
-				sum += d
-			}
-			avgLat = sum / time.Duration(len(latSamples))
-		}
-		samples := len(latSamples)
-		p95Lat := pct(latSamples, .95)
-		latMu.Unlock()
+	fmt.Printf("seeded conversations: %d (members/conv=%d)\n\n", len(convIDs), convMembers)
 
-		pass := avail >= limit*100
-		// 饱和检测：连不上也发不出（全灭）→ 主机资源耗尽，再翻倍无意义。
-		saturated := total > 0 && sends == 0
+	fmt.Printf("%8s %10s %10s %8s %9s %8s %8s %7s %8s %-22s %10s %6s\n",
+		"conns", "sends", "acks", "avail%", "write_err", "srv_drop", "ramp_ms", "samples", "peer_p95", "send->ack p50/p95/p99", "rpm", "verdict")
+	var rows []*levelResult
+	for n := start; n <= maxConns; n *= 2 {
+		convsNeeded := (n + convMembers - 1) / convMembers
+		useConvs := convIDs
+		if convsNeeded < len(useConvs) {
+			useConvs = convIDs[:convsNeeded]
+		}
+		res := runLevel(levelPlan{
+			conns: n, convMembers: convMembers, convIDs: useConvs,
+			pool: pool[:n], base: base, duration: time.Duration(secs) * time.Second,
+			interval: interval, mix: mix, rampBudget: rampBudgetFor(n),
+			pullMode: pullMode, slowRatio: slowRatio, slowFactor: slowFactor,
+		})
+		rows = append(rows, res)
+		ms := res.Ops["msg_send"]
+		avail := availability(ms.Acked, ms.Attempted)
+		rpm := float64(ms.Attempted) / res.WindowSecs * 60
+		peerP95 := "-"
+		if len(res.PeerSamples) > 0 {
+			peerP95 = fmtDur(percentile(res.PeerSamples, 0.95))
+		}
 		verdict := "PASS"
-		if !pass {
+		if res.RampTimeout {
+			verdict = "RAMP_TIMEOUT"
+		} else if res.Handshakes < n {
+			verdict = "SATURATED"
+		} else if avail < 70 {
 			verdict = "FAIL"
 		}
-		if saturated {
-			verdict = "SATURATED"
-		}
-		fmt.Printf("%8d %10d %9.1f%% %12.0f %10dms %6d %10v %10v %10s\n", n, sends, avail, rpm, connP95, samples, avgLat, p95Lat, verdict)
-		rows = append(rows, row{n, sends, fails, avail, rpm, connP95, pass})
-		if !pass || saturated {
+		fmt.Printf("%8d %10d %10d %7.1f%% %9d %8d %8d %7d %8s %-22s %10.0f %6s\n",
+			n, ms.Attempted, ms.Acked, avail, totalWriteErr(res), res.ServerDrop,
+			res.RampMs, len(ms.Samples), peerP95, fmtLat3(ms.Samples), rpm, verdict)
+		writeJSON(out, true, rows, len(pool), rateLimit, convMembers)
+		if verdict != "PASS" {
 			break
 		}
 	}
-	blob, _ := json.MarshalIndent(rows, "", "  ")
-	os.WriteFile(out, blob, 0o644)
+
+	writeJSON(out, true, rows, len(pool), rateLimit, convMembers)
 	fmt.Println("wrote", out)
+	if metricsURL != "" {
+		scrapeMetrics(metricsURL)
+	}
+	printCredibility(len(pool), rows, rateLimit)
+}
+
+func rampBudgetFor(n int) time.Duration {
+	if n > 2048 {
+		return 180 * time.Second
+	}
+	return 90 * time.Second
+}
+
+func totalWriteErr(r *levelResult) int64 {
+	var t int64
+	for _, a := range r.Ops {
+		t += a.WriteErr
+	}
+	return t
+}
+
+func countNonNil(pool []*client) int {
+	n := 0
+	for _, c := range pool {
+		if c != nil {
+			n++
+		}
+	}
+	return n
+}
+
+func compact(pool []*client) []*client {
+	out := pool[:0]
+	for _, c := range pool {
+		if c != nil {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// ---------------------------------------------------------------------------
+// reporting (level detail + JSON + credibility)
+// ---------------------------------------------------------------------------
+
+func printLevelDetail(r *levelResult, convMembers int, rateLimit bool) {
+	fmt.Printf("\n=== level: conns=%d  members/conv=%d  rate_limit=%s ===\n",
+		r.Conns, convMembers, rlLabel(rateLimit))
+	fmt.Printf("ramp: %d ms, handshakes=%d, ramp_err=%d, ramp_timeout=%v\n",
+		r.RampMs, r.Handshakes, r.RampErr, r.RampTimeout)
+	fmt.Printf("%-10s %10s %10s %8s %10s %9s %8s  %-24s\n",
+		"op", "attempted", "acked/ok", "ok%", "write_err", "srv_drop", "samples", "p50/p95/p99")
+	for _, n := range opNames {
+		a := r.Ops[n]
+		num := a.OK
+		if n == "msg_send" {
+			num = a.Acked
+		}
+		fmt.Printf("%-10s %10d %10d %7.1f%% %10d %9d %8d  %-24s\n",
+			n, a.Attempted, num, a.successRate(), a.WriteErr, a.ServerDrop,
+			len(a.Samples), fmtLat3(a.Samples))
+	}
+	ms := r.Ops["msg_send"]
+	avail := availability(ms.Acked, ms.Attempted)
+	rpm := float64(ms.Attempted) / r.WindowSecs * 60
+	peer := "-"
+	if len(r.PeerSamples) > 0 {
+		peer = fmt.Sprintf("samples=%d p50/p95/p99=%s", len(r.PeerSamples), fmtLat3(r.PeerSamples))
+	}
+	fmt.Printf("availability(ACK/send)= %.1f%%   rpm= %.0f   write_err(total)=%d   server_drop=%d\n",
+		avail, rpm, totalWriteErr(r), r.ServerDrop)
+	fmt.Printf("send->peer_recv: %s\n", peer)
+	if r.SlowInjected > 0 {
+		fmt.Printf("S-4 slow-consumer injection: %d/%d conns slowed (read loops untouched)\n",
+			r.SlowInjected, r.Conns)
+	}
+	var notes []string
+	if len(ms.Samples) < 1000 {
+		notes = append(notes, "insufficient samples (<1000): p95/p99 unreliable")
+	}
+	if r.RampTimeout {
+		notes = append(notes, "RAMP TIMEOUT")
+	}
+	if r.Handshakes < r.Conns {
+		notes = append(notes, fmt.Sprintf("%d/%d handshakes", r.Handshakes, r.Conns))
+	}
+	if len(notes) == 0 {
+		notes = append(notes, "ok")
+	}
+	fmt.Printf("notes: %s\n", strings.Join(notes, "; "))
+}
+
+type jsonRow struct {
+	Conns        int               `json:"conns"`
+	Members      int               `json:"members_per_conv"`
+	RampMs       int64             `json:"ramp_ms"`
+	Handshakes   int               `json:"handshakes"`
+	RampErr      int64             `json:"ramp_err"`
+	RampTimeout  bool              `json:"ramp_timeout"`
+	MsgAttempted int64             `json:"msg_send_attempted"`
+	MsgAcks      int64             `json:"msg_send_acks"`
+	AvailPct     float64           `json:"availability_pct"`
+	WriteErr     int64             `json:"write_err"`
+	ServerDrop   int64             `json:"server_drop"`
+	Samples      int               `json:"samples"`
+	P50ms        float64           `json:"p50_ms"`
+	P95ms        float64           `json:"p95_ms"`
+	P99ms        float64           `json:"p99_ms"`
+	PeerSamples  int               `json:"peer_recv_samples"`
+	PeerP95ms    float64           `json:"peer_recv_p95_ms"`
+	RPM          float64           `json:"rpm"`
+	Ops          map[string]jsonOp `json:"ops"`
+}
+
+type jsonOp struct {
+	Attempted int64   `json:"attempted"`
+	OK        int64   `json:"ok"`
+	SuccessPc float64 `json:"success_pct"`
+	WriteErr  int64   `json:"write_err"`
+	Samples   int     `json:"samples"`
+	P50ms     float64 `json:"p50_ms"`
+	P95ms     float64 `json:"p95_ms"`
+	P99ms     float64 `json:"p99_ms"`
+}
+
+func writeJSON(path string, ladder bool, rows []*levelResult, preregUsers int, rateLimit bool, convMembers int) {
+	outRows := make([]jsonRow, 0, len(rows))
+	for _, r := range rows {
+		ms := r.Ops["msg_send"]
+		jr := jsonRow{
+			Conns: r.Conns, Members: convMembers, RampMs: r.RampMs,
+			Handshakes: r.Handshakes, RampErr: r.RampErr, RampTimeout: r.RampTimeout,
+			MsgAttempted: ms.Attempted, MsgAcks: ms.Acked,
+			AvailPct: availability(ms.Acked, ms.Attempted),
+			WriteErr: totalWriteErr(r), ServerDrop: r.ServerDrop,
+			Samples: len(ms.Samples),
+			P50ms:   msDur(ms.Samples, 0.50), P95ms: msDur(ms.Samples, 0.95), P99ms: msDur(ms.Samples, 0.99),
+			PeerSamples: len(r.PeerSamples), PeerP95ms: msDur(r.PeerSamples, 0.95),
+			RPM: float64(ms.Attempted) / r.WindowSecs * 60,
+			Ops: map[string]jsonOp{},
+		}
+		for _, n := range opNames {
+			a := r.Ops[n]
+			num := a.OK
+			if n == "msg_send" {
+				num = a.Acked
+			}
+			jr.Ops[n] = jsonOp{
+				Attempted: a.Attempted, OK: num, SuccessPc: a.successRate(),
+				WriteErr: a.WriteErr, Samples: len(a.Samples),
+				P50ms: msDur(a.Samples, 0.50), P95ms: msDur(a.Samples, 0.95), P99ms: msDur(a.Samples, 0.99),
+			}
+		}
+		outRows = append(outRows, jr)
+	}
+	doc := map[string]any{
+		"ladder": ladder, "rate_limit_enabled": rateLimit,
+		"pre_registered_users": preregUsers, "conv_members": convMembers,
+		"generated_at": time.Now().UTC().Format(time.RFC3339), "levels": outRows,
+	}
+	// REL/universal-pull: persist the pull-mode measurement block so the S-6
+	// static-vs-adaptive comparison (-adaptive-compare) can replay it.
+	if len(rows) > 0 && rows[0].PullMode {
+		pullRows := make([]pullJSONRow, 0, len(rows))
+		for _, r := range rows {
+			pullRows = append(pullRows, pullRowFromLevel(r))
+		}
+		doc["pull_levels"] = pullRows
+	}
+	blob, _ := json.MarshalIndent(doc, "", "  ")
+	os.WriteFile(path, blob, 0o644)
+}
+
+func msDur(samples []time.Duration, p float64) float64 {
+	return float64(percentile(samples, p).Microseconds()) / 1000.0
+}
+
+func printCredibility(preregUsers int, rows []*levelResult, rateLimit bool) {
+	fmt.Println("\n== 可信度声明 / credibility statement ==")
+	fmt.Printf("pre-registered users: %d\n", preregUsers)
+	if len(rows) > 0 {
+		r := rows[len(rows)-1]
+		ms := r.Ops["msg_send"]
+		fmt.Printf("ws handshakes (last level): %d / %d\n", r.Handshakes, r.Conns)
+		fmt.Printf("rate limit: %s\n", rlLabel(rateLimit))
+		ok := len(ms.Samples) >= 1000
+		fmt.Printf("msg_send samples (last level): %d -> %s\n", len(ms.Samples), sampleVerdict(ok))
+		if r.RampTimeout {
+			fmt.Println("ramp: TIMEOUT (level saturated before measurement)")
+		} else {
+			fmt.Println("ramp: within budget")
+		}
+	}
+	fmt.Println("availability denominator = attempted msg_send sends; acked = MSG_ACK status 0.")
+	fmt.Println("send->ack is server round trip on one connection; send->peer_recv needs >=2 members (conv-members).")
+}
+
+func sampleVerdict(ok bool) string {
+	if ok {
+		return "sufficient"
+	}
+	return "INSUFFICIENT"
+}
+
+func rlLabel(rateLimit bool) string {
+	if rateLimit {
+		return "ENABLED (production parity)"
+	}
+	return "DISABLED (raw ceiling — NOT production)"
+}
+
+// ---------------------------------------------------------------------------
+// optional metrics scrape
+// ---------------------------------------------------------------------------
+
+func scrapeMetrics(url string) {
+	fmt.Printf("\n== server-side metrics (%s) ==\n", url)
+	c := &http.Client{Timeout: 5 * time.Second}
+	resp, err := c.Get(url)
+	if err != nil {
+		fmt.Printf("metrics unavailable: %v\n", err)
+		return
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	lines := strings.Split(string(body), "\n")
+	shown := 0
+	for _, ln := range lines {
+		low := strings.ToLower(ln)
+		if strings.HasPrefix(ln, "#") || strings.TrimSpace(ln) == "" {
+			continue
+		}
+		if strings.Contains(low, "drop") || strings.Contains(low, "nack") ||
+			strings.Contains(low, "fanout") || strings.Contains(low, "egress") {
+			fmt.Println("  " + ln)
+			shown++
+		}
+	}
+	if shown == 0 {
+		fmt.Println("  (no drop/nack/fanout/egress counters exposed by this endpoint)")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// lightweight HTTP phase (kept from the original tool; not the focus)
+// ---------------------------------------------------------------------------
+
+func runHTTPPhase(base string, pool []*client, conns, secs int) {
+	fmt.Println("== phase: HTTP API ==")
+	aggs := map[string]*opAgg{"http.healthz": {}, "http.guest": {}, "http.media": {}}
+	var mu sync.Mutex
+	deadline := time.Now().Add(time.Duration(secs) * time.Second)
+	var wg sync.WaitGroup
+	for i := 0; i < conns && i < len(pool); i++ {
+		wg.Add(1)
+		go func(c *client) {
+			defer wg.Done()
+			for time.Now().Before(deadline) {
+				t0 := time.Now()
+				r, err := c.hc.Get(base + "/healthz")
+				d := time.Since(t0)
+				mu.Lock()
+				st := aggs["http.healthz"]
+				st.Attempted++
+				if err != nil {
+					st.WriteErr++
+				} else {
+					io.Copy(io.Discard, r.Body)
+					r.Body.Close()
+					st.OK++
+					st.Samples = append(st.Samples, d)
+				}
+				mu.Unlock()
+				time.Sleep(100 * time.Millisecond)
+			}
+		}(pool[i])
+	}
+	wg.Wait()
+	for _, n := range []string{"http.healthz", "http.guest", "http.media"} {
+		a := aggs[n]
+		fmt.Printf("  %-14s attempted=%d ok=%d p95=%s\n", n, a.Attempted, a.OK, fmtDur(percentile(a.Samples, 0.95)))
+	}
 }

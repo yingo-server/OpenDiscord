@@ -35,9 +35,9 @@ package main
 // user-level budget, without ever weakening the connection-level baseline.
 
 import (
-	"github.com/yingo-server/OpenChat/server/internal/data/policy"
-	"github.com/yingo-server/OpenChat/server/internal/proto/kinds"
-	"github.com/yingo-server/OpenChat/server/internal/user/net/limit"
+	"github.com/yingo-server/UFOT/server/internal/data/policy"
+	"github.com/yingo-server/UFOT/server/internal/proto/kinds"
+	"github.com/yingo-server/UFOT/server/internal/user/net/limit"
 )
 
 // limitFromPolicy returns cur with the MSG_SEND rule converged onto the
@@ -94,5 +94,9 @@ func limitFromPolicy(p policy.Policy, cur limit.Config) limit.Config {
 	// MaxPayload/Silent stay exactly as the security-spec baseline: policy
 	// has no say over frame size or degradation behavior.
 	cur.Rules[uint32(kinds.KindMsgSend)] = r
+	// V2-0 准入容量：policy.capacity.admission_qps（0=禁用）→ limiter 全局桶。
+	// capacity 配置即启用准入；capacity_admission_enabled flag 只控制审计日志，
+	// 不改变准入行为（见 docs/capacity-contract.md）。SIGHUP 热改经 ReloadPolicy 生效。
+	cur.GlobalQPS = float64(p.Capacity.AdmissionQPS)
 	return cur
 }

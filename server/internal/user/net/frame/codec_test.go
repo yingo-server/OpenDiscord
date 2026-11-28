@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/yingo-server/OpenChat/server/internal/proto/gen/chatpb"
+	"github.com/yingo-server/UFOT/server/internal/proto/gen/chatpb"
 )
 
 // TestEncodeDecodeRoundTrip 编解码往返。

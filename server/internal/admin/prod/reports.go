@@ -6,8 +6,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/yingo-server/OpenChat/server/internal/admin/service"
-	"github.com/yingo-server/OpenChat/server/internal/data/store"
+	"github.com/yingo-server/UFOT/server/internal/admin/service"
+	"github.com/yingo-server/UFOT/server/internal/data/store"
 )
 
 // Reports implements service.ReportRepository over the hot sys_reports table

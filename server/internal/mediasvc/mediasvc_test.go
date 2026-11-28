@@ -13,12 +13,13 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
-	"github.com/yingo-server/OpenChat/server/internal/data/store"
-	"github.com/yingo-server/OpenChat/server/internal/data/store/sqlite"
-	"github.com/yingo-server/OpenChat/server/internal/pkg/log"
-	"github.com/yingo-server/OpenChat/server/internal/user/core/authn"
+	"github.com/yingo-server/UFOT/server/internal/data/store"
+	"github.com/yingo-server/UFOT/server/internal/data/store/sqlite"
+	"github.com/yingo-server/UFOT/server/internal/pkg/log"
+	"github.com/yingo-server/UFOT/server/internal/user/core/authn"
 )
 
 const testToken = "tok"
@@ -60,6 +61,30 @@ func uploadRequest(t *testing.T, name string, body []byte) *http.Request {
 	}
 	if _, err := fw.Write(body); err != nil {
 		t.Fatalf("write file: %v", err)
+	}
+	w.Close()
+	r := httptest.NewRequest(http.MethodPost, "/api/media/upload", &buf)
+	r.Header.Set("Content-Type", w.FormDataContentType())
+	return r
+}
+
+// uploadRequestMeta is uploadRequest plus extra ordinary form fields
+// (thumb_data / waveform), mirroring a browser multipart upload.
+func uploadRequestMeta(t *testing.T, name string, body []byte, fields map[string]string) *http.Request {
+	t.Helper()
+	var buf bytes.Buffer
+	w := multipart.NewWriter(&buf)
+	fw, err := w.CreateFormFile("file", name)
+	if err != nil {
+		t.Fatalf("form file: %v", err)
+	}
+	if _, err := fw.Write(body); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	for k, v := range fields {
+		if err := w.WriteField(k, v); err != nil {
+			t.Fatalf("write field %s: %v", k, err)
+		}
 	}
 	w.Close()
 	r := httptest.NewRequest(http.MethodPost, "/api/media/upload", &buf)
@@ -406,5 +431,96 @@ func TestUploadWhitelist(t *testing.T) {
 	gr := getMedia(s, resp.MediaID, testToken)
 	if gr.Code != http.StatusOK {
 		t.Fatalf(".pdf GET status = %d, want 200", gr.Code)
+	}
+}
+
+// ------------------------------------------------- inline thumb/waveform tests
+
+// TestUploadThumbAndWaveform: legal values are stored and echoed both in the
+// upload response and in the GET metadata (?meta=1) view.
+func TestUploadThumbAndWaveform(t *testing.T) {
+	s, _ := New(testDeps(t))
+
+	thumb := "data:image/png;base64,iVBORw0KGgoAAAANSUhEUg=="
+	wave := "[0,10,25,50,75,100,80,60]"
+	rr := httptest.NewRecorder()
+	s.Routes().ServeHTTP(rr, authed(uploadRequestMeta(t, "clip.ogg",
+		append([]byte("OggS"), bytes.Repeat([]byte{0}, 64)...),
+		map[string]string{"thumb_data": thumb, "waveform": wave})))
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("upload status = %d body=%s", rr.Code, rr.Body.String())
+	}
+	var up struct {
+		MediaID   string `json:"media_id"`
+		ThumbData string `json:"thumb_data"`
+		Waveform  string `json:"waveform"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &up); err != nil {
+		t.Fatalf("decode upload: %v", err)
+	}
+	if up.ThumbData != thumb || up.Waveform != wave {
+		t.Fatalf("upload echo wrong: thumb=%q wave=%q", up.ThumbData, up.Waveform)
+	}
+
+	// GET metadata view returns the same fields.
+	g := httptest.NewRequest(http.MethodGet, "/api/media/"+up.MediaID+"?meta=1", nil)
+	gr := httptest.NewRecorder()
+	s.Routes().ServeHTTP(gr, authed(g))
+	if gr.Code != http.StatusOK {
+		t.Fatalf("get meta status = %d", gr.Code)
+	}
+	if ct := gr.Header().Get("Content-Type"); !strings.Contains(ct, "application/json") {
+		t.Fatalf("meta content-type = %q", ct)
+	}
+	var meta struct {
+		MediaID   string `json:"media_id"`
+		ThumbData string `json:"thumb_data"`
+		Waveform  string `json:"waveform"`
+	}
+	if err := json.Unmarshal(gr.Body.Bytes(), &meta); err != nil {
+		t.Fatalf("decode meta: %v", err)
+	}
+	if meta.ThumbData != thumb || meta.Waveform != wave {
+		t.Fatalf("meta echo wrong: thumb=%q wave=%q", meta.ThumbData, meta.Waveform)
+	}
+
+	// Default GET (no meta) still streams the raw bytes.
+	g2 := httptest.NewRequest(http.MethodGet, "/api/media/"+up.MediaID, nil)
+	gr2 := httptest.NewRecorder()
+	s.Routes().ServeHTTP(gr2, authed(g2))
+	if gr2.Code != http.StatusOK || gr2.Header().Get("Content-Type") != "audio/ogg" {
+		t.Fatalf("binary GET status=%d ct=%q", gr2.Code, gr2.Header().Get("Content-Type"))
+	}
+}
+
+// TestUploadRejectsBadThumb: a thumbnail over 8KB is a 400.
+func TestUploadRejectsBadThumb(t *testing.T) {
+	s, _ := New(testDeps(t))
+	huge := strings.Repeat("A", 8*1024+1) // one byte past the cap
+	rr := httptest.NewRecorder()
+	s.Routes().ServeHTTP(rr, authed(uploadRequestMeta(t, "p.png", pngBytes(t),
+		map[string]string{"thumb_data": huge})))
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 (body=%s)", rr.Code, rr.Body.String())
+	}
+}
+
+// TestUploadRejectsBadWaveform: non-array / >32 elements / out-of-range → 400.
+func TestUploadRejectsBadWaveform(t *testing.T) {
+	s, _ := New(testDeps(t))
+	cases := map[string]string{
+		"object":     `{"a":1}`,
+		"scalar":     `42`,
+		"too-many":   "[" + strings.Repeat("1,", 40) + "1]",
+		"over-range": `[0,50,101]`,
+		"negative":   `[-1,50]`,
+	}
+	for name, wave := range cases {
+		rr := httptest.NewRecorder()
+		s.Routes().ServeHTTP(rr, authed(uploadRequestMeta(t, "p.png", pngBytes(t),
+			map[string]string{"waveform": wave})))
+		if rr.Code != http.StatusBadRequest {
+			t.Fatalf("%s: status = %d, want 400 (body=%s)", name, rr.Code, rr.Body.String())
+		}
 	}
 }

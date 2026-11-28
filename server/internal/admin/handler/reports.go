@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/yingo-server/OpenChat/server/internal/admin/middleware"
-	"github.com/yingo-server/OpenChat/server/internal/admin/service"
+	"github.com/yingo-server/UFOT/server/internal/admin/middleware"
+	"github.com/yingo-server/UFOT/server/internal/admin/service"
 )
 
 func (a *API) handleReportList(w http.ResponseWriter, r *http.Request) {

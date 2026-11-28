@@ -31,27 +31,29 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yingo-server/OpenChat/server/internal/admin"
-	adminstore "github.com/yingo-server/OpenChat/server/internal/admin/store"
-	"github.com/yingo-server/OpenChat/server/internal/authsvc"
-	"github.com/yingo-server/OpenChat/server/internal/bridge"
-	"github.com/yingo-server/OpenChat/server/internal/bridge/adminapi"
-	"github.com/yingo-server/OpenChat/server/internal/data/pipe"
-	"github.com/yingo-server/OpenChat/server/internal/data/policy"
-	"github.com/yingo-server/OpenChat/server/internal/data/store"
-	"github.com/yingo-server/OpenChat/server/internal/data/store/pg"
-	"github.com/yingo-server/OpenChat/server/internal/data/store/sqlite"
-	"github.com/yingo-server/OpenChat/server/internal/mediasvc"
-	"github.com/yingo-server/OpenChat/server/internal/pkg/featureflags"
-	"github.com/yingo-server/OpenChat/server/internal/pkg/log"
-	"github.com/yingo-server/OpenChat/server/internal/proto/gen/chatpb"
-	"github.com/yingo-server/OpenChat/server/internal/proto/kinds"
-	"github.com/yingo-server/OpenChat/server/internal/transport/embedded"
-	"github.com/yingo-server/OpenChat/server/internal/user/app"
-	"github.com/yingo-server/OpenChat/server/internal/user/core/authn"
-	"github.com/yingo-server/OpenChat/server/internal/user/net/frame"
-	"github.com/yingo-server/OpenChat/server/internal/user/net/ws"
-	"github.com/yingo-server/OpenChat/server/web"
+	"github.com/yingo-server/UFOT/server/internal/admin"
+	adminstore "github.com/yingo-server/UFOT/server/internal/admin/store"
+	"github.com/yingo-server/UFOT/server/internal/authsvc"
+	"github.com/yingo-server/UFOT/server/internal/bridge"
+	"github.com/yingo-server/UFOT/server/internal/bridge/adminapi"
+	"github.com/yingo-server/UFOT/server/internal/bus/delivery"
+	"github.com/yingo-server/UFOT/server/internal/data/pipe"
+	"github.com/yingo-server/UFOT/server/internal/data/policy"
+	"github.com/yingo-server/UFOT/server/internal/data/store"
+	"github.com/yingo-server/UFOT/server/internal/data/store/pg"
+	"github.com/yingo-server/UFOT/server/internal/data/store/sqlite"
+	"github.com/yingo-server/UFOT/server/internal/mediasvc"
+	"github.com/yingo-server/UFOT/server/internal/pkg/cors"
+	"github.com/yingo-server/UFOT/server/internal/pkg/featureflags"
+	"github.com/yingo-server/UFOT/server/internal/pkg/log"
+	"github.com/yingo-server/UFOT/server/internal/proto/gen/chatpb"
+	"github.com/yingo-server/UFOT/server/internal/proto/kinds"
+	"github.com/yingo-server/UFOT/server/internal/pushsvc"
+	"github.com/yingo-server/UFOT/server/internal/transport/embedded"
+	"github.com/yingo-server/UFOT/server/internal/user/app"
+	"github.com/yingo-server/UFOT/server/internal/user/core/authn"
+	"github.com/yingo-server/UFOT/server/internal/user/net/frame"
+	"github.com/yingo-server/UFOT/server/internal/user/net/ws"
 )
 
 type assembly struct {
@@ -78,6 +80,19 @@ type assembly struct {
 	adminREST *admin.Server
 	jobs      *jobPlane
 	adminKey  []byte
+	v3        *WireV3 // P3c：v3 总线句柄（构造但不接线，§9 中间态）
+	// v3Hooks 是 P3d-2 接线的双投递保护判定（唯一路径真相源），由
+	// AttachV3Deliver 在 newAssembly 末尾构造；runCtx 是 run() 的根 ctx。
+	v3Hooks *v3ConnLifecycle
+	runCtx  context.Context
+	// adaptiveStore 是 CORE-1 控制循环的 effective[cid] 表；仅在
+	// adaptive_control_enabled=true 时由 startAdaptiveControl 创建并注入。
+	adaptiveStore *pipe.AdaptiveStoreHandle
+
+	// push 是 Web Push（系统推送）服务端句柄：订阅登记 + Notify。本批只挂载
+	// 订阅端点与 Notify API，尚未接入"每条消息送达即推送"的路径
+	// （见 docs/push-setup.md §5）。
+	push *pushsvc.Service
 
 	started time.Time
 }
@@ -123,9 +138,11 @@ func newAssembly(cfg *config, lg *log.Logger) (*assembly, error) {
 	switch {
 	case cfg.PolicyPath == "":
 		lg.Warn("no policy_path configured; using built-in policy defaults")
+		a.policy = policy.NewDefault()
 	default:
 		if _, statErr := os.Stat(cfg.PolicyPath); errors.Is(statErr, os.ErrNotExist) {
 			lg.Warn("policy file not found; using built-in defaults", "path", cfg.PolicyPath)
+			a.policy = policy.NewDefault()
 			break
 		}
 		pol, perr := policy.New(cfg.PolicyPath)
@@ -161,6 +178,14 @@ func newAssembly(cfg *config, lg *log.Logger) (*assembly, error) {
 		return nil, err
 	}
 	a.adminKey = adminKey
+	// Production must never run without rate limiting: the switch exists for
+	// capacity measurements, and a production profile with it off would expose
+	// the gateway to the abuse surface the limiter exists to stop.
+	if isProduction(cfg) && !cfg.RateLimitEnabled {
+		return nil, fmt.Errorf("chatd: rate_limit_enabled=false is not allowed in production " +
+			"(https + APP_ENV!=dev); it exists only for capacity testing")
+	}
+
 	signer := authn.NewSigner(priv).WithKID("k1")
 	pub, ok := priv.Public().(ed25519.PublicKey)
 	if !ok {
@@ -184,9 +209,10 @@ func newAssembly(cfg *config, lg *log.Logger) (*assembly, error) {
 	a.bridge = br
 
 	pl, err := bridge.Assemble(bridge.Config{
-		RouteTable: buildRoutes(),
-		Sender:     br.SendTo,
-		Signals:    neverFires(), // chatd owns signal handling (cross-layer drain order)
+		RouteTable:    buildRoutes(),
+		RouteFromData: buildRoutesFromData(),
+		Sender:        br.SendTo,
+		Signals:       neverFires(), // chatd owns signal handling (cross-layer drain order)
 		// Loopback is not an authorization boundary: the injector verifies the
 		// same HMAC the REST layer signs (docs/security-spec.md §3.2).
 		AdminAuth: adminapi.NewHMACAuthorizer([][]byte{adminKey}),
@@ -203,16 +229,48 @@ func newAssembly(cfg *config, lg *log.Logger) (*assembly, error) {
 	// driver 由部署层注入). If the DSN is configured but no driver named
 	// "postgres" is registered, we log a loud ERROR and continue hot-only —
 	// skeleton deployments must start, not panic (docs/deploy.md 附录 A).
+	// env 覆盖 toml：部署密钥不入配置文件，DSN 由 UFOT_COLD_DSN 注入（install.sh
+	// 把它写进 /etc/ufot/env，0600）。toml 里的 cold_dsn 仅作占位/文档用途。
+	if dsn := os.Getenv("UFOT_COLD_DSN"); dsn != "" {
+		cfg.ColdDSN = dsn
+	}
+	// 依次尝试已注册的 PostgreSQL driver 名：
+	//   - "postgres"  : lib/pq 或某些 pgx 集成注册的名
+	//   - "pgx"       : pgx/v5/stdlib 实际注册的名（chatd-pg 变体使用）
+	// 主二进制按架构红线不 import 任何 driver；冷库变体 chatd-pg 通过 blank
+	// import 注入 pgx/v5/stdlib，本段即可打开真正的冷库连接。
 	var coldDB *pg.ColdDB
 	if cfg.ColdDSN != "" {
-		db, err := sql.Open("postgres", cfg.ColdDSN) // sql.Open never dials
-		if err != nil {
-			// Only a bad driver name / unregistered driver lands here.
-			lg.Error("cold store disabled: driver not registered — 需在部署层 import pgx/stdlib 或 lib/pq 注册 driver（本二进制按架构约定不携带 postgres driver）",
-				"err", err.Error())
-		} else {
-			coldDB = &pg.ColdDB{DB: db, DriverName: "postgres"}
-			lg.Info("cold store handle opened (lazy connect on first use)", "driver", coldDB.DriverName)
+		for _, drv := range []string{"postgres", "pgx"} {
+			has := false
+			for _, name := range sql.Drivers() {
+				if name == drv {
+					has = true
+					break
+				}
+			}
+			if !has {
+				continue
+			}
+			coldDB, err = pg.OpenDriver(drv, cfg.ColdDSN)
+			if err != nil {
+				lg.Error("cold store driver open failed", "driver", drv, "err", err.Error())
+				continue
+			}
+			// 冷库开句柄后必须建 schema（审计/归档表），否则 cold:true 但
+			// 审计写不进 PG（实测：sys.audit_log 不存在）。迁移幂等且失败
+			// 即 fail-fast：生产冷库不可用时不该假装可用。
+			if merr := coldDB.Migrate(context.Background()); merr != nil {
+				lg.Error("cold store migration FAILED — audit/archive disabled", "driver", drv, "err", merr.Error())
+				_ = coldDB.Close()
+				coldDB = nil
+				continue
+			}
+			lg.Info("cold store migrated (audit + archive schema ready)", "driver", drv)
+			break
+		}
+		if coldDB == nil {
+			lg.Error("cold store disabled: no postgres driver registered — 需在部署层用 chatd-pg 变体（内含 pgx/stdlib）或注册 lib/pq，本二进制按架构约定不携带 driver")
 		}
 	}
 	a.cold = coldDB
@@ -228,8 +286,11 @@ func newAssembly(cfg *config, lg *log.Logger) (*assembly, error) {
 		lg.Error("audit store degraded: cold DB unavailable, audit events will not persist")
 	}
 
-	installEmit()
 	p := pipe.New(a.dataPeer, hot, pipe.ColdDeps{Cold: coldDB, Audit: coldDB}, a.policy, log.For("data"))
+	// 拉取模式（v1.2 §3.3）：pipe 读 pull_mode_threshold / watermark_* 三个
+	// flag。共享同一个 *featureflags.Flags，SIGHUP 热重载原地生效；默认
+	// threshold=0 时行为与主干逐字节一致。
+	p.SetFeatureFlags(a.flags)
 	p.FrameSource = newFrameSource(func(connID uint64) int64 {
 		// Late binding: the gateway exists only after step 9.
 		if a.user == nil {
@@ -241,8 +302,31 @@ func newAssembly(cfg *config, lg *log.Logger) (*assembly, error) {
 		return 0
 	}, log.For("chatd"))
 	a.pipe = p
+	// The emitter is per-instance now, so it must be installed on the pipe
+	// that was just built (it used to be a package-level global set earlier).
+	installEmit(p)
 
 	// 9. auth service (same HTTP port as the gateway).
+	// Provider webhooks (OPS-2): a missing/empty providers file keeps all
+	// Deps nil — the service keeps its existing fail-closed behavior. A
+	// malformed file aborts startup (loud, never silently ignored).
+	sms, mailer, captcha, perr := authsvc.LoadProviders(cfg.ProvidersPath)
+	if perr != nil {
+		return nil, fmt.Errorf("chatd: providers config: %w", perr)
+	}
+	if sms == nil && mailer == nil && captcha == nil && cfg.ProvidersPath != "" {
+		lg.Info("providers: no channel URLs configured, sms/mail/captcha stay fail-closed")
+	}
+	// CORS / WS-Origin consistency: the two knobs can contradict each other
+	// (HTTP tightened to a list while the WS handshake still accepts any
+	// origin). That is a legitimate posture, but it is rarely intended —
+	// say so loudly at startup instead of letting an operator wonder why a
+	// browser client connects but its XHRs fail.
+	if cfg.CORSMode != "" && cfg.CORSMode != "allow_any" && cfg.AllowAnyOrigin {
+		lg.Warn("cors/origins: cors_mode is not allow_any but allow_any_origin is true — the WS handshake accepts any origin while HTTP is restricted",
+			"cors_mode", cfg.CORSMode, "allow_any_origin", true)
+	}
+
 	authSvc, err := authsvc.New(authsvc.Deps{
 		DB:       hot.DB,
 		Identity: hot,
@@ -251,27 +335,95 @@ func newAssembly(cfg *config, lg *log.Logger) (*assembly, error) {
 		Verifier: verifier,
 		Hasher:   hasher,
 		HMACKey:  hmacKey,
+		SMS:      sms,
+		Mailer:   mailer,
+		Captcha:  captcha,
 	}, authsvc.Config{
 		PublicOrigin:  cfg.PublicOrigin,
+		CORSMode:      cfg.CORSMode,
+		CORSOrigins:   cfg.CORSOrigins,
 		AccessTTL:     time.Duration(cfg.AccessTTLSec) * time.Second,
 		RefreshTTL:    time.Duration(cfg.RefreshTTLSec) * time.Second,
 		DevOTP:        cfg.DevOTP,
 		SecureCookies: strings.HasPrefix(cfg.PublicOrigin, "https://"),
-		Logger:        log.For("authsvc"),
+		CookieSameSite: func() http.SameSite {
+			// cookie_same_site = "lax"(default) | "none"。"none" 只在 https
+			// public_origin 下合法（浏览器拒绝无 Secure 的 SameSite=None），
+			// 违例在启动时 fail-fast（与 cors_mode 校验同类）。
+			switch strings.ToLower(strings.TrimSpace(cfg.CookieSameSite)) {
+			case "none":
+				if !strings.HasPrefix(cfg.PublicOrigin, "https://") {
+					panic(fmt.Sprintf("chatd: cookie_same_site=none requires https public_origin (got %q)", cfg.PublicOrigin))
+				}
+				return http.SameSiteNoneMode
+			case "", "lax":
+				return http.SameSiteLaxMode
+			default:
+				panic(fmt.Sprintf("chatd: invalid cookie_same_site %q (want lax|none)", cfg.CookieSameSite))
+			}
+		}(),
+		Logger: log.For("authsvc"),
+		// The login-method switches live in policy.json ("auth.methods").
+		// The closure reads the LIVE snapshot, so a policy reload (SIGHUP)
+		// flips a login method without a restart.
+		Methods: func() authsvc.MethodFlags {
+			m := a.policy.Current().Policy.Auth.Methods
+			return authsvc.MethodFlags{
+				Phone:    m.Phone,
+				Email:    m.Email,
+				Password: m.Password,
+				Guest:    m.Guest,
+			}
+		},
+		// The discovery endpoint's per-IP budget is policy (not a code
+		// constant): it is read per request, so a SIGHUP reload applies
+		// immediately.
+		MethodsProbeBudget: func() int {
+			return a.policy.Current().Policy.Auth.MethodsProbePerIPPerMin
+		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("chatd: auth service: %w", err)
 	}
 	a.auth = authSvc
 
+	// 9.5 push service (Web Push 服务端): the VAPID sender comes from the
+	// environment and degrades to a no-op when VAPID is not configured
+	// (fail-closed: subscriptions are still registered, nothing is delivered).
+	pushSvc, err := pushsvc.New(pushsvc.Deps{
+		Verifier: verifier,
+		Sender:   pushsvc.SenderFromEnv(log.For("push")),
+		Logger:   log.For("push"),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("chatd: push service: %w", err)
+	}
+	a.push = pushSvc
+	// v1.5: wire the push notification hook into the data-plane flusher so
+	// every committed message notifies offline/background recipients. The
+	// hook is fail-closed inside pushsvc (no subscriptions / no VAPID = no-op),
+	// so this never blocks or changes the existing delivery path.
+	p.SetPushNotify(func(uid int64, payload []byte) {
+		_ = pushSvc.Notify(uid, payload) // 返回已通知的订阅数；钩子不消费
+	})
+
 	// 10. user layer gateway: /ws + /api/auth/* + /healthz + SPA on one port.
 	userCfg := app.DefaultConfig()
 	userCfg.ListenAddr = cfg.Listen
+	// 可选 TLS：listen 指向 0.0.0.0/公网地址 + 配置证书对时，后端直接 https。
+	userCfg.TLSCertFile = cfg.TLSCertFile
+	userCfg.TLSKeyFile = cfg.TLSKeyFile
 	userCfg.PublicOrigin = cfg.PublicOrigin
+	userCfg.AllowAnyOrigin = cfg.AllowAnyOrigin
+	userCfg.CORSOrigins = cfg.CORSOrigins
 	userCfg.BridgeAddr = "embedded"
 	userCfg.LogLevel = cfg.LogLevel
 	userCfg.EnableRateLimit = cfg.RateLimitEnabled
-	userCfg.ExtraRoutes = a.buildHTTP(authSvc.Routes())
+	httpFace, herr := a.buildHTTP(authSvc.Routes())
+	if herr != nil {
+		return nil, herr
+	}
+	userCfg.ExtraRoutes = httpFace
 	userCfg.Flags = a.flags
 
 	srv, err := app.New(userCfg, func(token string) (*ws.Identity, error) {
@@ -286,11 +438,31 @@ func newAssembly(cfg *config, lg *log.Logger) (*assembly, error) {
 	}
 	a.user = srv
 
+	// 旧客户端能力协商（lts-1.4-acceptance §B）：客户端在 HELLO(1) 或
+	// CLIENT_CAPS(18) 里上报 pull_capable，user 层 Router 把能力记进连接
+	// 注册表；数据层在 universal_pull_enabled=true 时按收件人能力分流：
+	// 有能力 → 水位线（kind 14），无能力 → 保持 inline 逐成员推（不漏消息）。
+	// universal_pull_enabled=false 时数据层根本不调用探针 ⇒ flag-off 逐字节
+	// 不变（S-7 回滚基线）。
+	if r := a.user.Router(); r != nil {
+		r.CapSink = func(connID uint64, pullCapable bool) {
+			a.user.Session().SetPullCapable(connID, pullCapable)
+		}
+	}
+	a.pipe.SetPullCapability(func(uid int64) bool {
+		return a.user.Session().PullCapableUID(uid)
+	})
+
 	// P0-2 wiring: the policy.json rate_limit section is the user-level
 	// aggregate budget; converge the limiter's MSG_SEND rule onto it
 	// (never looser — see limitwire.go). Applied post-construction via the
 	// same atomic-swap path that SIGHUP reload() uses.
-	if a.policy != nil {
+	// Only converge policy limits when rate limiting is actually enabled: the
+	// disabled path scales every rule to 1e9 in app.Config.Policy(), and
+	// re-applying the policy numbers here silently undid that — a flag that
+	// says "off" but behaves "on" (measured: 2 MSG_SEND kills per connection
+	// in a capacity test that asked for no limits).
+	if a.policy != nil && a.cfg.RateLimitEnabled {
 		snap := a.user.Policy().Snapshot()
 		snap.Limits = limitFromPolicy(a.policy.Current().Policy, snap.Limits)
 		a.user.ReloadPolicy(snap)
@@ -311,10 +483,30 @@ func newAssembly(cfg *config, lg *log.Logger) (*assembly, error) {
 	a.adminREST = rest
 
 	// 12. job plane: archiver + jobber (cron from policy; 980 → jobber).
-	a.jobs = newJobPlane(hot, coldDB, a.policy, log.For("jobs"))
+	a.jobs = newJobPlane(hot, coldDB, a.policy, log.For("jobs"), a.cfg.MediaDir)
 	p.SetTrunkee(a.jobs)
 	if coldDB == nil {
 		lg.Info("job plane wired in degraded mode (no cold store): archive dry-run only, real runs fail with a clear error")
+	}
+
+	// 13. v3 bus wire (P3c) + P3d-1 fanout 灰度分流（双写旁路，仅构造/挂载）：
+	// 同一热库上构造 mailbox hub + delivery plane；把 hub.Offer 适配成
+	// pipe.V3Offer 注入 fanout 产出点。旧直投路径仍是唯一投递路径，连接写
+	// 循环一行不动（P3d-2）；flag 默认 false / percent=0 时 adapter 与
+	// Hub.Offer 双层 no-op，旧路径行为逐字节一致（§9）。nil 结果只记 WARN，
+	// 不阻断启动——旁路设施故障不得影响旧路径。
+	if w := newV3Wire(hot.DB, a.flags.Snapshot, delivery.Config{}); w != nil {
+		a.v3 = w
+		w.AttachV3Split(p)
+		// P3d-2 接线（docs/lts-1.4-remaining.md §1）：把 v3 投递循环接进
+		// 连接生命周期（OnConnect → Subscribe + deliverLoop；OnDisconnect →
+		// cleanup），并把双投递保护判定 / kind 15 ACK sink 注入 user 层
+		// Router。句柄不齐时 no-op（旁路设施故障不阻断启动，§9）。
+		// v3_bus_enabled=false（默认）时：钩子全部零成本 no-op，旧直投路径
+		// 逐字节不变（T-SV-5）。
+		AttachV3Deliver(a)
+	} else {
+		lg.Warn("v3 bus wire unavailable; continuing on legacy delivery path (P3d split not attached)")
 	}
 	return a, nil
 }
@@ -361,8 +553,9 @@ func (a *assembly) bootstrapFlags(ctx context.Context) error {
 }
 
 // buildHTTP is the single user-facing mux: everything the browser talks to
-// lives on one port (Caddy proxies one upstream).
-func (a *assembly) buildHTTP(auth http.Handler) http.Handler {
+// lives on one port (Caddy proxies one upstream). An invalid cors_mode
+// aborts startup (fail-fast: a security switch must not fall back open).
+func (a *assembly) buildHTTP(auth http.Handler) (http.Handler, error) {
 	mux := http.NewServeMux()
 	mux.Handle("/api/auth/", auth)
 	// media plane: same port as the gateway (bytes never ride the 64KB WS
@@ -372,6 +565,7 @@ func (a *assembly) buildHTTP(auth http.Handler) http.Handler {
 		Verifier: a.verifier,
 		Media:    a.hot,
 		Sys:      a.hot,
+		Quota:    a.hot, // store.MediaQuota (SUM(size) accounting)
 		Conv:     a.hot,
 		QueryDB:  a.hot.DB,
 		Logger:   log.For("media"),
@@ -384,14 +578,53 @@ func (a *assembly) buildHTTP(auth http.Handler) http.Handler {
 	}
 	a.media = mediaSvc
 	mux.Handle("/api/media/", mediaSvc.Routes())
+	// push plane: /api/push/subscribe (browser push registration) — mounted
+	// before the /api/ catch-all so the contract path wins.
+	if a.push != nil {
+		mux.Handle("/api/push/", a.push.Routes())
+	}
 	mux.HandleFunc("GET /healthz", a.healthz)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeJSONStatus(w, http.StatusNotFound, map[string]any{"error": "unknown api path", "code": "NOT_FOUND"})
 	})
-	// SPA: / and every non-file path fall back to index.html (the web package
-	// answers 503 when the dist has not been built, never panics).
-	mux.Handle("/", web.Handler(true))
-	return mux
+	// Backend-only deployment: this process serves the API + WS surface and
+	// NOTHING else. There is no embedded SPA — a client (web / desktop /
+	// mobile) is a separate program that points at this server through its
+	// own configuration (env: API base + WS url). The root path therefore
+	// answers with the service descriptor instead of an HTML page.
+	mux.HandleFunc("/", a.serviceRoot)
+	// ONE CORS policy for the whole user-facing HTTP surface. It is applied
+	// HERE, at the assembly layer, because a per-service implementation is
+	// how the cross-origin surface silently rots: auth, media and push must
+	// all answer a browser preflight the same way, and the /api fallback
+	// must not leak a 405 to the preflight.
+	policy, cerr := cors.New(a.cfg.CORSMode, a.cfg.PublicOrigin, a.cfg.CORSOrigins)
+	if cerr != nil {
+		return nil, fmt.Errorf("chatd: cors config: %w", cerr)
+	}
+	return policy.Middleware(mux), nil
+}
+
+// serviceRoot answers the root path with the service descriptor.
+//
+// Backend-only deployment: the process exposes the HTTP API, the WS endpoint
+// and the health probe — no user interface. A client discovers the surface
+// here and configures itself from it (API base + WS url).
+func (a *assembly) serviceRoot(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/" {
+		writeJSONStatus(w, http.StatusNotFound, map[string]any{"error": "not found", "code": "NOT_FOUND"})
+		return
+	}
+	writeJSONStatus(w, http.StatusOK, map[string]any{
+		"service": "UFOT",
+		"role":    "backend",
+		"surface": map[string]any{
+			"http_api":  "/api/*",
+			"websocket": "/ws",
+			"health":    "/healthz",
+			"auth":      "/api/auth/methods",
+		},
+	})
 }
 
 func (a *assembly) healthz(w http.ResponseWriter, r *http.Request) {
@@ -418,6 +651,13 @@ func (a *assembly) healthz(w http.ResponseWriter, r *http.Request) {
 // run starts the four long-lived components and blocks until one of them fails
 // or ctx is canceled.
 func (a *assembly) run(ctx context.Context) error {
+	a.runCtx = ctx // v3 deliverLoop 的根 ctx（SIGTERM cancel → 全部收敛）
+	if a.v3Hooks != nil {
+		a.v3Hooks.runCtx = ctx
+	}
+	// CORE-1 自适应控制器：adaptive_control_enabled=false（默认）时不启动、
+	// 不写 effective[cid]——机制层保持静态 flag 默认（50/2000）。
+	startAdaptiveControl(ctx, a)
 	errCh := make(chan error, 4)
 	go func() { errCh <- a.user.Run(ctx) }()
 	go func() { a.pipe.Run(ctx); errCh <- nil }()
@@ -520,13 +760,19 @@ func (a *assembly) reload(ctx context.Context) {
 			a.lg.Warn("policy reload failed; keeping previous snapshot", "err", err.Error())
 		} else {
 			a.lg.Info("policy reloaded", "changed", strings.Join(changed, ","), "version", a.policy.Current().Version)
+			// The write_path tunables are read by the flusher each batch;
+			// re-apply them so a reloaded batch_size / flush_interval takes
+			// effect on the next group commit without a restart.
+			if a.pipe != nil {
+				a.pipe.SetWritePolicy(a.policy.Current().Policy)
+			}
 		}
 	}
 	// The freshly reloaded rate_limit section is pushed into the user
 	// gateway's limiter (see limitwire.go for the mapping semantics).
 	// The limiter stores rules in an atomic pointer: the swap is lock-free
 	// and immediately visible to every live connection's verdict path.
-	if a.policy != nil && a.user != nil {
+	if a.policy != nil && a.user != nil && a.cfg.RateLimitEnabled {
 		snap := a.user.Policy().Snapshot()
 		snap.Limits = limitFromPolicy(a.policy.Current().Policy, snap.Limits)
 		a.user.ReloadPolicy(snap)
@@ -574,6 +820,16 @@ func (a *assembly) reload(ctx context.Context) {
 	a.lg.Info("feature flags republished", "version", version, "conns", sent)
 }
 
+// callStats returns the in-process call table occupancy for the status dump
+// (active calls, users pinned in a call). Nil-safe for early/partial assembly.
+func callStats(p *pipe.Pipe) map[string]int {
+	if p == nil {
+		return map[string]int{"active": 0, "users": 0}
+	}
+	calls, users := p.CallStats()
+	return map[string]int{"active": calls, "users": users}
+}
+
 // dump is the SIGUSR1 status snapshot (stdout, one JSON line).
 func (a *assembly) dump(w io.Writer) {
 	snap := map[string]any{
@@ -583,6 +839,7 @@ func (a *assembly) dump(w io.Writer) {
 		"listen":      a.user.Addr(),
 		"admin_addr":  a.admin.Addr(),
 		"conns":       a.user.Session().Count(),
+		"calls":       callStats(a.pipe),
 		"flags_ver":   a.flags.Version(),
 		"forwarder":   fmt.Sprintf("%+v", a.user.Forwarder().Stats()),
 		"bridge":      a.pipeline.Snapshot(),
@@ -590,6 +847,21 @@ func (a *assembly) dump(w io.Writer) {
 	}
 	if a.policy != nil {
 		snap["policy_version"] = a.policy.Current().Version
+	}
+	// v3 背压指标（v3-bus-design §5.2 / 任务书 §1 要求 6）：现有 dump 暴露，
+	// 不新增 HTTP 端点。PausedConns = credit 耗尽的连接数；Backpressured =
+	// 全 conn PAUSED 的 uid 数；Suppressed = 双投递保护跳过的旧直投帧数。
+	if a.v3 != nil && a.v3.Plane != nil {
+		st := a.v3.Plane.Stats()
+		snap["v3_bus"] = map[string]any{
+			"paused_conns":   st.PausedConns,
+			"backpressured":  st.Backpressured,
+			"legacy_skipped": a.v3.v3LegacySkipped(),
+		}
+	}
+	if h := a.v3Hooks; h != nil {
+		// 全局开关视图（无 uid 语境）：只看 Enabled()，不判桶。
+		snap["v3_bus_enabled"] = h.w != nil && h.w.Enabled != nil && h.w.Enabled()
 	}
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"event":  "status_dump",

@@ -162,3 +162,59 @@ func TestStoreKeepOldOnBadReload(t *testing.T) {
 		t.Fatal("New on invalid file must fail")
 	}
 }
+
+// TestWritePathPolicy (module 3): the write_path section must load with
+// defaults when absent, parse explicit values, and reject out-of-range ones.
+func TestWritePathPolicy(t *testing.T) {
+	// absent → defaults (the document is merged onto Default())
+	p, err := Load([]byte(goodPolicy))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.WritePath.BatchSize != DefaultWriteBatchSize || p.WritePath.FlushIntervalMS != DefaultWriteFlushIntervalMS {
+		t.Fatalf("absent write_path must default: %+v", p.WritePath)
+	}
+	// explicit values round-trip
+	body := `{"write_path": {"batch_size": 2000, "flush_interval_ms": 25}}`
+	p, err = Load([]byte(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.WritePath.BatchSize != 2000 || p.WritePath.FlushIntervalMS != 25 {
+		t.Fatalf("explicit write_path lost: %+v", p.WritePath)
+	}
+	// A value of 0 means "unset → use the built-in default" (the flusher treats
+	// >0 as set, and Load merges onto Default()), so 0 is legal and must not be
+	// rejected. Only genuinely out-of-range values are errors.
+	for _, ok := range []string{
+		`{"write_path": {"batch_size": 0}}`,
+		`{"write_path": {"flush_interval_ms": 0}}`,
+	} {
+		if _, err := Load([]byte(ok)); err != nil {
+			t.Errorf("write_path %q should be accepted (0 = use default): %v", ok, err)
+		}
+	}
+	// out-of-range values are rejected
+	for _, bad := range []string{
+		`{"write_path": {"batch_size": 99999}}`,
+		`{"write_path": {"batch_size": -1}}`,
+		`{"write_path": {"flush_interval_ms": 5000}}`,
+	} {
+		if _, err := Load([]byte(bad)); err == nil {
+			t.Errorf("write_path %q must be rejected", bad)
+		}
+	}
+}
+
+// TestWritePathDiff: Diff reports "write_path" when the tunables change.
+func TestWritePathDiff(t *testing.T) {
+	a := Default()
+	b := Default()
+	b.WritePath.BatchSize = 2000
+	if got := Diff(a, b); !reflect.DeepEqual(got, []string{"write_path"}) {
+		t.Fatalf("Diff = %v, want [write_path]", got)
+	}
+	if got := Diff(a, a); len(got) != 0 {
+		t.Fatalf("Diff of identical policies = %v, want empty", got)
+	}
+}

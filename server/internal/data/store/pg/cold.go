@@ -27,20 +27,30 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/yingo-server/OpenChat/server/internal/data/store"
+	"github.com/yingo-server/UFOT/server/internal/data/store"
+	"github.com/yingo-server/UFOT/server/internal/data/store/migrate"
+	"github.com/yingo-server/UFOT/server/store/migrations"
 )
 
 // ColdDB is the cold store handle. Implements:
 //
-//	store.ArchiveTarget  — idempotent hot->cold copy + hot delete
-//	store.AuditJournal   — append-only hash-chained audit log
+//	store.ArchiveSource — idempotent hot->cold copy (the COLD half only)
+//	store.AuditJournal  — append-only hash-chained audit log
 //
 // plus Search (trgm full-text) and the archive_runs ledger.
+//
+// Red line: ColdDB does NOT delete hot rows. The hot table lives in SQLite;
+// deleting it from a Postgres handle is a bug (the statement targets a table
+// that does not exist there). Hot deletion is the hot store's job
+// (store.HotPruner).
 type ColdDB struct {
 	DB *sql.DB
 
 	// DriverName records which registration the DB was opened with (diagnostics).
 	DriverName string
+	// dsn is retained so Migrate can open a short-lived connection with the
+	// pgx simple-protocol parameter (needed for multi-statement SQL files).
+	dsn string
 }
 
 // Open opens the cold database with driverName "postgres". The driver must be
@@ -53,14 +63,43 @@ func OpenDriver(driverName, dsn string) (*ColdDB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("pg: open: %w", err)
 	}
-	return &ColdDB{DB: db, DriverName: driverName}, nil
+	return &ColdDB{DB: db, DriverName: driverName, dsn: dsn}, nil
+}
+
+// Migrate applies the embedded cold (PostgreSQL) migration tree. Called by the
+// assembly layer once the cold store is opened — without it the audit journal
+// and archive tables are missing even though cold:true is reported.
+func (c *ColdDB) Migrate(ctx context.Context) error {
+	// pgx 用 simple protocol 才能一次执行含 $$ 函数体的多语句迁移文件；
+	// 通过 per-connection SearchPath/RunAs 无法切换协议，只能建一个专用
+	// 短连接（同 DSN + default_query_exec_mode 参数）执行迁移。
+	dsn := c.dsn
+	if dsn != "" && !strings.Contains(dsn, "default_query_exec_mode") {
+		sep := "?"
+		if strings.Contains(dsn, "?") {
+			sep = "&"
+		}
+		dsn += sep + "default_query_exec_mode=simple_protocol"
+	}
+	migDB, err := sql.Open(c.DriverName, dsn)
+	if err != nil {
+		return fmt.Errorf("cold migrate: open: %w", err)
+	}
+	defer migDB.Close()
+	r := &migrate.Runner{
+		Dialect: migrate.DialectPostgres,
+		Dir:     migrations.FS,
+		DB:      migDB,
+		Root:    migrate.DirCold,
+	}
+	return r.Up(ctx)
 }
 
 // Close closes the underlying pool.
 func (c *ColdDB) Close() error { return c.DB.Close() }
 
 var (
-	_ store.ArchiveTarget = (*ColdDB)(nil)
+	_ store.ArchiveSource = (*ColdDB)(nil)
 	_ store.AuditJournal  = (*ColdDB)(nil)
 )
 
@@ -73,8 +112,6 @@ VALUES ` // + "($1,$2,$3,$4,$5,$6),(...)" built by buildPlaceholders (values sta
 const copyTextSQL = `INSERT INTO msg.messages_text
 (msg_id, cid, sender_id, text, sent_at)
 VALUES ` // + placeholders — mirror rows, best-effort plain text projection
-
-const deleteHotSQL = `DELETE FROM msg_messages_hot WHERE sent_at < $1`
 
 // buildPlaceholders builds "(($n*6)+1, ...)($...),..." value groups for a
 // multi-row INSERT. This assembles PLACEHOLDER INDICES ONLY — never data.
@@ -161,18 +198,6 @@ func (c *ColdDB) copyChunk(ctx context.Context, part []store.HotMsg) (int64, err
 		// a later re-run heals the mirror because the copy is idempotent.
 		_ = err
 	}
-	return n, nil
-}
-
-// DeleteHot removes hot rows older than the cutoff timestamp. Only ever
-// called by the archiver AFTER CopyBatch committed those rows (ordering is
-// the archiver's contract — see api.go).
-func (c *ColdDB) DeleteHot(ctx context.Context, before int64) (int64, error) {
-	res, err := c.DB.ExecContext(ctx, deleteHotSQL, before)
-	if err != nil {
-		return 0, fmt.Errorf("pg: delete hot: %w", err)
-	}
-	n, _ := res.RowsAffected()
 	return n, nil
 }
 

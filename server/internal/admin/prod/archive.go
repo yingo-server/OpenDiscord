@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yingo-server/OpenChat/server/internal/admin/service"
-	"github.com/yingo-server/OpenChat/server/internal/data/policy"
-	"github.com/yingo-server/OpenChat/server/internal/data/store/pg"
+	"github.com/yingo-server/UFOT/server/internal/admin/service"
+	"github.com/yingo-server/UFOT/server/internal/data/policy"
+	"github.com/yingo-server/UFOT/server/internal/data/store/pg"
 )
 
 // Archive implements service.ArchiveRepository.

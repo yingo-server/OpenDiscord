@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/yingo-server/OpenChat/server/internal/data/pipe/wire"
-	"github.com/yingo-server/OpenChat/server/internal/data/store"
-	"github.com/yingo-server/OpenChat/server/internal/proto/kinds"
+	"github.com/yingo-server/UFOT/server/internal/data/pipe/wire"
+	"github.com/yingo-server/UFOT/server/internal/data/store"
+	"github.com/yingo-server/UFOT/server/internal/proto/kinds"
 )
 
 // ColdReader is the OPTIONAL dependency for cold-merge reads. When nil (no
@@ -34,6 +34,15 @@ func (rr *readRouter) handle(ctx context.Context, req wire.ReadHistory, senderUI
 	}
 	// Authorization is enforced by the domain handler BEFORE this call
 	// (CheckMember red line); readRouter contains no business semantics.
+
+	// "Older" direction (opt-in via beforeSeq): a keyset cursor walking
+	// backwards into history. This is the direction the client uses when the
+	// user scrolls up past what the local cache already holds. It is a
+	// distinct code path so the legacy sinceSeq behaviour below stays byte
+	// for byte identical (kind 8 SYNC catch-up / old clients).
+	if req.BeforeSeq > 0 {
+		return rr.handleBefore(ctx, req, limit)
+	}
 
 	// cursor semantics: since_seq is the keyset cursor. Descending page
 	// (typical history scroll) reads rows with seq < cursor.
@@ -73,6 +82,29 @@ func (rr *readRouter) handle(ctx context.Context, req wire.ReadHistory, senderUI
 	return res, nil
 }
 
+// handleBefore serves the "older" direction of kind 920: it reads the page
+// immediately BEFORE beforeSeq (seq < beforeSeq) and returns it in ASCENDING
+// seq order so the caller can prepend it verbatim. The hot store returns the
+// page descending (newest-of-the-page first); we reverse here.
+//
+// hasMore is true iff a full page came back (there may be yet older rows).
+// We deliberately do NOT consult the cold store here: this is the minimal,
+// additive cursor the client drives one page at a time (limit=50), and the
+// client stops on its own once hasMore=false.
+func (rr *readRouter) handleBefore(ctx context.Context, req wire.ReadHistory, limit int) (*wire.ReadHistoryResult, error) {
+	rows, err := rr.r.ReadHot(ctx, int64(req.ConvID), int64(req.BeforeSeq), limit, false)
+	if err != nil {
+		return nil, fmt.Errorf("readrouter: hot read (before) cid=%d before=%d: %w", req.ConvID, req.BeforeSeq, err)
+	}
+	res := &wire.ReadHistoryResult{ConvID: req.ConvID}
+	// rows are seq DESC; emit ASC so the client prepends without re-sorting.
+	for i := len(rows) - 1; i >= 0; i-- {
+		res.Messages = append(res.Messages, hotToMsgNew(rows[i]))
+	}
+	res.HasMore = len(rows) == limit
+	return res, nil
+}
+
 // catchup serves SYNC (kind 8) gap recovery: it returns the conversation's
 // messages with seq strictly greater than sinceSeq, in ASCENDING seq order,
 // so a reconnecting client can replay everything it missed after its last
@@ -91,12 +123,18 @@ func (rr *readRouter) catchup(ctx context.Context, cid, sinceSeq int64, limit in
 }
 
 // hotToMsgNew maps a hot row to the wire MsgNew view.
+//
+// Recalled rides along: the hot row's soft-delete column (0 = live, else the
+// unix-second recall timestamp). Without it a device that pulls history
+// AFTER the recall broadcast (new phone, reinstall, or a plain 920 fetch)
+// would receive the original text of a message that was already retracted.
 func hotToMsgNew(m store.HotMsg) wire.MsgNew {
 	return wire.MsgNew{
 		MsgID:    uint64(m.MsgID),
 		Seq:      uint64(m.Seq),
 		SenderID: uint64(m.SenderID),
 		SentAt:   m.SentAt,
+		Recalled: m.Recalled,
 		Content:  m.Content,
 	}
 }

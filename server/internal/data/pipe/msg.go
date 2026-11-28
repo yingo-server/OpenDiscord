@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 
-	"github.com/yingo-server/OpenChat/server/internal/data/cache"
-	"github.com/yingo-server/OpenChat/server/internal/data/pipe/wire"
-	"github.com/yingo-server/OpenChat/server/internal/data/store"
+	"github.com/yingo-server/UFOT/server/internal/data/cache"
+	"github.com/yingo-server/UFOT/server/internal/data/pipe/wire"
+	"github.com/yingo-server/UFOT/server/internal/data/store"
 )
 
 // msgDomain handles message writes: decode MSG_SEND payload, enforce the

@@ -234,11 +234,28 @@ func runSingleFlight(ctx context.Context, name string, u Unit, dryRun bool, lg L
 
 	// 作业失败≠进程失败 (docs §6): errors return to the caller; the process
 	// keeps running.
-	res, err := u.Run(ctx, dryRun)
+	//
+	// A PANIC in a job unit must be even less fatal than an error: one broken
+	// unit must never take the whole process (and every other job) down.
+	// The panic is recovered here, logged as an error, and turned into an
+	// error return so the caller sees a failed job instead of a dead daemon.
+	res, err := runUnit(ctx, name, u, dryRun)
 	if err != nil {
 		lg.Error("job failed", "job", name, "err", err.Error())
 	}
 	return res, err
+}
+
+// runUnit runs a job unit with a panic guard. The recovered value is turned
+// into an error (with the panic text) so the caller sees a normal failure.
+func runUnit(ctx context.Context, name string, u Unit, dryRun bool) (res Result, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			res = Result{}
+			err = fmt.Errorf("job %q panicked: %v", name, r)
+		}
+	}()
+	return u.Run(ctx, dryRun)
 }
 
 // Run is the scheduler loop: fires each unit at its NextFire. Blocks until

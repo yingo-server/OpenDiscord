@@ -1,0 +1,100 @@
+# UFOT 运行配置样例（embedded 单进程）
+#
+# 安装位置：/etc/ufot/ufot.toml（mode 0640 root:ufot）
+# 改完热生效：systemctl reload ufot（SIGHUP → 重读 policy + 白名单）
+# 监听地址必须是 127.0.0.1 —— 公网入口只允许 Caddy（deploy/Caddyfile）。
+#
+# 注意：策略类配置（保留天数、归档/备份 cron、限流阈值）不在本文件，
+#       唯一真源是 /etc/ufot/policy.json（改完 reload 即热生效）。
+
+mode = "embedded"
+
+# 用户层 HTTP/WS 监听。
+# 默认 127.0.0.1（公网入口走 Caddy 反代）；配置 tls_cert/tls_key 后可直接
+# 监听公网地址以 https 提供 HTTP+WS（证书与续期由部署方管理）。
+listen = "127.0.0.1:8080"
+
+# 可选 TLS（两项都非空才启用；留空 = 纯 http，交由反向代理终结 TLS）
+# tls_cert = "/etc/ufot/tls/fullchain.pem"
+# tls_key  = "/etc/ufot/tls/privkey.pem"
+
+# 管理层 AdminAPI 监听（Caddy 只对白名单 IP 反代 /api/admin/*）
+admin_listen = "127.0.0.1:7780"
+
+# Prometheus 指标监听（仅内网/本机抓取；Caddy 对外 404）
+metrics_listen = "127.0.0.1:9090"
+
+# 对外站点，用于生成绝对 URL、CORS 与 Cookie 域
+public_origin = "https://chat.example.com"
+
+# CORS 策略：allow_any（默认，独立前端）/ allow_list / off。
+# allow_any 时任意来源的浏览器客户端都能调用本服务（前端是独立程序，
+# 不由本服务托管，因此不存在本站页面被跨站滥用的路径）。
+cors_mode = "allow_any"
+# allow_list 模式下的额外来源（逗号分隔，public_origin 始终在内）
+cors_origins = ""
+# WS 握手是否放行任意 Origin（独立前端默认 true）
+allow_any_origin = true
+
+# access_token Cookie 的 SameSite 属性："lax"（默认，同站 UI）/
+# "none"（前端独立托管在别的站点时用，仅 https public_origin 下合法——
+# 违例启动即失败）。Netlify 等独立托管前端需要 "none"。
+cookie_same_site = "none"
+
+# 热库（SQLite，本地 WAL）与管理库（独立 admin.db，最小权限隔离）
+hot_db = "/var/lib/ufot/chatd.db"
+admin_db = "/var/lib/ufot/admin.db"
+
+# 媒体根目录（LUKS 卷挂载点，0750）
+media_dir = "/var/lib/ufot/media"
+
+# 密钥路径（install.sh 生成到 /etc/ufot/keys/，私钥 0640 root:ufot）
+# jwt_sign_key.pem 用于用户 token 签名；phone_lookup_key 是 PII 索引 HMAC 密钥。
+jwt_key_path = "/etc/ufot/keys/jwt_sign_key.pem"
+pii_hmac_key_path = "/etc/ufot/keys/phone_lookup_key"
+
+# 冷库 Postgres（外部实例；sslmode=require 为底线）
+cold_dsn = "postgres://ufot@db.internal:5432/ufot?sslmode=require"
+
+# 策略真源
+policy_path = "/etc/ufot/policy.json"
+
+# 供应商 webhook 配置（v1.4 OPS-2，示例见 deploy/providers.example.toml；
+# 缺省不配置 → 短信/邮件/验证码全部 fail-closed）
+# providers_path = "/etc/ufot/providers.toml"
+
+# 自备 TURN 地址（v1.4 OPS-2，管理后台诊断页一键自检用）
+# turn_url = "turn:turn.example.com:3478?transport=udp"
+
+# 日志级别：debug | info | warn | error（stdout JSON lines → journald）
+log_level = "info"
+
+# 优雅退出预算（秒）：flusher 最后一次组提交 + 归档断点落盘
+shutdown_timeout_sec = 30
+
+# 进程看门狗（需与 systemd WatchdogSec=15 对齐，取一半）
+watchdog_interval_sec = 7
+
+# 单设备上限（用户级限流聚合用；security-spec §1.2.1）
+max_devices_per_user = 3
+
+# 上传限制（security-spec D-3/D-4）
+max_upload_bytes = 52428800
+daily_upload_bytes_per_user = 2147483648
+
+# feature flags 默认值（运行期可在管理后台 /api/admin/v1/flags 热改，
+# 改动经 kind 911 帧下发全端，无需重启）
+[feature_flags]
+video_enabled = false
+e2ee = false
+registration = true
+readonly = false
+call_enabled = false
+
+# embedded-only：chatd 为单进程形态，split 多进程未实现（lts-1.4-plan §5 #4）。
+# [mode] 段与 [socket] 段保留为前瞻占位，勿改为 "split"。
+# [socket]
+# bus = "unix:///run/ufot/bus.sock"
+# user = "unix:///run/ufot/user.sock"
+# data = "unix:///run/ufot/data.sock"
+# admin = "unix:///run/ufot/admin.sock"

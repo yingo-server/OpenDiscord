@@ -47,6 +47,9 @@ type emailPollRequest struct {
 
 // handlePhoneCode issues an OTP challenge for a phone number.
 func (s *Service) handlePhoneCode(w http.ResponseWriter, r *http.Request) *apiError {
+	if !s.methodAllowed("phone") {
+		return errMethodDisabled("phone")
+	}
 	var req phoneCodeRequest
 	if e := s.decode(w, r, &req); e != nil {
 		return e
@@ -182,6 +185,9 @@ func (s *Service) checkOTPSendAllowed(ctx context.Context, idType int, index, ip
 
 // handlePhoneVerify exchanges an OTP for a session (auto-registers on first use).
 func (s *Service) handlePhoneVerify(w http.ResponseWriter, r *http.Request) *apiError {
+	if !s.methodAllowed("phone") {
+		return errMethodDisabled("phone")
+	}
 	var req phoneVerifyRequest
 	if e := s.decode(w, r, &req); e != nil {
 		return e
@@ -282,6 +288,9 @@ func (s *Service) verifyOTP(ctx context.Context, row *otpRow, code, penalty stri
 // handleEmailLink issues a magic-link challenge. Without a Mailer nothing is
 // delivered (reported as "not wired"); dev mode returns the link in the body.
 func (s *Service) handleEmailLink(w http.ResponseWriter, r *http.Request) *apiError {
+	if !s.methodAllowed("email") {
+		return errMethodDisabled("email")
+	}
 	var req emailLinkRequest
 	if e := s.decode(w, r, &req); e != nil {
 		return e
@@ -354,6 +363,9 @@ func (s *Service) magicLink(challengeID, token string) string {
 // handleEmailPoll answers either "pending" (202) or the session, once the
 // magic link token is presented.
 func (s *Service) handleEmailPoll(w http.ResponseWriter, r *http.Request) *apiError {
+	if !s.methodAllowed("email") {
+		return errMethodDisabled("email")
+	}
 	var req emailPollRequest
 	if e := s.decode(w, r, &req); e != nil {
 		return e

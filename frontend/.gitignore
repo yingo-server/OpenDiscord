@@ -1,0 +1,10 @@
+node_modules/
+dist/
+dist-ssr/
+*.local
+.DS_Store
+.vite/
+# env 一律不入库（模板见 .env.example；路径必须不带前缀——本文件就在 frontend/ 内）
+.env
+.env.*
+!.env.example

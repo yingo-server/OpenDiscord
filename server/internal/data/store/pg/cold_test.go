@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/yingo-server/OpenChat/server/internal/data/store"
+	"github.com/yingo-server/UFOT/server/internal/data/store"
 )
 
 // Pure-logic tests only: no database connection (CI has no postgres driver
@@ -138,7 +138,6 @@ func TestSQLShapeStability(t *testing.T) {
 	if !strings.Contains(auditAppendSQL, "ORDER BY id DESC LIMIT 1") {
 		t.Errorf("audit append must read chain tail in the same statement")
 	}
-	if strings.Contains(deleteHotSQL, "fmt") || strings.Count(deleteHotSQL, "$") != 1 {
-		t.Errorf("delete hot must be a single-parameter statement")
-	}
+	// deleteHotSQL is gone (defect fix): pg.ColdDB must NOT delete hot rows —
+	// the hot table lives in SQLite. The cold side is copy-only.
 }

@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yingo-server/OpenChat/server/internal/admin/service"
-	"github.com/yingo-server/OpenChat/server/internal/data/store"
+	"github.com/yingo-server/UFOT/server/internal/admin/service"
+	"github.com/yingo-server/UFOT/server/internal/data/store"
 )
 
 // Users implements service.UserRepository over the hot SQLite identity_*

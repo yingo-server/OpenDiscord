@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# release-check.sh —— OpenChat 1.0 发布前一键自检。
+# release-check.sh —— UFOT 1.0 发布前一键自检。
 # 用法：bash scripts/release-check.sh   （也可 sh scripts/release-check.sh；在仓库根目录执行）
 #
 # 设计约束：本脚本按 POSIX sh 编写（不用数组等 bash 扩展），因此 `bash -n`
@@ -75,7 +75,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-echo "######## OpenChat release-check（$(date -u +%FT%TZ)）########"
+echo "######## UFOT release-check（$(date -u +%FT%TZ)）########"
 
 # ---- Go 构建 / 静态检查 -----------------------------------------------------
 step "go build ./..." go build ./...
@@ -89,10 +89,6 @@ else
   printf '%s\n' "$UNFORMATTED"
   record_fail "gofmt -l server/ 为空（需格式化：$(printf '%s' "$UNFORMATTED" | tr '\n' ' ')）"
 fi
-
-# ---- 前端构建 ---------------------------------------------------------------
-step "apps/client npm run build" sh -c 'cd apps/client && npm run build'
-step "apps/admin npm run build" sh -c 'cd apps/admin && npm run build'
 
 # ---- 部署脚本语法（POSIX sh） ----------------------------------------------
 printf '\n== sh -n deploy/*.sh\n'

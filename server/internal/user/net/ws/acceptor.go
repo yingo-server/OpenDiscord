@@ -10,6 +10,7 @@ package ws
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"net"
@@ -21,10 +22,10 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"github.com/yingo-server/OpenChat/server/internal/pkg/log"
-	"github.com/yingo-server/OpenChat/server/internal/proto/gen/chatpb"
-	"github.com/yingo-server/OpenChat/server/internal/proto/kinds"
-	"github.com/yingo-server/OpenChat/server/internal/user/net/frame"
+	"github.com/yingo-server/UFOT/server/internal/pkg/log"
+	"github.com/yingo-server/UFOT/server/internal/proto/gen/chatpb"
+	"github.com/yingo-server/UFOT/server/internal/proto/kinds"
+	"github.com/yingo-server/UFOT/server/internal/user/net/frame"
 )
 
 // Identity 是握手鉴权通过后的最小身份（core/authn 的 Identity 由 app 层适配）。
@@ -41,8 +42,17 @@ type AuthnFunc = Authn
 
 // Config acceptor 参数。
 type Config struct {
-	ListenAddr        string
-	PublicOrigin      string // 同源校验白名单，如 https://chat.example.com
+	ListenAddr string
+	// 可选 TLS（后端直接对公网提供 https 的小型部署；ACME 部署请用反代终结）。
+	TLSCertFile  string
+	TLSKeyFile   string
+	PublicOrigin string // 同源校验白名单，如 https://chat.example.com
+	// AllowAnyOrigin 放行任意合法 Origin（独立前端部署的默认姿态）。
+	AllowAnyOrigin bool
+	// CORSOrigins 与 HTTP 面的 cors_origins 列表共用（allow_list 模式下
+	// HTTP 能过的 Origin，WS 握手也必须能过——两套判据不一致会让
+	// "XHR 正常但 WS 连不上"这类问题无法排查）。
+	CORSOrigins       []string
 	CookieName        string // 默认 access_token
 	HeartbeatInterval time.Duration
 	ReadTimeout       time.Duration
@@ -82,9 +92,13 @@ type Conn struct {
 	remoteAddr string
 
 	// jsonMode 记录本连接的线格式：浏览器客户端默认发 JSON 文本帧
-	// （apps/client 的 JSON codec），原生客户端发 protobuf 二进制帧。回帧
+	// （浏览器的 JSON 编码），原生客户端发 protobuf 二进制帧。回帧
 	// 必须与对端一致，否则客户端解析失败——格式是传输属性，不是信任边界。
 	jsonMode atomic.Bool
+
+	// flushed 在 writeLoop 把队列里剩余帧写完并关闭 socket 后关闭，
+	// 供 CloseFlush 等待。见 CloseFlush 注释。
+	flushed chan struct{}
 
 	// 统计（atomic）：写缓冲满丢弃数。
 	dropped atomic.Uint64
@@ -151,6 +165,38 @@ func (c *Conn) Close() error {
 		c.closeErr = c.ws.Close()
 	})
 	return c.closeErr
+}
+
+// CloseFlush sends a final frame and then closes, waiting (bounded) until the
+// write loop has actually written it to the socket.
+//
+// Why: c.Write only ENQUEUES. Closing right after enqueue raced the write loop
+// and the frame was dropped — clients never saw the protocol-error reason for
+// a malformed frame. This is the only path that needs the guarantee, so it
+// lives here rather than making every write synchronous.
+func (c *Conn) CloseFlush(last []byte, code int, reason string, budget time.Duration) {
+	select {
+	case <-c.done:
+		return
+	default:
+	}
+	if last != nil {
+		select {
+		case c.send <- last:
+		case <-c.done:
+			return
+		}
+	}
+	// Give the write loop a bounded window to drain, then force-close.
+	if c.flushed != nil {
+		t := time.NewTimer(budget)
+		select {
+		case <-c.flushed:
+			t.Stop()
+		case <-t.C:
+		}
+	}
+	_ = c.CloseWith(code, reason)
 }
 
 // CloseWith 以指定 WS close code 关闭。
@@ -292,6 +338,7 @@ func (a *Acceptor) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		ws:         c,
 		send:       make(chan []byte, a.cfg.WriteChanCap),
 		done:       make(chan struct{}),
+		flushed:    make(chan struct{}),
 		createdAt:  time.Now(),
 		remoteAddr: r.RemoteAddr,
 	}
@@ -323,19 +370,34 @@ func (a *Acceptor) tokenFromRequest(r *http.Request) string {
 
 // checkOrigin 同源校验：无 Origin（非浏览器客户端）放行；有则必须与 Host 或
 // 配置的 PublicOrigin 精确匹配（不前缀/不通配）。
+// checkOrigin validates the handshake Origin.
+//
+// Backend-only deployment: the user interface is a separate program on its
+// own origin, so the strict same-origin check would reject legitimate
+// clients. AllowAnyOrigin therefore accepts any syntactically valid origin;
+// when it is off the previous behavior applies (empty Origin, configured
+// PublicOrigin, or same host).
 func (a *Acceptor) checkOrigin(r *http.Request) bool {
 	origin := r.Header.Get("Origin")
 	if origin == "" {
 		return true
 	}
-	if a.cfg.PublicOrigin != "" && strings.EqualFold(origin, a.cfg.PublicOrigin) {
-		return true
-	}
-	// 同源：scheme + host 与请求 Host 一致。
 	u, err := parseOrigin(origin)
 	if err != nil {
 		return false
 	}
+	if a.cfg.AllowAnyOrigin {
+		return true
+	}
+	if a.cfg.PublicOrigin != "" && strings.EqualFold(origin, a.cfg.PublicOrigin) {
+		return true
+	}
+	for _, o := range a.cfg.CORSOrigins {
+		if o != "" && strings.EqualFold(origin, o) {
+			return true
+		}
+	}
+	// 同源：scheme + host 与请求 Host 一致。
 	return strings.EqualFold(u.host, r.Host)
 }
 
@@ -412,8 +474,8 @@ func (a *Acceptor) readLoop(c *Conn) {
 		env, err := frame.Decode(data)
 		if err != nil {
 			// 坏帧：回 ERROR{code=PROTOCOL} 后按 1003 关闭（资源立即回收）。
-			_ = c.Write(buildErrorFrame(4000, "bad frame: "+err.Error()))
-			_ = c.CloseWith(websocket.CloseUnsupportedData, "bad frame")
+			c.CloseFlush(buildErrorFrame(4000, "bad frame: "+err.Error()),
+				websocket.CloseUnsupportedData, "bad frame", 300*time.Millisecond)
 			return
 		}
 		ev := &FrameEvent{Conn: c, Env: env, RecvAt: time.Now()}
@@ -471,6 +533,21 @@ func (a *Acceptor) closeConn(c *Conn) {
 // Run 监听并在 ctx 结束时优雅关闭。
 func (a *Acceptor) Run(ctx context.Context) error {
 	ln, err := net.Listen("tcp", a.cfg.ListenAddr)
+	if err != nil {
+		return fmt.Errorf("acceptor: listen %s: %w", a.cfg.ListenAddr, err)
+	}
+	// 可选 TLS：配置 CertFile+KeyFile 时监听升级为 TLS（ACME 用户请继续用
+	// 反向代理终结 TLS——本路径面向“后端直接对公网提供 https”的小型部署）。
+	if a.cfg.TLSCertFile != "" && a.cfg.TLSKeyFile != "" {
+		cert, cerr := tls.LoadX509KeyPair(a.cfg.TLSCertFile, a.cfg.TLSKeyFile)
+		if cerr != nil {
+			return fmt.Errorf("acceptor: load tls keypair: %w", cerr)
+		}
+		ln = tls.NewListener(ln, &tls.Config{
+			MinVersion:   tls.VersionTLS12,
+			Certificates: []tls.Certificate{cert},
+		})
+	}
 	if err != nil {
 		return fmt.Errorf("ws: listen %s: %w", a.cfg.ListenAddr, err)
 	}

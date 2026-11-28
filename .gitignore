@@ -2,7 +2,7 @@
 /dist/
 /bin/
 *.exe
-# frontend
+# node (no frontend in this repository — kept for tooling that may use it)
 node_modules/
 .vite/
 # local
@@ -12,16 +12,12 @@ node_modules/
 .env
 *.key
 *.pem
-# frontend build outputs: 只忽略 apps 下的中间产物。
-# server/web/{client,admin} 是 `make web` 复制进来的「内嵌产物」，必须提交：
-#   1) 发布包/目标机无需 Node 即可 `go build`；2) go:embed 要求编译期目录存在。
-# 目录里始终保留 .gitkeep，未构建时也能编译（Handler 返回 503）。
-apps/client/dist/
-apps/admin/dist/
-!server/web/client/**
-!server/web/admin/**
+# local scratch output
+/result.json
 
 # stray build artifacts (must never be tracked: 15MB+ binaries)
 /chatd
-/openchatctl
+/chatd-pg
+/ufotctl
 /server/chatd
+/stress

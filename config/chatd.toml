@@ -1,6 +1,6 @@
 # chatd embedded 模式配置（简化 TOML：key = value，# 注释，[section] 仅用于 feature flags）
 #
-# 生产安装位置 /etc/openchat/openchat.toml（0640 root:openchat）；
+# 生产安装位置 /etc/ufot/ufot.toml（0640 root:ufot）；
 # 仓库内这份是开发/单机默认值，路径均在 ./data 下，开箱即可 go run ./server/cmd/chatd。
 #
 # 策略类参数（保留天数、归档/备份 cron、限流阈值）不在本文件：
@@ -9,13 +9,22 @@
 mode = "embedded"
 
 # ---- 监听 ----
-# 用户层 HTTP：/ws（WebSocket）+ /api/auth/* + /healthz + SPA 静态资源，同一端口。
+# 用户层 HTTP：/ws（WebSocket）+ /api/auth/* + /api/media/* + /api/push/* + /healthz。
+# 本服务是纯后端：GET / 返回服务描述 JSON，不托管任何页面。
 listen = "127.0.0.1:8080"
-# 管理层 HTTP：POST /admin/inject（桥接 AdminAPI）+ /api/admin/*（本批次 501）。
+# 管理层 HTTP：POST /admin/inject（桥接 AdminAPI）。
 # 只允许 loopback —— 公网入口只能经 Caddy（deploy/Caddyfile）。
 admin_listen = "127.0.0.1:7780"
-# 对外站点：精确匹配 CORS Origin，https 时给 Cookie 加 Secure。
+# 对外站点：allow_list 模式下的权威 Origin，https 时给 Cookie 加 Secure。
 public_origin = ""
+
+# ---- CORS（独立前端部署）----
+# allow_any（默认，前端是独立程序）/ allow_list / off
+cors_mode = "allow_any"
+# allow_list 模式下的额外来源（逗号分隔，public_origin 始终在内）
+cors_origins = ""
+# WS 握手是否放行任意 Origin（独立前端默认 true）
+allow_any_origin = true
 
 # ---- 存储 ----
 # 热库（SQLite，WAL）。目录必须存在且属主为运行用户。

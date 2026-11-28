@@ -1,0 +1,202 @@
+#!/usr/bin/env bash
+# ---------------------------------------------------------------------------
+# install-interactive — TUI wizard for deploy/install.sh (bash-only, no deps)
+#
+# Purpose: on an interactive TTY with missing flags, collect the same answers
+# the CLI flags accept, then exec install.sh with those flags. FLAGS ARE THE
+# SOURCE OF TRUTH — this wizard only fills flags in; every prompt has an
+# equivalent --flag on install.sh.
+#
+# Dry-run: --interactive-test prints the collected answers as
+# KEY=VALUE lines and exits 0 without touching anything (CI-testable with a
+# piped stdin, e.g. printf 'zh\nchat.example.com\nroot\n...\n').
+#
+#   ./deploy/install-interactive [--dry-run] [--prefix DIR] [--etc DIR]
+#                                [--state DIR] [--no-start]   （embedded-only：--split 已移除）
+#                               [--skip-keys] [--pass-file PATH]
+# ---------------------------------------------------------------------------
+set -euo pipefail
+
+SCRIPT_DIR=$(cd -- "$(dirname -- "$0")" && pwd)
+REPO_DIR=$(cd -- "$SCRIPT_DIR/.." && pwd)
+
+PREFIX="${UFOT_PREFIX:-/opt/ufot}"
+ETC="${UFOT_ETC:-/etc/ufot}"
+STATE="${UFOT_STATE:-/var/lib/ufot}"
+SCRIPT_DIR=$(cd -- "$(dirname -- "$0")" && pwd)
+MODE="embedded"
+START=1
+SKIP_KEYS=0
+DRYRUN=0
+PASS_FILE=""
+DOMAIN=""
+ADMIN_USER=""
+TURN_SERVER=""
+COLD_DSN=""
+LANG_SEL=""
+
+t() {
+  local key="$1"; shift
+  local zh=0
+  [ "${LANG_SEL:-}" = "zh" ] && zh=1
+  case "$key:$zh" in
+    title:1)        printf 'UFOT 交互式安装向导' ;;
+    title:0)        printf 'UFOT interactive installer' ;;
+    lang_q:1)       printf '请选择语言 / Language: [1] 简体中文  [2] English' ;;
+    lang_q:0)       printf 'Language / 请选择语言: [1] 简体中文  [2] English' ;;
+    domain_q:1)     printf '公网来源/域名（回车 = http://localhost:8080；生产必须 https）' ;;
+    domain_q:0)     printf 'Public origin/domain (Enter = http://localhost:8080; production needs https)' ;;
+    user_q:1)       printf '管理员用户名（回车 = root）' ;;
+    user_q:0)       printf 'Admin username (Enter = root)' ;;
+    pass_q:1)       printf '管理员密码（至少 14 位，输入不回显）' ;;
+    pass_q:0)       printf 'Admin password (min 14 chars, hidden)' ;;
+    pass_again:1)   printf '再次输入密码' ;;
+    pass_again:0)   printf 'Repeat password' ;;
+    pass_short:1)   printf '密码至少需要 14 位，请重试' ;;
+    pass_short:0)   printf 'Password must be at least 14 characters, retry' ;;
+    pass_mismatch:1) printf '两次输入不一致，请重试' ;;
+    pass_mismatch:0) printf 'Passwords do not match, retry' ;;
+    cold_q:1)       printf '冷库 Postgres DSN（回车跳过 = 仅热库）' ;;
+    cold_q:0)       printf 'Cold-store Postgres DSN (Enter = hot-only)' ;;
+    turn_q:1)       printf 'TURN 服务器（回车跳过）' ;;
+    turn_q:0)       printf 'TURN server (Enter to skip)' ;;
+    summary:1)      printf '—— 安装摘要 ——' ;;
+    summary:0)      printf '—— installation summary ——' ;;
+    confirm_q:1)    printf '确认开始安装？[y/N]' ;;
+    confirm_q:0)    printf 'Proceed with installation? [y/N]' ;;
+    cancelled:1)    printf '已取消，未做任何更改' ;;
+    cancelled:0)    printf 'Cancelled, nothing changed' ;;
+    dryrun:1)       printf '—— DRY RUN：将传给 install.sh 的参数 ——' ;;
+    dryrun:0)       printf '—— DRY RUN: args that would be passed to install.sh ——' ;;
+    s_domain:1)     printf '域名' ;;
+    s_domain:0)     printf 'domain' ;;
+    s_user:1)       printf '管理员用户' ;;
+    s_user:0)       printf 'admin user' ;;
+    s_pass:1)       printf '管理员密码' ;;
+    s_pass:0)       printf 'admin password' ;;
+    s_pass_file:1)  printf '密码文件' ;;
+    s_pass_file:0)  printf 'password file' ;;
+    s_cold:1)       printf '冷库 DSN' ;;
+    s_cold:0)       printf 'cold DSN' ;;
+    s_turn:1)       printf 'TURN' ;;
+    s_turn:0)       printf 'TURN' ;;
+    none:1)         printf '（跳过）' ;;
+    none:0)         printf '(skipped)' ;;
+    *) printf '%s' "$key" ;;
+  esac
+}
+
+ask() { # ask <prompt-key> ; answer in $REPLY
+  printf '%s: ' "$(t "$1")"
+  read -r REPLY
+}
+
+ask_secret() { # ask_secret <prompt-key> ; hides input with read -s
+  printf '%s: ' "$(t "$1")"
+  read -rs REPLY
+  printf '\n'
+}
+
+ok()   { if [ -t 1 ]; then printf '\033[32m✓\033[0m %s\n' "$*"; else printf 'ok: %s\n' "$*"; fi; }
+warn() { if [ -t 1 ]; then printf '\033[33m⚠\033[0m %s\n' "$*"; else printf 'warn: %s\n' "$*"; fi; }
+die()  { if [ -t 2 ]; then printf '\033[31m✗\033[0m %s\n' "$*" >&2; else printf 'error: %s\n' "$*" >&2; fi; exit 1; }
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --dry-run|--interactive-test) DRYRUN=1 ;;
+    --pass-file)  PASS_FILE="${2:?}"; shift ;;
+    --prefix)     PREFIX="${2:?}"; shift ;;
+    --etc)        ETC="${2:?}"; shift ;;
+    --state)      STATE="${2:?}"; shift ;;
+    --split)      die "--split 已移除：embedded-only（lts-1.4-plan §5 #4）" ;;
+    --no-start)   START=0 ;;
+    --skip-keys)  SKIP_KEYS=1 ;;
+    --lang)       LANG_SEL="${2:?}"; shift ;;
+    *)            die "unknown flag: $1" ;;
+  esac
+  shift
+done
+
+# 1. language (skipped when --lang was given — flags are the truth)
+if [ -z "$LANG_SEL" ]; then
+  printf '%s\n' "$(t lang_q)"
+  ask lang_q
+  case "$REPLY" in 2|en|English) LANG_SEL="en" ;; *) LANG_SEL="zh" ;; esac
+fi
+
+# 2. domain
+if [ -z "$DOMAIN" ]; then
+  ask domain_q
+  DOMAIN="$REPLY"
+  [ -z "$DOMAIN" ] && DOMAIN="http://localhost:8080"
+  case "$DOMAIN" in
+    https://*) ok "$(t s_domain): $DOMAIN" ;;
+    *) warn "$(t s_domain): $DOMAIN ($(t domain_q))" ;;
+  esac
+fi
+
+# 3. admin user
+if [ -z "$ADMIN_USER" ]; then
+  ask user_q
+  ADMIN_USER="${REPLY:-root}"
+fi
+
+# 4. admin password: NEVER on the command line; only collected here (hidden,
+# twice, ≥14 chars) or taken from --pass-file. Written to a 0600 env file.
+if [ -z "$PASS_FILE" ]; then
+  while :; do
+    ask_secret pass_q
+    p1="$REPLY"
+    if [ "${#p1}" -lt 14 ]; then warn "$(t pass_short)"; continue; fi
+    ask_secret pass_again
+    if [ "$p1" != "$REPLY" ]; then warn "$(t pass_mismatch)"; continue; fi
+    PASS_FILE=$(mktemp)
+    chmod 0600 "$PASS_FILE"
+    printf '%s' "$p1" > "$PASS_FILE"
+    unset p1
+    break
+  done
+fi
+
+# 5. cold DSN
+ask cold_q
+COLD_DSN="$REPLY"
+
+# 6. TURN
+ask turn_q
+TURN_SERVER="$REPLY"
+
+# 7. summary + confirm
+printf '\n%s\n' "$(t summary)"
+printf '%s: %s\n' "$(t s_domain)" "$DOMAIN"
+printf '%s: %s\n' "$(t s_user)" "$ADMIN_USER"
+printf '%s: %s\n' "$(t s_pass_file)" "$PASS_FILE"
+printf '%s: %s\n' "$(t s_cold)" "${COLD_DSN:-$(t none)}"
+printf '%s: %s\n' "$(t s_turn)" "${TURN_SERVER:-$(t none)}"
+
+if [ "$DRYRUN" -eq 1 ]; then
+  printf '\n%s\n' "$(t dryrun)"
+  printf 'install.sh --domain %s --admin-user %s --admin-pass-file %s --lang %s' \
+    "$DOMAIN" "$ADMIN_USER" "$PASS_FILE" "$LANG_SEL"
+  [ -n "$COLD_DSN" ]     && printf ' --cold-dsn %s' "$COLD_DSN"
+  [ -n "$TURN_SERVER" ]  && printf ' --turn-server %s' "$TURN_SERVER"
+  [ "$START" -eq 0 ]     && printf ' --no-start'
+  [ "$SKIP_KEYS" -eq 1 ] && printf ' --skip-keys'
+  printf ' --prefix %s --etc %s --state %s\n' "$PREFIX" "$ETC" "$STATE"
+  exit 0
+fi
+
+printf '%s ' "$(t confirm_q)"
+read -r REPLY
+case "$REPLY" in y|Y|yes|是) ;; *) printf '%s\n' "$(t cancelled)"; exit 0 ;; esac
+
+exec "$SCRIPT_DIR/install.sh" \
+  --domain "$DOMAIN" \
+  --admin-user "$ADMIN_USER" \
+  --admin-pass-file "$PASS_FILE" \
+  --lang "$LANG_SEL" \
+  ${COLD_DSN:+--cold-dsn "$COLD_DSN"} \
+  ${TURN_SERVER:+--turn-server "$TURN_SERVER"} \
+  --prefix "$PREFIX" --etc "$ETC" --state "$STATE" \
+  $([ "$START" -eq 0 ] && echo --no-start) \
+  $([ "$SKIP_KEYS" -eq 1 ] && echo --skip-keys)

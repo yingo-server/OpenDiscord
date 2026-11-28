@@ -11,27 +11,30 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yingo-server/OpenChat/server/internal/bridge/ack"
-	"github.com/yingo-server/OpenChat/server/internal/bridge/adminapi"
-	"github.com/yingo-server/OpenChat/server/internal/bridge/egress"
-	"github.com/yingo-server/OpenChat/server/internal/bridge/framerw"
-	"github.com/yingo-server/OpenChat/server/internal/bridge/router"
-	"github.com/yingo-server/OpenChat/server/internal/bridge/session"
-	"github.com/yingo-server/OpenChat/server/internal/bridge/supervisor"
-	"github.com/yingo-server/OpenChat/server/internal/bridge/verifier"
-	"github.com/yingo-server/OpenChat/server/internal/bus"
-	"github.com/yingo-server/OpenChat/server/internal/pkg/log"
-	"github.com/yingo-server/OpenChat/server/internal/proto"
-	chatpb "github.com/yingo-server/OpenChat/server/internal/proto/gen/chatpb"
-	"github.com/yingo-server/OpenChat/server/internal/proto/kinds"
-	"github.com/yingo-server/OpenChat/server/internal/transport"
+	"github.com/yingo-server/UFOT/server/internal/bridge/ack"
+	"github.com/yingo-server/UFOT/server/internal/bridge/adminapi"
+	"github.com/yingo-server/UFOT/server/internal/bridge/egress"
+	"github.com/yingo-server/UFOT/server/internal/bridge/framerw"
+	"github.com/yingo-server/UFOT/server/internal/bridge/router"
+	"github.com/yingo-server/UFOT/server/internal/bridge/session"
+	"github.com/yingo-server/UFOT/server/internal/bridge/supervisor"
+	"github.com/yingo-server/UFOT/server/internal/bridge/verifier"
+	"github.com/yingo-server/UFOT/server/internal/bus"
+	"github.com/yingo-server/UFOT/server/internal/pkg/log"
+	"github.com/yingo-server/UFOT/server/internal/proto"
+	chatpb "github.com/yingo-server/UFOT/server/internal/proto/gen/chatpb"
+	"github.com/yingo-server/UFOT/server/internal/proto/kinds"
+	"github.com/yingo-server/UFOT/server/internal/transport"
 )
 
 // Config 装配配置（main 从 TOML 读入）。
 type Config struct {
 	LayerCaps  map[string][]kinds.Kind    // Verifier 能力表
 	RouteTable map[uint32][]router.Target // Router 覆盖表；nil=默认
-	Egress     egress.Config              // Egress 队列/水位
+	// RouteFromData 是「来源层=data」时的精确路由覆盖（同 kind 双向转发用，
+	// 如通话信令 350-354：上行 client→data，下行 data→user）。nil=无覆盖。
+	RouteFromData map[uint32][]router.Target
+	Egress        egress.Config // Egress 队列/水位
 	// Sender 按层选择性发送（embedded 注入 Bridge.SendTo；nil 按 Peer.Layer 匹配）。
 	Sender func(layer string, f *proto.Frame) error
 	// AdminAuth 是 AdminAPI（POST /admin/inject）的入站鉴权。
@@ -87,6 +90,9 @@ func Assemble(cfg Config, peers ...transport.Peer) (*Pipeline, error) {
 		rejects:  make(chan *proto.Reject, 64), runErr: make(chan error, 1),
 	}
 	p.cfg.Egress.Rejects = p.rejects
+	for k, ts := range cfg.RouteFromData {
+		p.rtr.SetFromData(k, ts)
+	}
 	p.cfg.Egress.OnNack = func(f *proto.Frame) {
 		for _, tr := range p.tracks {
 			tr.Fail(f.Seq)
@@ -194,7 +200,7 @@ func (p *Pipeline) dispatchLoop(ctx context.Context) {
 			if p.sess.ConsumeControl(connOf(f), f) {
 				continue
 			}
-			targets := p.rtr.Route(f.Kind, f.Env)
+			targets := p.rtr.RouteFrom(f.Kind, f.Env, frameSrcLayer(f))
 			if len(targets) == 0 {
 				select {
 				case p.rejects <- &proto.Reject{Kind: f.Kind, Code: 4, Reason: "no route"}:
@@ -231,10 +237,18 @@ func (p *Pipeline) writeLoop(ctx context.Context) {
 
 // route 从帧推导首要目标（ack 重发用）。
 func (p *Pipeline) route(f *proto.Frame) router.Target {
-	if ts := p.rtr.Route(f.Kind, f.Env); len(ts) > 0 {
+	if ts := p.rtr.RouteFrom(f.Kind, f.Env, frameSrcLayer(f)); len(ts) > 0 {
 		return ts[0]
 	}
 	return router.Target{}
+}
+
+// frameSrcLayer reads the ingress layer stamped by framerw ("" when unknown).
+func frameSrcLayer(f *proto.Frame) string {
+	if f != nil && f.Meta != nil {
+		return f.Meta.SrcLayer
+	}
+	return ""
 }
 
 // sendTo 目标层写侧发送；层未接入即丢弃（TARGET_DOWN 语义）。

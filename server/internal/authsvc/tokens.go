@@ -11,12 +11,12 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 
-	"github.com/yingo-server/OpenChat/server/internal/data/store"
-	"github.com/yingo-server/OpenChat/server/internal/user/core/authn"
+	"github.com/yingo-server/UFOT/server/internal/data/store"
+	"github.com/yingo-server/UFOT/server/internal/user/core/authn"
 )
 
 // sessionResponse is the login result. Field names are the client contract
-// (apps/client/src/net/auth/provider.ts → mapAuthSession):
+// (see docs/client-contract.md — the session object is the wire form):
 //
 //	access_token / token / refresh_token / user_id / session_id / expires_at /
 //	guest / profile{display_name}
@@ -78,6 +78,13 @@ func (s *Service) newSession(uid int64, deviceID string, pair tokenPair, guest, 
 // setAuthCookie stores the access token as an HttpOnly cookie. It is what
 // makes the WS handshake work in a browser: the acceptor reads access_token
 // from the Cookie header and refuses URL query tokens (security-spec §2.3).
+//
+// SameSite policy: Lax (same-site UI) vs None (separately hosted frontend).
+// A frontend on ANOTHER site (e.g. static hosting) cannot work with Lax —
+// the browser drops the cookie on cross-site XHR/WS handshakes. None is
+// therefore opt-in via config and REQUIRES Secure (browsers reject
+// SameSite=None without Secure); when public_origin is not https the config
+// is rejected at startup (fail-fast, same class as cors_mode validation).
 func (s *Service) setAuthCookie(w http.ResponseWriter, token string, ttl time.Duration) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     cookieAccessTokenName,
@@ -85,7 +92,7 @@ func (s *Service) setAuthCookie(w http.ResponseWriter, token string, ttl time.Du
 		Path:     "/",
 		HttpOnly: true,
 		Secure:   s.cfg.SecureCookies,
-		SameSite: http.SameSiteLaxMode,
+		SameSite: s.cfg.CookieSameSite,
 		MaxAge:   int(ttl / time.Second),
 	})
 }
@@ -97,7 +104,7 @@ func (s *Service) clearAuthCookie(w http.ResponseWriter) {
 		Path:     "/",
 		HttpOnly: true,
 		Secure:   s.cfg.SecureCookies,
-		SameSite: http.SameSiteLaxMode,
+		SameSite: s.cfg.CookieSameSite,
 		MaxAge:   -1,
 	})
 }

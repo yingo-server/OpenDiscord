@@ -9,6 +9,8 @@ import (
 	"io"
 	"os"
 	"strings"
+
+	"github.com/yingo-server/UFOT/server/internal/pkg/i18n"
 )
 
 var errUsage = errors.New("usage")
@@ -18,6 +20,7 @@ func main() {
 }
 
 func run(args []string, in io.Reader, out, errw io.Writer) int {
+	stderrW = errw
 	g, rest, err := parseGlobals(args)
 	if err != nil {
 		fmt.Fprintf(errw, "adminctl: %v\n\n", err)
@@ -61,6 +64,10 @@ func run(args []string, in io.Reader, out, errw io.Writer) int {
 		err = cmdBroadcast(g, rest[1:], out)
 	case "flags":
 		err = cmdFlags(g, rest[1:], out)
+	case "logout":
+		err = cmdLogout(g, rest[1:], out, errw)
+	case "metrics":
+		err = cmdMetrics(g, rest[1:], out)
 	case "audit":
 		err = cmdAudit(g, rest[1:], out)
 	case "archive":
@@ -71,6 +78,9 @@ func run(args []string, in io.Reader, out, errw io.Writer) int {
 		return exitUsage
 	}
 	if err != nil {
+		if errors.Is(err, errHelpRequested) {
+			return exitOK
+		}
 		printError(errw, err)
 		return exitCodeFor(err)
 	}
@@ -82,6 +92,11 @@ func run(args []string, in io.Reader, out, errw io.Writer) int {
 func parseGlobals(args []string) (globals, []string, error) {
 	var g globals
 	var rest []string
+	var langSeen string
+	// Language resolution: explicit --lang wins, else LC_ALL/LANG (i18n.DetectLang).
+	if langSeen == "" {
+		i18n.SetLang(i18n.DetectLang(""))
+	}
 	take := func(i *int, inline, name string) (string, error) {
 		if inline != "" {
 			return inline, nil
@@ -120,6 +135,13 @@ func parseGlobals(args []string) (globals, []string, error) {
 			g.IdemKey = a[len("--idempotency-key="):]
 		case a == "--no-save":
 			g.NoSave = true
+		case a == "--lang" || strings.HasPrefix(a, "--lang="):
+			v, lerr := take(&i, a, "--lang")
+			if lerr != nil {
+				return g, nil, lerr
+			}
+			i18n.SetLang(i18n.DetectLang(v))
+			langSeen = v
 		default:
 			rest = append(rest, a)
 		}
@@ -130,8 +152,8 @@ func parseGlobals(args []string) (globals, []string, error) {
 	if g.Output == "" || g.Output == "table" {
 		g.Output = "table"
 	}
-	if g.Output != "table" && g.Output != "json" {
-		return g, nil, &usageError{msg: "invalid --output (want json or table)"}
+	if g.Output != "table" && g.Output != "json" && g.Output != "text" {
+		return g, nil, &usageError{msg: "invalid --output (want json, table or text)"}
 	}
 	return g, rest, nil
 }
@@ -141,22 +163,24 @@ func resolveGlobals(g *globals) error {
 	// commands that do not need auth; treat it as empty.
 	creds, _ := loadCredentials()
 	if g.Server == "" {
-		g.Server = os.Getenv("OPENCHAT_ADMIN_URL")
+		g.Server = os.Getenv("UFOT_ADMIN_URL")
 	}
 	if g.Server == "" {
 		g.Server = creds.Server
 	}
 	if g.Server == "" {
-		g.Server = "http://127.0.0.1:7781"
+		// Built-in default matches config/chatd.toml admin_listen; override with
+		// --server or UFOT_ADMIN_URL.
+		g.Server = "http://127.0.0.1:7780"
 	}
 	if g.Token == "" {
-		g.Token = os.Getenv("OPENCHAT_ADMIN_TOKEN")
+		g.Token = os.Getenv("UFOT_ADMIN_TOKEN")
 	}
 	if g.Token == "" {
 		g.Token = creds.Token
 	}
 	if g.CSRF == "" {
-		g.CSRF = os.Getenv("OPENCHAT_ADMIN_CSRF")
+		g.CSRF = os.Getenv("UFOT_ADMIN_CSRF")
 	}
 	if g.CSRF == "" {
 		g.CSRF = creds.CSRF
@@ -165,32 +189,34 @@ func resolveGlobals(g *globals) error {
 }
 
 func printUsage(w io.Writer) {
-	fmt.Fprint(w, `adminctl — OpenChat management API client
+	fmt.Fprint(w, `adminctl — UFOT management API client
 
-Usage:
-  adminctl [global flags] <command> [args]
+usage: adminctl [global flags] <command> [args]
 
 Commands:
-  login                       Interactive password + TOTP login; prints a token
+  login                       Administrators: obtain a bearer token (interactive password + TOTP)
   whoami                      Show the current admin identity
-  users list|show|ban|unban   User administration
-  kick <uid>                  Disconnect all of a user's sessions
-  reports list|show|handle    Report queue / state machine
-  messages search|recall      Message search / forced recall
-  broadcast preview|send      Broadcast preview (dry run) / send
-  flags list|set              Feature flags / policy-as-flag
-  audit --since-id <id>       Sequential audit cursor stream
-  archive status              Archive job ledger
+  users list|show|ban|unban   User administration: list, show, ban, unban
+  kick <uid>                  Kick: disconnect all of a user's sessions
+  reports list|show|handle    Report administration: list, show, handle
+  messages search|recall      Message administration: search, recall
+  broadcast preview|send      Broadcast: preview (dry run) / send
+  flags list|set              Feature flags / policy-as-flag: list, set
+  metrics                     Show Prometheus metrics (GET /api/v1/metrics, raw text)
+  logout                      Log out (POST /api/v1/logout) and delete credentials
+  audit --since-id <id>       Stream the sequential audit cursor
+  archive status|run          Archive: job ledger / run a job (--dry-run previews)
   completion bash             Print bash completion
 
 Global flags:
-  --server <url>              Admin API base URL (env OPENCHAT_ADMIN_URL)
-  --token <token>             Bearer token (env OPENCHAT_ADMIN_TOKEN)
-  --csrf-token <token>        CSRF token (env OPENCHAT_ADMIN_CSRF)
+  --server <url>              Admin API base URL (env UFOT_ADMIN_URL)
+  --token <token>             Bearer token (env UFOT_ADMIN_TOKEN)
+  --csrf-token <token>        CSRF token (env UFOT_ADMIN_CSRF)
   --output json|table         Output format (default table)
   --idempotency-key <key>     Explicit key for a write operation
   --no-save                   login only: do not persist credentials
 
+Run 'adminctl <command> --help' for command-specific flags.
 Exit codes: 0 ok, 1 error, 64 usage, 65 not found, 77 permission denied.
 `)
 }

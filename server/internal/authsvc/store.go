@@ -16,7 +16,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/yingo-server/OpenChat/server/internal/data/store"
+	"github.com/yingo-server/UFOT/server/internal/data/store"
 )
 
 type authStore struct{ db *sql.DB }

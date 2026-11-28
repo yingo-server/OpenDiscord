@@ -17,6 +17,78 @@ func TestDefaults(t *testing.T) {
 	}
 }
 
+// TestPullModeThresholdDefaultEnabled 锁定单阶段定调（2026-11-02）：
+// 客户端先行落地后服务端默认直接启用，阈值 100；热回滚 = 改 flag 回 0。
+func TestPullModeThresholdDefaultEnabled(t *testing.T) {
+	if got := New().Int(KeyPullModeThreshold, -1); got != 100 {
+		t.Fatalf("pull_mode_threshold default = %d, want 100 (single-stage enabled)", got)
+	}
+	if got, ok := Defaults()[KeyPullModeThreshold]; !ok || got != 100 {
+		t.Fatalf("Defaults()[%s] = %v (present=%v), want 100", KeyPullModeThreshold, got, ok)
+	}
+}
+
+// TestPullModeThrottleDefaults 锁定频控默认值（2026-11 定调：push 次数最小化）。
+func TestPullModeThrottleDefaults(t *testing.T) {
+	f := New()
+	for k, want := range map[string]int{
+		KeyWatermarkBatch:      50,
+		KeyWatermarkIntervalMS: 2000,
+		KeyWatermarkJitterMS:   2000,
+	} {
+		if got := f.Int(k, -1); got != want {
+			t.Errorf("default %s = %d, want %d", k, got, want)
+		}
+	}
+}
+
+// TestProductionDefaults 锁定 1.4 转生产默认（lts-1.4-acceptance §F.3）：
+// 四个实验性 flag 默认 true、v3 灰度 percent=100、消息域 v2 默认 true。
+// 回滚路径 = SIGHUP 热改对应 flag 为 false / percent=0（S-7 逐字节基线）。
+func TestProductionDefaults(t *testing.T) {
+	f := New()
+	for k, want := range map[string]any{
+		KeyUniversalPullEnabled:   true,
+		KeyAdaptiveControlEnabled: true,
+		KeyV3BusEnabled:           true,
+		KeyV3BusPercent:           100,
+		KeyMsgDomainV2:            true,
+	} {
+		if got, ok := Defaults()[k]; !ok || got != want {
+			t.Errorf("Defaults()[%s] = %v (present=%v), want %v", k, got, ok, want)
+		}
+		if got, ok := f.Get(k); !ok || got != want {
+			t.Errorf("New().Get(%s) = %v (present=%v), want %v", k, got, ok, want)
+		}
+	}
+}
+
+// TestIntCoercion 覆盖 flag 值的三种来源：Go 默认(int)、DB/JSON 装载(float64)、
+// 911 下发的字符串。类型不符时回退 def，绝不 panic。
+func TestIntCoercion(t *testing.T) {
+	f := NewFromMap(map[string]any{
+		"as_int":     int(7),
+		"as_int64":   int64(8),
+		"as_float":   float64(100),
+		"as_string":  " 200 ",
+		"as_bool":    true,
+		"as_garbage": []string{"nope"},
+	})
+	for k, want := range map[string]int{
+		"as_int": 7, "as_int64": 8, "as_float": 100, "as_string": 200, "as_bool": 1,
+	} {
+		if got := f.Int(k, -1); got != want {
+			t.Errorf("Int(%s) = %d, want %d", k, got, want)
+		}
+	}
+	if got := f.Int("as_garbage", 42); got != 42 {
+		t.Errorf("Int(garbage) = %d, want fallback 42", got)
+	}
+	if got := f.Int("absent", 43); got != 43 {
+		t.Errorf("Int(absent) = %d, want fallback 43", got)
+	}
+}
+
 func TestApplyBumpsVersion(t *testing.T) {
 	f := New()
 	v1 := f.Apply(map[string]any{KeyE2EE: true})

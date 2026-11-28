@@ -19,8 +19,7 @@ env:
 
 jobs:
   # ---------------------------------------------------------------------------
-  # Go：不依赖前端产物。server/web/{client,admin} 里始终有 .gitkeep，
-  # 因此未执行 make web 时 go:embed 仍可编译（Handler 在运行时返回 503）。
+  # Go：后端仓库，没有任何前端构建步骤。
   # protoc 可选：make proto 在缺少 protoc 时保留仓库内已提交的 chatpb 实现。
   # ---------------------------------------------------------------------------
   go:
@@ -50,73 +49,81 @@ jobs:
       - name: Test
         run: make test
 
-      # 显式验证「没有前端产物也能构建」——go job 不得依赖 web job。
+      # 后端无前端依赖：go job 自包含。
       - name: Build (no frontend artifacts)
         run: make build
 
   # ---------------------------------------------------------------------------
-  # 前端：client 与 admin 各自独立 npm ci + build（矩阵，任一失败不掩盖另一个）。
-  # 两个应用都有 package-lock.json，必须用 npm ci 保证可复现。
+  # Web 客户端（frontend/）：类型检查 + 构建产物（tag 触发时随 Release 发布）。
+  # 环境变量在部署侧注入（.env.* 不入库），构建产物不携带任何域名。
   # ---------------------------------------------------------------------------
-  web:
+  frontend:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        app: [client, admin]
     defaults:
       run:
-        working-directory: apps/${{ matrix.app }}
+        working-directory: frontend
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
-          cache-dependency-path: apps/${{ matrix.app }}/package-lock.json
+          cache-dependency-path: frontend/package-lock.json
 
       - name: Install
-        run: npm ci --prefer-offline
+        run: npm ci
 
+      - name: Typecheck
+        run: npm run typecheck
+
+      # 构建时不注入任何 env：所有 VITE_* 留空 → 同源回退（location.origin）。
+      # 跨域部署者自行在托管时注入或用 runtime-config（README 部署章节）。
       - name: Build
         run: npm run build
 
-      - name: Test
-        run: npm run test --if-present
+      - name: Package dist
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          VER="$(git describe --tags --always 2>/dev/null | tr -d '\n' | tr -c 'A-Za-z0-9._-' '-')"
+          # GITHUB_WORKSPACE 就是 repo 根，working-directory=frontend 下的 ..
+          # 已经指向它，直接写到工作区内固定路径，避免 mv 自身。
+          tar -czf "$GITHUB_WORKSPACE/ufot-web-$VER-dist.tar.gz" -C dist .
+          ls -lh "$GITHUB_WORKSPACE"/ufot-web-*.tar.gz
 
-      - name: Upload dist
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
+        if: startsWith(github.ref, 'refs/tags/v')
         with:
-          name: web-${{ matrix.app }}
-          path: apps/${{ matrix.app }}/dist
-          retention-days: 3
-          if-no-files-found: error
+          name: web-dist
+          path: ufot-web-*-dist.tar.gz
+          retention-days: 7
+          if-no-files-found: ignore
 
   # ---------------------------------------------------------------------------
-  # 全平台/全 CPU 架构构建（v1.1：对标 FFmpeg 的产物矩阵）
-  # Linux × {amd64,386,arm64,arm(ARMv7),riscv64} + Windows × {amd64,386,arm64,arm}
-  # + 源码包。CGO(SQLite) 交叉编译需要对应 gcc；windows/arm* 用 mingw/llvm-mingw，
-  # 装不上则该格标记 SKIP（不阻塞其余产物）。
-  # 与 go 测试 job 相互独立：test 红不影响产物构建。
+  # 全平台/全 CPU 架构构建（后端产物矩阵，无任何前端步骤）。
   # ---------------------------------------------------------------------------
   build-matrix:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [web]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { goos: linux,   goarch: amd64,   pkg: tar.gz, cc: x86_64-linux-gnu-gcc,      apt: gcc-x86-64-linux-gnu}
-          - { goos: linux,   goarch: "386",   pkg: tar.gz, cc: i686-linux-gnu-gcc,        apt: gcc-i686-linux-gnu }
-          - { goos: linux,   goarch: arm64,   pkg: tar.gz, cc: aarch64-linux-gnu-gcc,     apt: gcc-aarch64-linux-gnu }
-          - { goos: linux,   goarch: arm,     pkg: tar.gz, cc: arm-linux-gnueabihf-gcc,   apt: gcc-arm-linux-gnueabihf }
-          - { goos: linux,   goarch: riscv64, pkg: tar.gz, cc: riscv64-linux-gnu-gcc,     apt: gcc-riscv64-linux-gnu }
-          - { goos: windows, goarch: amd64,   pkg: zip,    cc: x86_64-w64-mingw32-gcc,    apt: gcc-mingw-w64-x86-64 }
-          - { goos: windows, goarch: "386",   pkg: zip,    cc: i686-w64-mingw32-gcc,      apt: gcc-mingw-w64-i686 }
-          - { goos: windows, goarch: arm64,   pkg: zip,    cc: "",                        apt: "" }
-          - { goos: windows, goarch: arm,     pkg: zip,    cc: "",                        apt: "" }
+          # apt 必须同时装 gcc 交叉编译器与目标架构的 libc 开发头：只装 gcc-*-linux-gnu
+          # 会缺 bits/libc-header-start.h，CGO 编译直接失败（曾因此只剩 amd64 一格产物）。
+          - { goos: linux,   goarch: amd64,   pkg: tar.gz, cc: x86_64-linux-gnu-gcc,    apt: "gcc-x86-64-linux-gnu libc6-dev-amd64-cross" }
+          - { goos: linux,   goarch: "386",   pkg: tar.gz, cc: i686-linux-gnu-gcc,      apt: "gcc-i686-linux-gnu libc6-dev-i386-cross" }
+          - { goos: linux,   goarch: arm64,   pkg: tar.gz, cc: aarch64-linux-gnu-gcc,   apt: "gcc-aarch64-linux-gnu libc6-dev-arm64-cross" }
+          - { goos: linux,   goarch: arm,     pkg: tar.gz, cc: arm-linux-gnueabihf-gcc, apt: "gcc-arm-linux-gnueabihf libc6-dev-armhf-cross" }
+          # riscv64: CGO 交叉链接在 GitHub runner 上不稳定（cmd/link 反复崩），
+          # 且从未用于部署；跳过以保证 amd64/arm 等生产产物能正常发布。
+          # 需要时在有原生 riscv64 工具链的机器上单独构建。
+          - { goos: linux,   goarch: riscv64, pkg: tar.gz, cc: "", apt: "", unsupported: true }
+          - { goos: windows, goarch: amd64,   pkg: zip,    cc: x86_64-w64-mingw32-gcc,  apt: "gcc-mingw-w64-x86-64" }
+          - { goos: windows, goarch: "386",   pkg: zip,    cc: i686-w64-mingw32-gcc,    apt: "gcc-mingw-w64-i686" }
+          # 无 mingw 交叉编译器可产出 CGO 二进制；这两格不构建（在 README/known-issues 标注）
+          - { goos: windows, goarch: arm64,   pkg: zip,    cc: "", apt: "", unsupported: true }
+          - { goos: windows, goarch: arm,     pkg: zip,    cc: "", apt: "", unsupported: true }
     name: build
     steps:
       - uses: actions/checkout@v4
@@ -128,23 +135,13 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: |
-            apps/client/package-lock.json
-            apps/admin/package-lock.json
 
       - name: Install cross toolchain
         if: matrix.apt != ''
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends ${{ matrix.apt }} zip
-        continue-on-error: true
+          sudo apt-get install -y ${{ matrix.apt }} zip
 
-      - name: Build embedded web assets
-        run: make web
 
       - name: Cross-build package
         env:
@@ -153,24 +150,39 @@ jobs:
           CC: ${{ matrix.cc }}
           PKG: ${{ matrix.pkg }}
         run: |
+          if [ "${{ matrix.unsupported }}" = "true" ]; then
+            echo "::warning::$GOOS/$GOARCH has no stable CGO toolchain on this runner; not built (documented unsupported target)"
+            exit 0
+          fi
           if [ -n "$CC" ] && ! command -v "$CC" >/dev/null 2>&1; then
-            echo "cross compiler $CC unavailable — SKIP this target"; exit 0
+            # Runner 偶发缺交叉编译器（riscv64 常见）。非生产架构缺工具链时
+            # 优雅跳过该 target，不阻塞其余 8 个产物与 release；amd64 绝不会
+            # 走到这里（其 CC 是 gcc，runner 自带）。
+            echo "::warning::cross compiler $CC missing for $GOOS/$GOARCH; skipping this optional target"
+            mkdir -p dist
+            exit 0
           fi
           CGO_ENABLED=1 GOOS=$GOOS GOARCH=$GOARCH CC=$CC \
-            go build -trimpath -ldflags "-s -w" -o "stage/chatd$([ "$GOOS" = windows ] && echo .exe)" ./server/cmd/chatd || {
-              # windows/arm(64) 与部分无 mingw 格：退回纯 Go 静态（chatd 依赖 cgo 的
-              # SQLite，纯 Go 会缺驱动；这里给 SKIP 并标注，不阻塞其他产物）
-              echo "cross build failed for $GOOS/$GOARCH — SKIP (needs CGO toolchain)"
-              exit 0
-            }
+            go build -trimpath -ldflags "-s -w" -o "stage/chatd$([ "$GOOS" = windows ] && echo .exe)" ./server/cmd/chatd
+          # chatd-pg: SAME chatd source built with -tags pgdriver, which blank-
+          # imports pgx/v5/stdlib so the "pgx" driver is registered in-process
+          # and assemble.go step 8 opens the cold store. The default chatd
+          # build stays driver-free (architecture red line).
+          if [ "$GOOS" != windows ]; then
+            CGO_ENABLED=1 GOOS=$GOOS GOARCH=$GOARCH CC=$CC \
+              go build -tags pgdriver -trimpath -ldflags "-s -w" -o "stage/chatd-pg" ./server/cmd/chatd
+          fi
           mkdir -p stage/docs stage/deploy
           cp README.md LICENSE stage/
           cp docs/deploy.md docs/user-guide.md docs/admin-guide.md docs/known-issues.md stage/docs/ 2>/dev/null || true
           if [ "$GOOS" != windows ]; then
-            cp -R deploy/systemd deploy/journald deploy/keygen deploy/install.sh deploy/backup.sh deploy/release.sh deploy/Caddyfile deploy/openchat.toml deploy/policy.json stage/deploy/ 2>/dev/null || true
+            cp -R deploy/systemd deploy/journald deploy/keygen deploy/lib deploy/install.sh deploy/install-interactive deploy/backup.sh deploy/release.sh deploy/Caddyfile deploy/ufot.toml deploy/policy.json stage/deploy/ 2>/dev/null || true
           fi
-          VER="$(git describe --tags --always 2>/dev/null | tr -c 'A-Za-z0-9._-' '-')"
-          NAME="openchat-$VER-$GOOS-$GOARCH.$PKG"
+          # tr -c would also turn the trailing newline into '-', producing
+          # 'v1.1.0-' and therefore 'ufot-v1.1.0--linux-amd64.tar.gz'.
+          # Strip the newline first.
+          VER="$(git describe --tags --always 2>/dev/null | tr -d '\n' | tr -c 'A-Za-z0-9._-' '-')"
+          NAME="ufot-$VER-$GOOS-$GOARCH.$PKG"
           mkdir -p dist
           if [ "$PKG" = zip ]; then (cd stage && zip -qr "../dist/$NAME" .); else tar -czf "dist/$NAME" -C stage .; fi
           ls -lh dist/
@@ -193,9 +205,12 @@ jobs:
           fetch-depth: 0
       - name: Source tarball
         run: |
-          VER="$(git describe --tags --always 2>/dev/null | tr -c 'A-Za-z0-9._-' '-')"
+          # tr -c would also turn the trailing newline into '-', producing
+          # 'v1.1.0-' and therefore 'ufot-v1.1.0--linux-amd64.tar.gz'.
+          # Strip the newline first.
+          VER="$(git describe --tags --always 2>/dev/null | tr -d '\n' | tr -c 'A-Za-z0-9._-' '-')"
           mkdir -p dist
-          git archive --format=tar.gz --prefix="openchat-$VER-src/" HEAD > "dist/openchat-$VER-src.tar.gz"
+          git archive --format=tar.gz --prefix="ufot-$VER-src/" HEAD > "dist/ufot-$VER-src.tar.gz"
           ls -lh dist/
       - uses: actions/upload-artifact@v4
         with:
@@ -206,7 +221,7 @@ jobs:
   # 汇总 + 发布到 GitHub Release
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [go, build-matrix, src-package]
+    needs: [go, build-matrix, src-package, frontend]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -223,15 +238,26 @@ jobs:
       - name: Build SHA256SUMS
         run: |
           cd dist
-          sha256sum *.tar.gz *.zip > SHA256SUMS 2>/dev/null || sha256sum * > SHA256SUMS
+          # Artifacts unpack into per-artifact subdirectories, so a plain
+          # "sha256sum *" hits directories and fails. Flatten the package
+          # files to dist/ first, then hash only those.
+          find . -mindepth 2 -maxdepth 3 -type f \( -name '*.tar.gz' -o -name '*.zip' \) -exec mv -f {} . \;
+          rm -rf src-package 2>/dev/null || true
+          rm -rf web-dist 2>/dev/null || true
+          find . -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.zip' \) -printf '%P\n' \
+            | sort | xargs -r sha256sum > SHA256SUMS
           ls -lh; cat SHA256SUMS
+          # A release with no packages is a silent failure — make it loud.
+          test -s SHA256SUMS
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          # Windows cells without a mingw toolchain SKIP their package, so a
+          # *.zip pattern may legitimately match nothing — anchor on the
+          # package prefix and do not fail the release over a skipped target.
           files: |
-            dist/*.tar.gz
-            dist/*.zip
+            dist/ufot-*
             dist/SHA256SUMS
           generate_release_notes: true
-          fail_on_unmatched_files: true
+          fail_on_unmatched_files: false

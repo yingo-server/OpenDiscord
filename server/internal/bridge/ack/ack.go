@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yingo-server/OpenChat/server/internal/proto"
+	"github.com/yingo-server/UFOT/server/internal/proto"
 )
 
 // RTO 重发超时；MaxRetries 判死阈值。

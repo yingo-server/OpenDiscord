@@ -1,7 +1,11 @@
-# 压测结果受安全限流（security-spec §1.2.2）约束。压测的目的是测带载极限：
-# ladder 模式以 rate_limit_enabled=false 启动 chatd（一个开关同时放大 WS 帧
-# 限流、upgrade 限流、连接上限），持续加压直到可用性跌破 70% 为止。
-# 同时统计全局 RPM。
+# 压测结果受安全限流（security-spec §1.2.2）约束。本工作流跑 ladder 模式：
+# 复用一次性预注册的用户池（注册与连接分离），每档只用已注册 token 做 WS 握手，
+# 逐档倍增并发直到可用性（ACK/发送）跌破 70%。
+#
+# 生产默认 rate_limit_enabled=true。ladder 从单一 IP 发起海量 upgrade，
+# 生产级 upgrade 限流会把握手本身打挂（测的是限流，不是容量），所以 ladder
+# 默认用 --no-ratelimit 打开"原始容量上限"模式，并在日志/summary **显著标注**
+# 是否关闭了限流。需要测"带生产限流"的容量时把 no_ratelimit 设为 false。
 
 name: Stress
 
@@ -9,11 +13,41 @@ on:
   workflow_dispatch:
     inputs:
       ladder:
-        description: ladder (comma conn counts; stops at availability < 70%)
-        default: "256,512,1024,2048,4096,8192"
+        description: ladder ('start=N,max=M'; doubles conns until availability < 70%)
+        default: "start=256,max=8192"
       duration:
         description: seconds per level
         default: "10"
+      conv_members:
+        description: members per conversation (fanout width)
+        default: "50"
+      no_ratelimit:
+        description: "DISABLE rate limiting for raw-ceiling mode (true/false)"
+        default: "true"
+      pull_mode:
+        description: "enable pull-mode client (kind 14 WATERMARK → SYNC(8))"
+        default: "false"
+      universal_pull:
+        description: "REL/lts-1.4: universal-pull mode — ALL sessions watermark-driven (implies pull_mode); reports watermark/s, SYNC QPS, convergence, 3-way frame split"
+        default: "false"
+      slow_ratio:
+        description: "S-4: fraction of connections injected as slow consumers (0..1, e.g. 0.05 = 50/1000; 0 = off)"
+        default: "0"
+      slow_factor:
+        description: "S-4: pacing multiplier for slow-consumer connections (>=1)"
+        default: "5"
+      adaptive_compare:
+        description: "S-6: comma pair 'static.json,adaptive.json' — skip load, merge two recorded --universal-pull runs and print batch/interval + rate-limit evidence"
+        default: ""
+      scenario:
+        description: "acceptance scenario (scripts/stress/acceptance.sh): s1|s2|s3|s4|s5|s6-static|s6-adaptive|s7 — empty = legacy ladder run"
+        default: ""
+      hw_profile:
+        description: "lts-1.4 §E dual-spec: 2c2g (cgroup memory.max=2G + cpu.max 2 cores + taskset 0,1 + GOMAXPROCS=2) or 4c16g (default runner)"
+        default: "4c16g"
+      feature_flags:
+        description: "comma-separated k=v feature flags written into chatd.toml [feature_flags] (e.g. universal_pull_enabled=true,adaptive_control_enabled=true)"
+        default: ""
   push:
     tags: ['v*']
 
@@ -58,42 +92,289 @@ jobs:
           go build -o /tmp/chatd ./server/cmd/chatd
           go build -o /tmp/stressd ./scripts/stress
 
-      - name: Verify binaries
-        run: test -x /tmp/chatd && test -x /tmp/stressd && echo ready
+      - name: Verify binaries + unit tests
+        run: |
+          test -x /tmp/chatd && test -x /tmp/stressd && echo ready
+          go test ./scripts/stress -run 'TestPercentile|TestAvailability|TestMergeSamples|TestRing' -v
 
       # ---- ladder 压测（自动加压到可用性 70%）----
+      # 仅在未指定验收场景时走这条 legacy 路径；S-1~S-7 由下面的
+      # "Acceptance scenario" 步骤处理（scripts/stress/acceptance.sh 编排）。
       - name: Run ladder stress
+        if: ${{ github.event.inputs.scenario == '' || github.event.inputs.scenario == null }}
         env:
           CHATD_BIN: /tmp/chatd
-          LADDER: ${{ github.event.inputs.ladder || '256,512,1024,2048,4096,8192' }}
+          LADDER: ${{ github.event.inputs.ladder || 'start=256,max=8192' }}
           DURATION: ${{ github.event.inputs.duration || '10' }}
+          CONV_MEMBERS: ${{ github.event.inputs.conv_members || '10' }}
+          NO_RATELIMIT: ${{ github.event.inputs.no_ratelimit || 'true' }}
+          PULL_MODE: ${{ github.event.inputs.pull_mode || 'false' }}
+          UNIVERSAL_PULL: ${{ github.event.inputs.universal_pull || 'false' }}
+          SLOW_RATIO: ${{ github.event.inputs.slow_ratio || '0' }}
+          SLOW_FACTOR: ${{ github.event.inputs.slow_factor || '5' }}
+          ADAPTIVE_COMPARE: ${{ github.event.inputs.adaptive_compare || '' }}
         run: |
-          /tmp/stressd -ladder "$LADDER" -duration "$DURATION" -out ladder.json | tee stress.log
-          echo '## Capacity ladder' >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
-          grep -E '^\s+[0-9]+ ' stress.log >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
-          # 提取极限档位写进 summary
-          LAST_PASS=$(grep 'PASS' stress.log | tail -1 | awk '{print $1}')
-          FIRST_FAIL=$(grep 'FAIL' stress.log | head -1 | awk '{print $1}')
+          set -e
+          EXTRA=""
+          RL_STATE="ENABLED (production parity)"
+          if [ "$NO_RATELIMIT" = "true" ]; then
+            EXTRA="--no-ratelimit"
+            RL_STATE="DISABLED (raw-ceiling mode — NOT production limits)"
+          fi
+          if [ "$PULL_MODE" = "true" ]; then
+            EXTRA="$EXTRA --pull-mode"
+          fi
+          if [ -n "$ADAPTIVE_COMPARE" ]; then
+            # S-6: offline comparison of two recorded runs; no load generated.
+            echo "rate limiting: $RL_STATE" | tee stress.log
+            /tmp/stressd -adaptive-compare "$ADAPTIVE_COMPARE" 2>&1 | tee -a stress.log
+            {
+              echo '## S-6 adaptive comparison (static vs adaptive, same scenario)'
+              echo '```'
+              sed -n '/== S-6 adaptive comparison/,$p' stress.log || true
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            if [ "$UNIVERSAL_PULL" = "true" ]; then
+              EXTRA="$EXTRA --universal-pull"
+            fi
+            if [ "$SLOW_RATIO" != "0" ]; then
+              EXTRA="$EXTRA --slow-ratio $SLOW_RATIO --slow-factor $SLOW_FACTOR"
+            fi
+            echo "rate limiting: $RL_STATE" | tee stress.log
+            /tmp/stressd -ladder "$LADDER" -duration "$DURATION" \
+              -mode mixed --conv-members "$CONV_MEMBERS" $EXTRA \
+              -out ladder.json 2>&1 | tee -a stress.log
+
+            {
+              echo '## UFOT capacity ladder'
+              echo ''
+              echo "- **rate limiting:** $RL_STATE"
+              echo "- **conv members / fanout width:** $CONV_MEMBERS"
+              echo "- **mode:** mixed (MSG_SEND 70% / TYPING 15% / RECEIPT 10% / PRESENCE 5%)"
+              [ "$UNIVERSAL_PULL" = "true" ] && echo "- **universal-pull:** all sessions watermark-driven (S-6/S-7 per universal-pull-spec §4)"
+              if [ "$SLOW_RATIO" != "0" ]; then echo "- **S-4 slow-consumer injection:** ratio=$SLOW_RATIO factor=$SLOW_FACTOR"; fi
+              echo ''
+              echo '```'
+              grep -E '^\s+[0-9]+ ' stress.log || true
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+
+            # 可信度声明（预注册用户数 / 是否关限流 / 样本是否足够 / ramp 是否超时）
+            {
+              echo '### 可信度声明'
+              echo '```'
+              sed -n '/== 可信度声明/,/send->peer_recv/p' stress.log || true
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+
+            LAST_PASS=$(grep -E '^\s+[0-9]+ ' stress.log | grep 'PASS' | tail -1 | awk '{print $1}')
+            FIRST_FAIL=$(grep -E '^\s+[0-9]+ ' stress.log | grep -E 'FAIL|SATURATED|RAMP_TIMEOUT' | head -1 | awk '{print $1}')
+            {
+              echo "- **last passing level:** ${LAST_PASS:-n/a} conns"
+              echo "- **first failing level:** ${FIRST_FAIL:-none reached}"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # ---- 验收场景 S-1~S-7（编排入口：scripts/stress/acceptance.sh）----
+      # 本步骤只做「跑场景 + 落结果 JSON」，判定（PASS/FAIL）在 acceptance.sh 里。
+      - name: Acceptance scenario (S-1~S-7)
+        if: ${{ github.event.inputs.scenario != '' && github.event.inputs.scenario != null }}
+        env:
+          SCENARIO: ${{ github.event.inputs.scenario }}
+          FEATURE_FLAGS: ${{ github.event.inputs.feature_flags }}
+          DURATION: ${{ github.event.inputs.duration || '10' }}
+          NO_RATELIMIT: ${{ github.event.inputs.no_ratelimit || 'true' }}
+          HW_PROFILE: ${{ github.event.inputs.hw_profile || '4c16g' }}
+        run: |
+          set -e
+          # ---- §E 双规格资源约束（2c2g 档）：chatd + stressd 都按档约束 ----
+          # 优先 cgroup v2 (/sys/fs/cgroup 写 memory.max/cpu.max + taskset + GOMAXPROCS)；
+          # 全部不可用时显式 BLOCKED，不假跑。
+          constrain() {
+            BIN="$1"
+            shift
+            # 非 2c2g 档：直接 exec 目标二进制（必须在后台函数体内真正运行，
+            # 否则 boot_chatd 的 healthz 永远连不上）。
+            if [ "$HW_PROFILE" != "2c2g" ]; then exec "$BIN" "$@"; fi
+            CG="/sys/fs/cgroup/od-2c2g-$$"
+            WRAPPED=""
+            if mkdir "$CG" 2>/dev/null; then
+              if echo 2147483648 > "$CG/memory.max" 2>/dev/null \
+                 && printf '200000 100000' > "$CG/cpu.max" 2>/dev/null \
+                 && echo $$ > "$CG/cgroup.procs" 2>/dev/null; then
+                WRAPPED="cgroup:$CG"
+              else
+                rmdir "$CG" 2>/dev/null || true
+              fi
+            fi
+            if [ -z "$WRAPPED" ]; then
+              if command -v systemd-run >/dev/null 2>&1 \
+                 && systemd-run --user --scope -p MemoryMax=2G -p CPUQuota=200% true >/dev/null 2>&1; then
+                WRAPPED="systemd-run"
+              fi
+            fi
+            if [ -z "$WRAPPED" ] && (ulimit -v 2097152 2>/dev/null); then
+              WRAPPED="ulimit-v"
+            fi
+            if [ -z "$WRAPPED" ]; then
+              echo "BLOCKED: 2c2g profile requested but cgroup v2 / systemd-run / ulimit -v all unavailable" >&2
+              exit 3
+            fi
+            echo "hw_profile=2c2g constraint=$WRAPPED"
+            CPUSET="0,1"
+            nproc 2>/dev/null | grep -q '^1$' && CPUSET="0"
+            if command -v taskset >/dev/null 2>&1; then
+              GOMAXPROCS=2 exec taskset -c "$CPUSET" "$BIN" "$@"
+            else
+              GOMAXPROCS=2 exec "$BIN" "$@"
+            fi
+          }
+          export HW_PROFILE
+          SC=acc
+          rm -rf "$SC"
+          mkdir -p "$SC/keys" "$SC/media"
+          printf '{"hot_retention_days": 90}\n' > "$SC/policy.json"
+          RL=true
+          RLFLAG=""
+          if [ "$NO_RATELIMIT" = "true" ]; then RL=false; RLFLAG="--no-ratelimit"; fi
           {
-            echo "- **last passing level:** ${LAST_PASS:-n/a} conns"
-            echo "- **first failing level:** ${FIRST_FAIL:-none reached}"
-          } >> "$GITHUB_STEP_SUMMARY"
+            printf 'mode = "embedded"\n'
+            printf 'listen = "127.0.0.1:18080"\n'
+            printf 'admin_listen = "127.0.0.1:17780"\n'
+            printf 'admin_rest_listen = "127.0.0.1:17781"\n'
+            printf 'hot_db = "%s/%s/hot.db"\n' "$PWD" "$SC"
+            printf 'admin_db = "%s/%s/admin.db"\n' "$PWD" "$SC"
+            printf 'policy_path = "%s/%s/policy.json"\n' "$PWD" "$SC"
+            printf 'jwt_key_path = "%s/%s/keys/jwt.pem"\n' "$PWD" "$SC"
+            printf 'media_dir = "%s/%s/media"\n' "$PWD" "$SC"
+            printf 'log_level = "info"\n'
+            printf 'dev_otp = true\n'
+            printf 'rate_limit_enabled = %s\n' "$RL"
+            if [ -n "$FEATURE_FLAGS" ]; then
+              printf '[feature_flags]\n'
+              printf '%s\n' "$FEATURE_FLAGS" | tr ',' '\n' | while IFS='=' read -r k v; do
+                [ -n "$k" ] || continue
+                printf '%s = %s\n' "$k" "${v:-false}"
+              done
+            fi
+          } > "$SC/chatd.toml"
+          # chatd 的 dev_otp=true 仅在 APP_ENV=dev 时允许（authsvc 守门）；
+          # 压测注入账号依赖 dev OTP，故此处显式声明 dev 环境。
+          export APP_ENV=dev
+          MEMBERS=10
+          LADDER=""
+          UNIV=0
+          SLOW=""
+          STORM=0
+          case "$SCENARIO" in
+            s1) MEMBERS=500; LADDER="start=1000,max=1000"; UNIV=1;;
+            s2) MEMBERS=50;  LADDER="start=1000,max=1024"; UNIV=1;;
+            s3) MEMBERS=10;  LADDER="start=512,max=512";   UNIV=1;;
+            s4) MEMBERS=500; LADDER="start=1000,max=1000"; UNIV=1; SLOW="--slow-ratio 0.05 --slow-factor 5";;
+            s5) MEMBERS=10;  STORM=1;;
+            s6|s6-static|s6-adaptive) MEMBERS=500; LADDER="start=512,max=512"; UNIV=1;;
+            s7) MEMBERS=99;  LADDER="start=512,max=512";   UNIV=0;;
+            *) echo "unknown scenario: $SCENARIO"; exit 2;;
+          esac
+          CHATD_PID=""
+          stop_chatd() {
+            if [ -n "$CHATD_PID" ]; then
+              kill "$CHATD_PID" 2>/dev/null || true
+              wait "$CHATD_PID" 2>/dev/null || true
+              CHATD_PID=""
+              sleep 1
+            fi
+          }
+          trap stop_chatd EXIT
+          boot_chatd() {
+            BIN="$1"
+            LOGF="$2"
+            constrain "$BIN" -config "$SC/chatd.toml" > "$LOGF" 2>&1 &
+            CHATD_PID=$!
+            i=0
+            while [ "$i" -lt 60 ]; do
+              if curl -fsS http://127.0.0.1:18080/healthz >/dev/null 2>&1; then return 0; fi
+              sleep 1
+              i=$((i + 1))
+            done
+            echo "chatd ($BIN) did not become healthy"
+            tail -60 "$LOGF" || true
+            return 1
+          }
+          export CHATD_DB="$PWD/$SC/hot.db"
+          STRESS_ARGS="-mode mixed -duration $DURATION -conv-members $MEMBERS -no-boot -base http://127.0.0.1:18080 $RLFLAG"
+          if [ "$UNIV" = "1" ]; then STRESS_ARGS="$STRESS_ARGS --universal-pull"; fi
+          if [ -n "$SLOW" ]; then STRESS_ARGS="$STRESS_ARGS $SLOW"; fi
+          run_stress() {
+            OUT="$1"
+            set +e
+            if [ "$STORM" = "1" ]; then
+              constrain /tmp/stressd -mode restart-storm -conns 1000 -conv-members "$MEMBERS" -duration "$DURATION" -no-boot -base http://127.0.0.1:18080 $RLFLAG -out "$OUT" 2>&1 | tee stress.log
+            else
+              constrain /tmp/stressd -ladder "$LADDER" $STRESS_ARGS -out "$OUT" 2>&1 | tee stress.log
+            fi
+            rc=${PIPESTATUS[0]}
+            set -e
+            return $rc
+          }
+          if [ "$SCENARIO" = "s7" ]; then
+            printf 'S-7 byte-identity comparison (flag-off run vs v1.2.1 baseline)\n' > s7-cmp.txt
+            rm -rf /tmp/v121wt
+            if git rev-parse -q --verify refs/tags/v1.2.1 >/dev/null 2>&1 && git worktree add -f /tmp/v121wt v1.2.1 >/dev/null 2>&1; then
+              if (cd /tmp/v121wt && go build -o /tmp/chatd-v121 ./server/cmd/chatd); then
+                if boot_chatd /tmp/chatd-v121 "$SC/chatd-v121.log"; then
+                  run_stress baseline-v121.json || true
+                else
+                  printf 'BASELINE_BOOT_FAILED\n' >> s7-cmp.txt
+                fi
+                stop_chatd
+              else
+                printf 'BASELINE_BUILD_FAILED\n' >> s7-cmp.txt
+              fi
+              boot_chatd /tmp/chatd "$SC/chatd.log" || true
+              run_stress ladder.json || true
+              stop_chatd
+              if jq -S 'del(.levels[].ramp_ms,.levels[].p50_ms,.levels[].p95_ms,.levels[].p99_ms,.levels[].samples,.levels[].peer_recv_samples,.levels[].peer_recv_p95_ms,.levels[].rpm,.levels[].availability_pct,.levels[].msg_send_acks)' baseline-v121.json > /tmp/s7-base.json 2>/dev/null && jq -S 'del(.levels[].ramp_ms,.levels[].p50_ms,.levels[].p95_ms,.levels[].p99_ms,.levels[].samples,.levels[].peer_recv_samples,.levels[].peer_recv_p95_ms,.levels[].rpm,.levels[].availability_pct,.levels[].msg_send_acks)' ladder.json > /tmp/s7-rollback.json 2>/dev/null; then
+                if cmp -s /tmp/s7-base.json /tmp/s7-rollback.json; then
+                  printf 'IDENTICAL\n' >> s7-cmp.txt
+                else
+                  printf 'DIFF\n' >> s7-cmp.txt
+                  diff -u /tmp/s7-base.json /tmp/s7-rollback.json >> s7-cmp.txt || true
+                fi
+              else
+                printf 'NO_JSON\n' >> s7-cmp.txt
+              fi
+            else
+              printf 'BASELINE_MISSING (v1.2.1 tag checkout failed)\n' >> s7-cmp.txt
+              boot_chatd /tmp/chatd "$SC/chatd.log"
+              run_stress ladder.json
+              stop_chatd
+            fi
+            cat s7-cmp.txt >> stress.log
+            exit 0
+          fi
+          boot_chatd /tmp/chatd "$SC/chatd.log"
+          run_stress ladder.json
+          stop_chatd
 
       # 结果同时落地到仓库的 bench 分支：artifact 与 job log 走 Azure blob，
       # 在某些网络环境下不可达；commit 一个分支则可通过 git 稳定取回。
       - name: Publish result to bench branch
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # The bench branch is a convenience archive. A push failure (branch
+        # protection, token scope) must not mark a successful measurement as a
+        # failed job — the numbers are in the step summary and the artifact.
+        continue-on-error: true
         run: |
           set -e
           TS=$(date -u +%Y%m%dT%H%M%SZ)
           mkdir -p bench
           cp ladder.json "bench/ladder-$TS.json"
           cp stress.log  "bench/ladder-$TS.log"
-          git config user.name  "openchat-bench"
-          git config user.email "bench@openchat.local"
+          git config user.name  "ufot-bench"
+          git config user.email "bench@ufot.local"
           git checkout -q -B bench
           git add bench
           git commit -q -m "bench: ladder $TS (run ${{ github.run_id }})"

@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/yingo-server/OpenChat/server/internal/pkg/featureflags"
-	"github.com/yingo-server/OpenChat/server/internal/user/core/policy"
-	"github.com/yingo-server/OpenChat/server/internal/user/net/limit"
+	"github.com/yingo-server/UFOT/server/internal/pkg/featureflags"
+	"github.com/yingo-server/UFOT/server/internal/user/core/policy"
+	"github.com/yingo-server/UFOT/server/internal/user/net/limit"
 )
 
 func limitRule(rate, burst, capacity float64, maxPayload int, silent bool) limit.Rule {
@@ -20,9 +20,19 @@ func limitRule(rate, burst, capacity float64, maxPayload int, silent bool) limit
 type Config struct {
 	// ListenAddr WS 监听地址，如 ":8081"。
 	ListenAddr string
+	// 可选 TLS：直接以 https 提供 HTTP/WS（证书由部署方管理，如 Caddy file_server
+	// 签发的证书或手工申请的证书对）。两项都非空才启用；ACME 自动签发场景
+	// 仍建议用反向代理终结 TLS（本路径不处理续期）。
+	TLSCertFile string
+	TLSKeyFile  string
 	// PublicOrigin 允许的浏览器 Origin（如 https://chat.example.com）；
 	// 为空时仅做 Host 同源比较。
 	PublicOrigin string
+	// AllowAnyOrigin 放行任意合法 Origin（独立前端部署默认 true）；
+	// false 时回退到 PublicOrigin / 同 Host 校验。
+	AllowAnyOrigin bool
+	// CORSOrigins 与 HTTP 面 cors_origins 同源（WS 握手白名单对齐 HTTP 判据）。
+	CORSOrigins []string
 	// BridgeAddr 桥接地址（TCP/UDS）。本批次 Peer 由装配层注入，仅记录与健康展示。
 	BridgeAddr string
 	// CookieName 承载 access token 的 Cookie 名，默认 access_token。
@@ -37,6 +47,9 @@ type Config struct {
 	WriteChanCap      int
 	MaxConnsPerUser   int
 	DrainTimeout      time.Duration
+	// SendTick 透传给 ws.Config.SendTick：写循环可选兜底 tick。默认 0 =
+	// 不启用（消除每连接 ~66 次/秒的空转唤醒）。
+	SendTick time.Duration
 
 	// Upgrade 限流覆盖（/ws upgrade 按 IP 令牌桶 + 失败熔断，E-3/E-4）。
 	// 零值取 policy 默认（10/min、burst 20、阈值 8、窗口 5min、封禁 15min）。

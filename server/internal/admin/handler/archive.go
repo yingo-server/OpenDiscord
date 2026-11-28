@@ -3,7 +3,7 @@ package handler
 import (
 	"net/http"
 
-	"github.com/yingo-server/OpenChat/server/internal/admin/middleware"
+	"github.com/yingo-server/UFOT/server/internal/admin/middleware"
 )
 
 func (a *API) handleArchiveStatus(w http.ResponseWriter, r *http.Request) {

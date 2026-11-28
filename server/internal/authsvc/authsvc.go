@@ -38,9 +38,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yingo-server/OpenChat/server/internal/data/store"
-	"github.com/yingo-server/OpenChat/server/internal/pkg/log"
-	"github.com/yingo-server/OpenChat/server/internal/user/core/authn"
+	"github.com/yingo-server/UFOT/server/internal/data/store"
+	"github.com/yingo-server/UFOT/server/internal/pkg/cors"
+	"github.com/yingo-server/UFOT/server/internal/pkg/log"
+	"github.com/yingo-server/UFOT/server/internal/user/core/authn"
 )
 
 // Identity types written into identity_identities.id_type.
@@ -117,10 +118,59 @@ type Config struct {
 	DevOTP bool
 	// SecureCookies controls the Secure flag of the access_token cookie.
 	SecureCookies bool
+	// CookieSameSite is the SameSite attribute of the access_token cookie.
+	// Lax (default) fits a same-site UI; None fits a separately hosted
+	// frontend (requires SecureCookies — enforced at assembly).
+	CookieSameSite http.SameSite
 
 	MaxBodyBytes int
 	Now          func() time.Time
 	Logger       *log.Logger
+
+	// Methods returns the LIVE login-method switch set. The assembler injects
+	// a closure over the policy snapshot so a policy reload (SIGHUP) takes
+	// effect without a restart.
+	//
+	// nil means "no switch source wired" -> every method is enabled (the
+	// library default). Deployments always inject a reader; the deployment
+	// default is "every method off" (fail-closed).
+	Methods func() MethodFlags
+
+	// CORSMode selects the CORS policy: "allow_any" (default), "allow_list"
+	// or "off". See the CORSMode* constants.
+	CORSMode string
+	// CORSOrigins is the extra origin allowlist used by "allow_list" mode
+	// (PublicOrigin is always part of the list).
+	CORSOrigins []string
+
+	// MethodsProbeBudget returns the per-IP budget (requests per minute) of
+	// the public discovery endpoint. It is read on every request so a policy
+	// reload takes effect immediately. nil = built-in default (60/min).
+	MethodsProbeBudget func() int
+}
+
+// MethodFlags is the authentication surface switch set.
+//
+// Each login method can be turned off independently. A disabled method
+// rejects its requests with 403 METHOD_DISABLED BEFORE parsing any
+// parameter, so a disabled method reveals nothing about its internals.
+type MethodFlags struct {
+	Phone    bool
+	Email    bool
+	Password bool
+	Guest    bool
+}
+
+// AllMethodsEnabled returns the permissive set. It is the fallback when no
+// switch source is wired (library use); every DEPLOYMENT injects the live
+// policy snapshot instead, where the default is "everything off".
+func AllMethodsEnabled() MethodFlags {
+	return MethodFlags{Phone: true, Email: true, Password: true, Guest: true}
+}
+
+// AnyEnabled reports whether at least one login method is usable.
+func (m MethodFlags) AnyEnabled() bool {
+	return m.Phone || m.Email || m.Password || m.Guest
 }
 
 // Deps is the injected dependency set. In embedded mode DB, Identity and Sys
@@ -156,6 +206,12 @@ type Service struct {
 	lg       *log.Logger
 
 	mux *http.ServeMux
+
+	// methodsLimiter rate limits the public discovery endpoint per IP.
+	methodsLimiter *ipLimiter
+
+	// cors is the CORS policy resolved once at construction.
+	cors cors.Policy
 }
 
 // New validates the dependency set and builds the router.
@@ -202,7 +258,17 @@ func New(deps Deps, cfg Config) (*Service, error) {
 		captcha:  deps.Captcha,
 		lg:       lg,
 	}
+	corsPol, cerr := cors.New(s.cfg.CORSMode, s.cfg.PublicOrigin, s.cfg.CORSOrigins)
+	if cerr != nil {
+		return nil, fmt.Errorf("authsvc: %w", cerr)
+	}
+	s.cors = corsPol
+	s.methodsLimiter = newIPLimiter(methodsRateWindow)
 	s.mux = s.routes()
+	if !s.methodState().AnyEnabled() {
+		lg.Warn("no login method is enabled; every /api/auth/* login will answer 403 METHOD_DISABLED",
+			"hint", "set auth.methods in policy.json (phone/email/password/guest)")
+	}
 	return s, nil
 }
 
@@ -290,6 +356,10 @@ func (s *Service) routes() *http.ServeMux {
 	// Extension (not part of the client contract): set/replace a password for
 	// the authenticated account. Requires an access token.
 	m.HandleFunc("POST /api/auth/password/set", s.handler(s.handlePasswordSet))
+	// Public discovery endpoint: which login methods are currently enabled.
+	// Unauthenticated by design (a client must ask before it has a session)
+	// but rate limited per IP like every other login-adjacent endpoint.
+	m.HandleFunc("GET /api/auth/methods", s.handler(s.handleMethods))
 	return m
 }
 
@@ -400,19 +470,32 @@ func (s *Service) handler(fn func(http.ResponseWriter, *http.Request) *apiError)
 
 // applyCORS allows exactly the configured public origin (never a prefix or a
 // wildcard, security-spec §2.6 style strictness), with credentials.
+// CORS policy modes (the full contract lives in server/internal/pkg/cors).
+const (
+	CORSModeAllowAny  = cors.ModeAllowAny
+	CORSModeAllowList = cors.ModeAllowList
+	CORSModeOff       = cors.ModeOff
+)
+
+// corsPolicy returns the policy resolved at construction time (New fails
+// fast on an unknown mode, so a typo in cors_mode aborts startup instead of
+// silently widening the surface).
+func (s *Service) corsPolicy() cors.Policy {
+	return s.cors
+}
+
+// applyCORS writes the CORS headers for the public auth surface.
+//
+// The SAME policy is applied at the assembly layer to the whole user-facing
+// HTTP surface (media, push, the /api fallback); this local copy only
+// guarantees that the auth router answers standalone (e.g. when mounted in
+// another program).
 func (s *Service) applyCORS(w http.ResponseWriter, r *http.Request) {
 	origin := r.Header.Get("Origin")
 	if origin == "" {
 		return
 	}
-	if s.cfg.PublicOrigin != "" && strings.EqualFold(origin, s.cfg.PublicOrigin) {
-		h := w.Header()
-		h.Set("Access-Control-Allow-Origin", origin)
-		h.Set("Access-Control-Allow-Credentials", "true")
-		h.Set("Access-Control-Allow-Methods", "POST, OPTIONS")
-		h.Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-		h.Set("Vary", "Origin")
-	}
+	s.corsPolicy().Apply(w, origin)
 }
 
 // clientIP resolves the caller address. X-Forwarded-For is only honored when

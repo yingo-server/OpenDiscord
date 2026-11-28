@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/yingo-server/OpenChat/server/internal/pkg/log"
+	"github.com/yingo-server/UFOT/server/internal/pkg/log"
 )
 
 // RequestRecorder is the metrics seam for reqlog (implemented by

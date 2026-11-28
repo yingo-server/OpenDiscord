@@ -111,7 +111,7 @@ store/migrations/
 └── admin/adm/0001_init.sql
 ```
 
-迁移记录表按域：`_migrations(domain, version, name, applied_at, checksum)`——checksum 被篡改即拒绝启动。启动自动 up。⚠️ 未落实（v1.0）：`migrate status` 子命令未实现（`openchatctl` 无 migrate 子命令；迁移仅在启动时自动 up）— 计划 v1.1（P1-5/P3-7）。
+迁移记录表按域：`_migrations(domain, version, name, applied_at, checksum)`——checksum 被篡改即拒绝启动。启动自动 up。⚠️ 未落实（v1.0）：`migrate status` 子命令未实现（`ufotctl` 无 migrate 子命令；迁移仅在启动时自动 up）— 计划 v1.1（P1-5/P3-7）。
 
 ### 3.3 Go 包结构
 
@@ -181,12 +181,12 @@ policy.json (/etc/chat/policy.json)
 
 1. **定时**：jobber 按 policy 中 cron（受支持方言 P2-5：仅 `@daily HH:MM` / `@daily HH:00` / `interval N`（秒）；经典 5 字段 `0 4 * * *` 会被降级为 daily 语义，含 `*/n` 或列表的表达式解析期拒载——复杂调度须由装配层简化为 `@daily HH:MM`，见 `data/policy/types.go`）
 2. **手动 API**：`POST /api/v1/archive/run`（→桥接→980）
-3. **CLI**：`openchatctl archive --dry-run`
+3. **CLI**：`ufotctl archive --dry-run`
 
 - **`--dry-run` 是一等公民**：归档只输出"将搬 N 行、涉及 M 会话、预估 X 分钟"；备份校验目标盘空间
 - 并发保护：每作业单飞（前一轮未结束不重入），手动触发运行中返回 409
 
-> ⚠️ 未落实（v1.0）：backup 与 trim **未以 `job.Unit` 形态接入**。v1.0 备份由 `deploy/backup.sh` + `openchatctl backup`（部署层外部脚本 + CLI 触发）承担，不走 `archive_runs` 账本；trim（通用 `(表,过期列,TTL)` 删除器）尚未实现，`policy.json` 的 `backup`/`trim` 段暂无消费者 — 计划 v1.1 接入 job.Unit（P1-10/P3-2）。
+> ⚠️ 未落实（v1.0）：backup 与 trim **未以 `job.Unit` 形态接入**。v1.0 备份由 `deploy/backup.sh` + `ufotctl backup`（部署层外部脚本 + CLI 触发）承担，不走 `archive_runs` 账本；trim（通用 `(表,过期列,TTL)` 删除器）尚未实现，`policy.json` 的 `backup`/`trim` 段暂无消费者 — 计划 v1.1 接入 job.Unit（P1-10/P3-2）。
 
 ## 6. 日志与审计：journalctl 哲学
 
@@ -208,17 +208,17 @@ GET /api/v1/audit?since_id=<id>&limit=500
 **原则：每个 API 操作必有 CLI 等价物；每个 CLI 皆是 API 客户端而非旁路**——CLI 与管理后台走完全相同的 HTTP/鉴权链路，没有隐藏后门。
 
 ```
-openchatctl —— 系统级运维 CLI(systemd unit 状态/信号/热库文件/备份/体检;
+ufotctl —— 系统级运维 CLI(systemd unit 状态/信号/热库文件/备份/体检;
               少数变更命令 archive/flags/ban/unban 走同回环 REST API，不另开端口)
   status / doctor    # 体检: systemd 状态/热库/磁盘/冷库连通
   backup             # 调 deploy/backup.sh（见 §5）
-  archive --dry-run|--run / flags get|set|list / ban|unban <uid>
+  archive --dry-run|--run / flags list|set / ban|unban <uid>
   # ⚠️ v1.0 未实现: `migrate status`(P3-7)、`trim`(P3-2)、`audit verify`(P3-1)
 
 adminctl —— 说话给管理层 API
   login / whoami
-  users list|show|ban|unban / kick --uid
-  monitor online|connections
+  users list|show|ban|unban / kick <uid>
+  # ⚠️ 未实现：monitor（无 /monitor 路由）
   reports list|show|handle
   messages search|recall
   broadcast preview|send

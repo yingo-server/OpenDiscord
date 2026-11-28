@@ -18,11 +18,16 @@ import (
 	"errors"
 	"sync"
 
-	"github.com/yingo-server/OpenChat/server/internal/proto"
-	"github.com/yingo-server/OpenChat/server/internal/transport"
+	"github.com/yingo-server/UFOT/server/internal/proto"
+	"github.com/yingo-server/UFOT/server/internal/transport"
 )
 
-const layerQueueCap = 1024
+// layerQueueCap bounds each layer's inbound queue. Under measurement a
+// 1024-slot queue overflowed at ~1.2k msg/s with 2-member groups and every
+// overflowed frame was lost ("layer queue full"). Fan-out writes are bursty
+// by nature (one message becomes N writes), so the queue needs room for a
+// burst rather than the steady rate.
+const layerQueueCap = 8192
 
 var (
 	errLayerBusy   = errors.New("chatd: layer queue full")

@@ -1,0 +1,110 @@
+# UFOT —— embedded 单进程形态（2C2G 起步默认部署）
+#
+# 四个逻辑层（bridge / user / data / admin）在同一进程内用 EmbeddedTransport
+# 以 channel 直连，因此只需要一个 unit、一个用户、一组 ReadWritePaths。
+#
+# 日志：只写 stdout（JSON lines）→ journald。不要配置任何文件日志，
+#       配额见 deploy/journald/ufot.conf（SystemMaxUse=200M）。
+# 退出码：sysexits（78 配置错误 / 143 被 SIGTERM 杀）。作业失败不影响进程退出码。
+
+[Unit]
+Description=UFOT chat server (embedded: bridge+user+data+admin)
+Documentation=https://github.com/yingo-server/UFOT/blob/main/docs/deploy.md
+After=network-online.target
+Wants=network-online.target
+# 冷库 Postgres 若在本机，取消下一行注释：
+# Requires=postgresql.service
+# 单元被显式停止时不要连带重启依赖单元
+Conflicts=shutdown.target
+
+[Service]
+# Type=simple：chatd 不发 sd_notify（源码无 sd_notify 实现），Type=notify 会让
+# systemd 等待 READY=1 直到超时并反复重启（实测 NRestarts 循环）。就绪状态以
+# /healthz 为准（部署后用 healthz 探活）。
+Type=simple
+NotifyAccess=none
+User=ufot
+Group=ufot
+# /run/ufot 由 systemd 创建并随单元生命周期管理（UDS 唯一出入口）
+RuntimeDirectory=ufot
+RuntimeDirectoryMode=0750
+RuntimeDirectoryPreserve=yes
+WorkingDirectory=/etc/ufot
+
+# 冷库（PostgreSQL）部署：把下面一行改成 chatd-pg（该变体注册 "postgres"
+# driver，主二进制按架构约定不携带 driver）。默认用主二进制。
+ExecStart=/opt/ufot/current/bin/chatd --config /etc/ufot/ufot.toml
+# SIGHUP = 热重载 policy + 白名单（docs/admin-data-design.md §9），失败保留旧策略
+ExecReload=/bin/kill -HUP $MAINPID
+KillSignal=SIGTERM
+KillMode=mixed
+TimeoutStartSec=30
+TimeoutStopSec=30
+
+# crash-only：故障即拉起，1s 后重试（架构设计律 4）
+Restart=always
+RestartSec=1
+# 主循环 15s 心跳由程序自身负责；WatchdogSec 需要 sd_notify 的 WATCHDOG=1
+# （程序未实现），故不启用，避免误判卡死后重启。
+# WatchdogSec=15
+
+# 每进程 fd 上限（网关连接数 + 热库 WAL + 冷库连接池）
+LimitNOFILE=16384
+LimitNPROC=4096
+TasksMax=4096
+
+# 环境变量（KEY=VALUE，mode 0600，禁止提交到版本库）
+EnvironmentFile=/etc/ufot/env
+# 时区与编码显式固定，避免 cron 归档时间漂移
+Environment=TZ=UTC
+Environment=LANG=C.UTF-8
+
+# 日志只走 journald
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ufot
+
+# ---------------------------------------------------------------------------
+# 安全基线（docs/security-spec.md §6.1，逐条对应）
+# ---------------------------------------------------------------------------
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+RestrictNamespaces=true
+SystemCallArchitectures=native
+
+# 丢弃全部 capabilities（空集）
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+# 只允许 Unix socket + IPv4/IPv6
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @obsolete
+
+# MemoryDenyWriteExecute 按 security-spec §6.1 为【建议】项：
+# 本项目使用 mattn/go-sqlite3（cgo），部分内核/构建组合下 cgo 会 mmap 可执行内存，
+# 开启会导致启动即 SIGSYS。默认关闭并在此记录豁免；冷库改用纯 Go 驱动后可开启。
+# MemoryDenyWriteExecute=true
+
+# 唯一可写路径：运行数据、媒体、UDS 目录
+# /etc/ufot/keys 必须可写：chatd 首次启动会在此生成运行时 IPC 密钥
+# （ipc_admin.key）。密钥文件本身是 0600 且属主为服务账号，别人读不到。
+ReadWritePaths=/var/lib/ufot /var/lib/ufot/media /run/ufot /etc/ufot/keys
+# 配置与密钥只读
+ReadOnlyPaths=/etc/ufot /opt/ufot
+
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

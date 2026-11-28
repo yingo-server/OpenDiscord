@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/yingo-server/OpenChat/server/internal/data/store"
+	"github.com/yingo-server/UFOT/server/internal/data/store"
 )
 
 // mediaStore implements store.MediaStore over media_media.
@@ -17,8 +17,8 @@ import (
 type mediaStore struct{ db *sql.DB }
 
 const insertMediaSQL = `INSERT INTO media_media
-(media_id, uid, mtype, name, size, mime, width, height, duration_ms, status, sha256, created_at, ref_count)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+(media_id, uid, mtype, name, size, mime, width, height, duration_ms, status, sha256, created_at, ref_count, thumb_data, thumb_path, waveform)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 func (s *mediaStore) Insert(ctx context.Context, m *store.Media) error {
 	if m == nil {
@@ -27,7 +27,7 @@ func (s *mediaStore) Insert(ctx context.Context, m *store.Media) error {
 	rc := m.RefCount
 	if _, err := s.db.ExecContext(ctx, insertMediaSQL,
 		m.MediaID, m.UID, m.MType, m.Name, m.Size, m.Mime, m.Width, m.Height,
-		m.DurationMS, m.Status, m.SHA256, m.CreatedAt, rc); err != nil {
+		m.DurationMS, m.Status, m.SHA256, m.CreatedAt, rc, m.ThumbData, m.ThumbPath, m.Waveform); err != nil {
 		if isDup(err) {
 			return fmt.Errorf("sqlite: media %s exists: %w", m.MediaID, store.ErrDuplicate)
 		}
@@ -39,10 +39,10 @@ func (s *mediaStore) Insert(ctx context.Context, m *store.Media) error {
 func (s *mediaStore) Get(ctx context.Context, mediaID string) (*store.Media, error) {
 	var m store.Media
 	err := s.db.QueryRowContext(ctx,
-		`SELECT media_id, uid, mtype, name, size, mime, width, height, duration_ms, status, sha256, created_at, ref_count
+		`SELECT media_id, uid, mtype, name, size, mime, width, height, duration_ms, status, sha256, created_at, ref_count, thumb_data, thumb_path, waveform
 FROM media_media WHERE media_id = ?`, mediaID).
 		Scan(&m.MediaID, &m.UID, &m.MType, &m.Name, &m.Size, &m.Mime, &m.Width, &m.Height,
-			&m.DurationMS, &m.Status, &m.SHA256, &m.CreatedAt, &m.RefCount)
+			&m.DurationMS, &m.Status, &m.SHA256, &m.CreatedAt, &m.RefCount, &m.ThumbData, &m.ThumbPath, &m.Waveform)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("sqlite: media %q: %w", mediaID, store.ErrNotFound)
 	}
@@ -79,4 +79,26 @@ func (s *mediaStore) IncRefCount(ctx context.Context, mediaID string, delta int6
 // AddRef is IncRefCount(+1) with existence asserted.
 func (s *mediaStore) AddRef(ctx context.Context, mediaID string) error {
 	return s.IncRefCount(ctx, mediaID, 1)
+}
+
+// UsageOf returns the total bytes owned by one user (SUM(size)) — the
+// per-user quota basis. A user with no rows reports 0, not an error.
+func (s *mediaStore) UsageOf(ctx context.Context, uid int64) (int64, error) {
+	var n sql.NullInt64
+	if err := s.db.QueryRowContext(ctx,
+		`SELECT SUM(size) FROM media_media WHERE uid = ?`, uid).Scan(&n); err != nil {
+		return 0, fmt.Errorf("sqlite: media usage uid=%d: %w", uid, err)
+	}
+	return n.Int64, nil
+}
+
+// TotalUsage returns the total bytes across ALL users (the global quota
+// basis). An empty table reports 0.
+func (s *mediaStore) TotalUsage(ctx context.Context) (int64, error) {
+	var n sql.NullInt64
+	if err := s.db.QueryRowContext(ctx,
+		`SELECT SUM(size) FROM media_media`).Scan(&n); err != nil {
+		return 0, fmt.Errorf("sqlite: media total usage: %w", err)
+	}
+	return n.Int64, nil
 }

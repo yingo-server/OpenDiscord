@@ -15,9 +15,9 @@ package identity
 import (
 	"context"
 
-	"github.com/yingo-server/OpenChat/server/internal/data/cache"
-	"github.com/yingo-server/OpenChat/server/internal/data/pipe/wire"
-	"github.com/yingo-server/OpenChat/server/internal/data/store"
+	"github.com/yingo-server/UFOT/server/internal/data/cache"
+	"github.com/yingo-server/UFOT/server/internal/data/pipe/wire"
+	"github.com/yingo-server/UFOT/server/internal/data/store"
 )
 
 // ops for the 940 IDENTITY_DATA lane.
@@ -26,6 +26,9 @@ const (
 	OpGetUser    = 2
 	OpGetBan     = 3
 	OpSetBan     = 4
+	// OpSearchUser returns public profiles matching a keyword. It exists so
+	// a separately hosted client can pick a user to start a chat with.
+	OpSearchUser = 5
 )
 
 // Domain serves kind 940 (IDENTITY_DATA_REQUEST) → 941 (IDENTITY_DATA_RESULT).
@@ -93,6 +96,25 @@ func (d *Domain) Handle(ctx context.Context, op uint32, uid uint64, body []byte)
 		// ban affects identity/profile cache lineage
 		d.cache.InvalidateUser(cache.UserKey(uid))
 		return Result{Op: op, OK: true}
+
+	case OpSearchUser:
+		// Payload shape: {"query":"...","limit":30} (JSON tags from the
+		// wire convention). Only public columns leave the domain.
+		var req struct {
+			Query string `json:"query"`
+			Limit int    `json:"limit"`
+		}
+		if err := wire.Unmarshal(body, &req); err != nil {
+			return Result{Op: op, Error: "bad payload"}
+		}
+		users, err := d.id.SearchUsers(ctx, req.Query, req.Limit)
+		if err != nil {
+			return Result{Op: op, Error: err.Error()}
+		}
+		pl, _ := wire.Marshal(struct {
+			Items []store.User `json:"items,omitempty"`
+		}{Items: users})
+		return Result{Op: op, OK: true, Payload: pl}
 	}
 	return Result{Op: op, Error: "unknown op"}
 }

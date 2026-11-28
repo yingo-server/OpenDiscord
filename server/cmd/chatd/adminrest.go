@@ -19,15 +19,15 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/yingo-server/OpenChat/server/internal/admin"
-	"github.com/yingo-server/OpenChat/server/internal/admin/bridgeproxy"
-	adminprod "github.com/yingo-server/OpenChat/server/internal/admin/prod"
-	adminstore "github.com/yingo-server/OpenChat/server/internal/admin/store"
-	"github.com/yingo-server/OpenChat/server/internal/bridge/adminapi"
-	"github.com/yingo-server/OpenChat/server/internal/data/policy"
-	"github.com/yingo-server/OpenChat/server/internal/data/store/pg"
-	"github.com/yingo-server/OpenChat/server/internal/data/store/sqlite"
-	"github.com/yingo-server/OpenChat/server/internal/pkg/log"
+	"github.com/yingo-server/UFOT/server/internal/admin"
+	"github.com/yingo-server/UFOT/server/internal/admin/bridgeproxy"
+	adminprod "github.com/yingo-server/UFOT/server/internal/admin/prod"
+	adminstore "github.com/yingo-server/UFOT/server/internal/admin/store"
+	"github.com/yingo-server/UFOT/server/internal/bridge/adminapi"
+	"github.com/yingo-server/UFOT/server/internal/data/policy"
+	"github.com/yingo-server/UFOT/server/internal/data/store/pg"
+	"github.com/yingo-server/UFOT/server/internal/data/store/sqlite"
+	"github.com/yingo-server/UFOT/server/internal/pkg/log"
 )
 
 // adminKeyPath derives the layer-to-admin HMAC key location from the signing
@@ -54,6 +54,7 @@ func newAdminREST(cfg *config, hot *sqlite.DB, adminDB *adminstore.DB, cold *pg.
 	srv, err := adminprod.NewAdminServer(
 		admin.Config{
 			ListenAddr: cfg.AdminRESTListen,
+			TurnURL:    cfg.TurnURL,
 		},
 		hot.DB,
 		adminDB.DB,

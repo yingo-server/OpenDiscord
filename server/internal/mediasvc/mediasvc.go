@@ -17,6 +17,7 @@
 package mediasvc
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -26,6 +27,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -34,9 +36,9 @@ import (
 
 	"database/sql"
 
-	"github.com/yingo-server/OpenChat/server/internal/data/store"
-	"github.com/yingo-server/OpenChat/server/internal/pkg/log"
-	"github.com/yingo-server/OpenChat/server/internal/user/core/authn"
+	"github.com/yingo-server/UFOT/server/internal/data/store"
+	"github.com/yingo-server/UFOT/server/internal/pkg/log"
+	"github.com/yingo-server/UFOT/server/internal/user/core/authn"
 )
 
 // mtype numbers mirror chatpb.Media semantics: 1 image, 2 audio, 3 video,
@@ -56,6 +58,13 @@ const (
 
 // dailyUploadLimit is the per-user fixed-window cap (sys_rate_limit lane).
 const dailyUploadLimit = 50
+
+// Storage quotas (LTS admission: the media plane must be bounded). Both are
+// overridable via Deps.Quota; these are the defaults.
+const (
+	defaultUserQuotaBytes  = 500 << 20 // 500MB per user
+	defaultGlobalQuotaByte = 20 << 30  // 20GB across all users
+)
 
 // magic rules: (name, offset, prefix, allowed mtype, server mime). WebP's
 // RIFF header has 4 don't-care bytes between "RIFF" and "WEBP".
@@ -91,13 +100,25 @@ var blockedExt = map[string]bool{
 // *authn.Verifier; an interface so tests can fake it).
 type TokenVerifier interface {
 	Verify(token string) (*authn.Identity, error)
-} // Deps is the injected dependency set (assembly wires the same hot DB handle
+} // Quota is the storage cap set (bytes). Zero fields fall back to the
+// defaults (500MB per user / 20GB global). Over-quota uploads answer 413.
+type Quota struct {
+	UserBytes   int64 // per-user total SUM(size)
+	GlobalBytes int64 // total across all users
+}
+
+// Deps is the injected dependency set (assembly wires the same hot DB handle
 // the rest of the user plane uses).
 type Deps struct {
 	Dir      string // media_dir from config
 	Verifier TokenVerifier
 	Media    store.MediaStore
 	Sys      store.SysStore
+	// Quota is the optional quota accounting handle (*sqlite.DB satisfies
+	// store.MediaQuota). Nil disables quota enforcement (tests).
+	Quota store.MediaQuota
+	// QuotaLimits overrides the default caps; zero fields use the defaults.
+	QuotaLimits Quota
 	// Conv resolves conversation membership for the GET ACL (security-spec §4.4).
 	Conv store.ConvStore
 	// QueryDB is the hot DB used to find which conversations reference a
@@ -193,6 +214,16 @@ func (s *Service) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Optional inline metadata (multipart form fields): a base64 thumbnail and
+	// a JSON waveform array. Both are validated before the row is written;
+	// an invalid value is a 400 and nothing is persisted.
+	thumbData := r.FormValue("thumb_data")
+	waveform := r.FormValue("waveform")
+	if err := validateThumbWaveform(thumbData, waveform); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error(), "code": "BAD_REQUEST"})
+		return
+	}
+
 	sum := sha256.Sum256(body)
 	sha := hex.EncodeToString(sum[:])
 	mtype, mime, err := classify(name, body)
@@ -212,6 +243,15 @@ func (s *Service) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Storage quota (LTS admission): per-user and global caps on SUM(size).
+	// An over-quota upload is rejected with 413 — the media plane must be
+	// bounded or the disk grows without limit.
+	if err := s.checkQuota(r.Context(), id.UserID, int64(len(body))); err != nil {
+		writeJSON(w, http.StatusRequestEntityTooLarge, map[string]any{
+			"error": "storage quota exceeded", "code": "QUOTA_EXCEEDED"})
+		return
+	}
+
 	mediaID, err := newMediaID(sha)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "internal error", "code": "INTERNAL"})
@@ -221,6 +261,20 @@ func (s *Service) handleUpload(w http.ResponseWriter, r *http.Request) {
 		s.deps.Logger.Error("media write failed", "err", err.Error())
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "internal error", "code": "INTERNAL"})
 		return
+	}
+
+	// Thumbnail bytes go to a FILE, not the DB (migrations/hot/media/0003):
+	// an inline base64 blob cost ~10.7KB of TEXT per row and ~10.7GB at a
+	// million images. The row stores only the path (tens of bytes). A write
+	// failure degrades to NO thumbnail (not a failed upload): the preview is
+	// cosmetic, the media is the payload.
+	thumbPath := ""
+	if thumbData != "" {
+		thumbPath = s.thumbPathFor(sha)
+		if err := s.storeThumbFile(thumbPath, []byte(thumbData)); err != nil {
+			s.deps.Logger.Warn("thumb file write failed; serving without inline preview", "err", err.Error())
+			thumbPath = ""
+		}
 	}
 
 	// MVP: no async scanner is wired, so the row is born usable (status=1).
@@ -235,30 +289,53 @@ func (s *Service) handleUpload(w http.ResponseWriter, r *http.Request) {
 		Status:    1,
 		SHA256:    sha,
 		CreatedAt: s.deps.Now().Unix(),
+		// ThumbData stays EMPTY for new rows (the file carries the bytes);
+		// ThumbPath is the on-disk location. Legacy rows with a non-empty
+		// ThumbData are served via the read-time fallback. The upload ECHO
+		// still returns the thumbnail value (the client already has it —
+		// no extra round-trip), which is why thumbEcho is passed separately.
+		ThumbData: "",
+		ThumbPath: thumbPath,
+		Waveform:  waveform,
 	}
 	if err := s.deps.Media.Insert(r.Context(), rec); err != nil {
 		if errors.Is(err, store.ErrDuplicate) {
 			// Same content uploaded twice from this account: fine, hand back
 			// the fresh id (path is content-addressed, bytes already there).
-			writeJSON(w, http.StatusOK, map[string]any{
-				"media_id": mediaID, "size": rec.Size, "mime": mime, "mtype": mtype,
-			})
+			writeJSON(w, http.StatusOK, uploadOKBody(mediaID, rec, thumbData))
 			return
 		}
-		_ = os.Remove(s.pathFor(sha))
+		if p, perr := s.pathFor(sha); perr == nil {
+			_ = os.Remove(p)
+		}
 		s.deps.Logger.Error("media insert failed", "err", err.Error())
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "internal error", "code": "INTERNAL"})
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{
-		"media_id": mediaID, "size": rec.Size, "mime": mime, "mtype": mtype,
-	})
+	writeJSON(w, http.StatusCreated, uploadOKBody(mediaID, rec, thumbData))
 }
 
-// @authz: checked-partial — no per-conversation ACL in 1.0; the guard is the
-// 24+ char unguessable media_id (base64url of 24 random-ish bytes). TODO(1.1):
-// media_id → msg → cid → membership check (security-spec §4.4 红线).
+// uploadOKBody is the shared upload response shape. thumbEcho is the
+// thumbnail payload the client just sent (echoed so it can render without a
+// second GET); waveform likewise. Only when present.
+func uploadOKBody(mediaID string, rec *store.Media, thumbEcho string) map[string]any {
+	body := map[string]any{
+		"media_id": mediaID, "size": rec.Size, "mime": rec.Mime, "mtype": rec.MType,
+	}
+	if thumbEcho != "" {
+		body["thumb_data"] = thumbEcho
+	}
+	if rec.Waveform != "" {
+		body["waveform"] = rec.Waveform
+	}
+	return body
+}
+
+// @authz: checked — media_id → msg → cid → membership (canReadMedia,
+// security-spec §4.4). The uploader always passes; anyone else must share a
+// conversation that references this media. Non-members get 404 (not 403) so
+// the endpoint cannot be used to probe which media ids exist.
 func (s *Service) handleGet(w http.ResponseWriter, r *http.Request) {
 	id, ok := s.authenticate(r)
 	if !ok {
@@ -282,7 +359,39 @@ func (s *Service) handleGet(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]any{"error": "not found", "code": "NOT_FOUND"})
 		return
 	}
-	path := s.pathFor(rec.SHA256)
+	// Metadata view: when the client asks for JSON (Accept: application/json or
+	// ?meta=1) return the record incl. thumb_data/waveform so it need not issue
+	// a second request. The default path below still streams the raw bytes, so
+	// image/audio/download behaviour is untouched.
+	if wantsJSON(r) {
+		// Thumbnail resolution order (0003 migration): the FILE first; when
+		// the file is missing (or the row predates the migration), fall back
+		// to the legacy inline thumb_data column — existing rows must keep
+		// rendering, never break.
+		thumb := ""
+		if rec.ThumbPath != "" {
+			if p, perr := s.absThumbPath(rec.ThumbPath); perr == nil {
+				if b, err := os.ReadFile(p); err == nil {
+					thumb = string(b)
+				}
+			}
+		}
+		if thumb == "" {
+			thumb = rec.ThumbData // legacy inline fallback (or empty)
+		}
+		body := map[string]any{
+			"media_id": rec.MediaID, "size": rec.Size, "mime": rec.Mime,
+			"mtype": rec.MType, "name": rec.Name,
+			"thumb_data": thumb, "waveform": rec.Waveform,
+		}
+		writeJSON(w, http.StatusOK, body)
+		return
+	}
+	path, err := s.pathFor(rec.SHA256)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]any{"error": "not found", "code": "NOT_FOUND"})
+		return
+	}
 	f, err := os.Open(path)
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]any{"error": "not found", "code": "NOT_FOUND"})
@@ -437,12 +546,131 @@ func (s *Service) checkRate(ctx context.Context, uid int64) error {
 	return nil
 }
 
-func (s *Service) pathFor(sha string) string {
-	return filepath.Join(s.deps.Dir, sha[:2], sha[2:4], sha)
+func (s *Service) pathFor(sha string) (string, error) {
+	if len(sha) < 4 {
+		return "", fmt.Errorf("mediasvc: bad sha %q", sha)
+	}
+	return safeJoin(s.deps.Dir, filepath.Join(sha[:2], sha[2:4], sha))
+}
+
+// thumbPathFor is the RELATIVE (to media_dir) path of the thumbnail file:
+// thumbs/<sha[:2]>/<sha[:4]>/<sha>.thumb — same sharding as the media bytes,
+// stored in its own subtree so ops can wipe/copy thumbs independently.
+func (s *Service) thumbPathFor(sha string) string {
+	return filepath.Join("thumbs", sha[:2], sha[:4], sha+".thumb")
+}
+
+// absThumbPath maps the stored relative thumb path to the on-disk absolute
+// path. The stored value is normally written by this service, but it may come
+// from a legacy/edited DB row, so the join is guarded by safeJoin: a value
+// that is absolute or escapes media_dir is refused rather than resolved.
+func (s *Service) absThumbPath(rel string) (string, error) {
+	return safeJoin(s.deps.Dir, rel)
+}
+
+// safeJoin resolves rel under base and refuses anything that could escape the
+// base directory. It rejects: absolute paths, any ".." path component, and a
+// cleaned result whose prefix is not base (defense in depth — a symlinked base
+// or a platform separator quirk must never let an attacker-controlled path
+// reach a file outside media_dir).
+func safeJoin(base, rel string) (string, error) {
+	if strings.TrimSpace(rel) == "" {
+		return "", fmt.Errorf("mediasvc: empty relative path")
+	}
+	if filepath.IsAbs(rel) {
+		return "", fmt.Errorf("mediasvc: absolute path not allowed: %q", rel)
+	}
+	for _, part := range strings.Split(rel, string(filepath.Separator)) {
+		if part == ".." {
+			return "", fmt.Errorf("mediasvc: path escapes base (..): %q", rel)
+		}
+	}
+	baseClean := filepath.Clean(base)
+	joined := filepath.Join(baseClean, rel)
+	if joined != baseClean && !strings.HasPrefix(joined, baseClean+string(filepath.Separator)) {
+		return "", fmt.Errorf("mediasvc: path escapes base: %q", rel)
+	}
+	return joined, nil
+}
+
+// storeThumbFile writes the thumbnail payload (the raw validated value,
+// base64 text) to path atomically: temp file + rename, same as storeFile.
+// Content-addressed by sha, so identical images dedupe.
+func (s *Service) storeThumbFile(rel string, payload []byte) error {
+	path, err := s.absThumbPath(rel)
+	if err != nil {
+		return err
+	}
+	if _, err := os.Stat(path); err == nil {
+		return nil // content-addressed dedupe
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".thumb-*")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName) // no-op after successful rename
+	if _, err := tmp.Write(payload); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpName, path)
+}
+
+// checkQuota enforces the per-user and global storage caps. incoming is the
+// size of the upload about to be stored. A nil Quota dep disables the check
+// (unit tests without a DB); a counter failure is logged and the upload
+// proceeds (a quota counter outage must not brick the media plane — the same
+// leniency as checkRate).
+func (s *Service) checkQuota(ctx context.Context, uid int64, incoming int64) error {
+	q := s.deps.Quota
+	if q == nil {
+		return nil
+	}
+	userCap := s.deps.QuotaLimits.UserBytes
+	if userCap <= 0 {
+		userCap = defaultUserQuotaBytes
+	}
+	globalCap := s.deps.QuotaLimits.GlobalBytes
+	if globalCap <= 0 {
+		globalCap = defaultGlobalQuotaByte
+	}
+	if userCap > 0 {
+		used, err := q.UsageOf(ctx, uid)
+		if err != nil {
+			s.deps.Logger.Warn("quota usage query failed; allowing upload", "err", err.Error())
+			return nil
+		}
+		if used+incoming > userCap {
+			s.deps.Logger.Info("user media quota exceeded", "uid", uid, "used", used, "cap", userCap)
+			return errors.New("user quota exceeded")
+		}
+	}
+	if globalCap > 0 {
+		used, err := q.TotalUsage(ctx)
+		if err != nil {
+			s.deps.Logger.Warn("quota total query failed; allowing upload", "err", err.Error())
+			return nil
+		}
+		if used+incoming > globalCap {
+			s.deps.Logger.Info("global media quota exceeded", "used", used, "cap", globalCap)
+			return errors.New("global quota exceeded")
+		}
+	}
+	return nil
 }
 
 func (s *Service) storeFile(sha string, body []byte) error {
-	path := s.pathFor(sha)
+	path, err := s.pathFor(sha)
+	if err != nil {
+		return err
+	}
 	if _, err := os.Stat(path); err == nil {
 		return nil // content-addressed dedupe
 	}
@@ -509,6 +737,103 @@ func urlEscape(s string) string {
 		return "file"
 	}
 	return b.String()
+}
+
+// ------------------------------------------------------------------ inline metadata
+
+const (
+	maxThumbBytes     = 8 << 10 // 8KB cap on the inline thumbnail
+	maxWaveformPoints = 32      // 24 expected; tolerate up to 32
+)
+
+// validateThumbWaveform enforces the optional inline-metadata contract:
+//   - thumb_data ≤ 8KB (empty allowed);
+//   - waveform, when present, must be a JSON ARRAY of ≤32 integers in 0-100.
+func validateThumbWaveform(thumb, wave string) error {
+	if len(thumb) > maxThumbBytes {
+		return errors.New("thumb_data too large (max 8KB)")
+	}
+	if err := validateThumbPayload(thumb); err != nil {
+		return err
+	}
+	if wave == "" {
+		return nil
+	}
+	trimmed := strings.TrimSpace(wave)
+	if len(trimmed) == 0 || trimmed[0] != '[' {
+		return errors.New("waveform must be a JSON array")
+	}
+	var arr []float64
+	if err := json.Unmarshal([]byte(trimmed), &arr); err != nil {
+		return errors.New("waveform must be a JSON array of numbers")
+	}
+	if len(arr) > maxWaveformPoints {
+		return errors.New("waveform too many points (max 32)")
+	}
+	for _, v := range arr {
+		if v != math.Trunc(v) || v < 0 || v > 100 {
+			return errors.New("waveform values must be integers 0-100")
+		}
+	}
+	return nil
+}
+
+// validateThumbPayload checks that thumb_data is an inline image we are willing
+// to store and later render. Accepts a bare base64 body or a data: URI, but
+// ONLY for raster formats (JPEG/PNG/WEBP/GIF). An attacker-supplied
+// data:image/svg+xml or data:text/html would be inert in <img> today, yet it
+// is a stored XSS payload the moment any consumer renders it as HTML.
+func validateThumbPayload(thumb string) error {
+	if thumb == "" {
+		return nil
+	}
+	raw := thumb
+	if strings.HasPrefix(strings.ToLower(raw), "data:") {
+		comma := strings.IndexByte(raw, ',')
+		if comma < 0 {
+			return errors.New("thumb_data data URI is malformed")
+		}
+		meta := strings.ToLower(raw[:comma])
+		switch {
+		case strings.Contains(meta, "svg"), strings.Contains(meta, "xml"),
+			strings.Contains(meta, "html"), strings.Contains(meta, "javascript"):
+			return errors.New("thumb_data may only be a raster image (jpeg/png/webp/gif)")
+		}
+		raw = raw[comma+1:]
+	}
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return errors.New("thumb_data is empty")
+	}
+	dec, err := base64.StdEncoding.DecodeString(raw)
+	if err != nil {
+		// tolerate URL-safe / unpadded variants
+		dec, err = base64.RawStdEncoding.DecodeString(strings.TrimRight(raw, "="))
+		if err != nil {
+			return errors.New("thumb_data must be valid base64")
+		}
+	}
+	if len(dec) < 12 {
+		return errors.New("thumb_data payload too short to be an image")
+	}
+	switch {
+	case bytes.HasPrefix(dec, []byte{0xFF, 0xD8, 0xFF}):
+	case bytes.HasPrefix(dec, []byte{0x89, 'P', 'N', 'G'}):
+	case bytes.HasPrefix(dec, []byte("GIF8")):
+	case len(dec) >= 12 && string(dec[0:4]) == "RIFF" && string(dec[8:12]) == "WEBP":
+	default:
+		return errors.New("thumb_data must be a JPEG/PNG/WEBP/GIF image")
+	}
+	return nil
+}
+
+// wantsJSON reports whether the GET caller asked for the metadata view rather
+// than the raw bytes (?meta=1 or Accept: application/json).
+func wantsJSON(r *http.Request) bool {
+	if r.URL.Query().Get("meta") == "1" {
+		return true
+	}
+	return strings.Contains(r.Header.Get("Accept"), "application/json")
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

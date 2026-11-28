@@ -7,9 +7,10 @@ package pipefakes
 import (
 	"context"
 	"fmt"
+	"sort"
 	"sync"
 
-	"github.com/yingo-server/OpenChat/server/internal/data/store"
+	"github.com/yingo-server/UFOT/server/internal/data/store"
 )
 
 // FakeMsgStore implements store.MsgWriter + store.MsgReader with counters.
@@ -62,7 +63,13 @@ func (f *FakeMsgStore) ReadHot(ctx context.Context, cid int64, beforeSeq int64, 
 			continue
 		}
 		if beforeSeq > 0 {
-			if asc == (m.Seq <= beforeSeq) {
+			// cursor semantics: asc (newer direction) keeps seq > beforeSeq;
+			// desc (older direction) keeps seq < beforeSeq. The cursor row
+			// itself is excluded in both directions.
+			if asc && m.Seq <= beforeSeq {
+				continue
+			}
+			if !asc && m.Seq >= beforeSeq {
 				continue
 			}
 		}
@@ -163,6 +170,24 @@ func (f *FakeConvStore) ListMembers(ctx context.Context, cid int64) ([]store.Mem
 	return out, nil
 }
 
+// ConvsForUser mirrors the sqlite implementation: every conversation the
+// uid is a member of, ordered by cid ascending.
+func (f *FakeConvStore) ConvsForUser(ctx context.Context, uid int64) ([]store.ConvMeta, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	seen := map[int64]bool{}
+	var out []store.ConvMeta
+	for _, m := range f.Members {
+		if m.UID != uid || seen[m.Cid] {
+			continue
+		}
+		seen[m.Cid] = true
+		out = append(out, store.ConvMeta{Cid: m.Cid})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Cid < out[j].Cid })
+	return out, nil
+}
+
 func (f *FakeConvStore) SetMemberRole(ctx context.Context, cid, uid int64, role int) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -209,6 +234,27 @@ func (f *FakeConvStore) NextSeq(ctx context.Context, cid int64) (int64, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.NextSeqs[cid], nil
+}
+
+// MemberPeersOf implements store.ConvStore.MemberPeersOf over the fake member map.
+func (f *FakeConvStore) MemberPeersOf(ctx context.Context, uid int64) ([]int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	cids := map[int64]bool{}
+	for key := range f.Members {
+		if key[1] == uid {
+			cids[key[0]] = true
+		}
+	}
+	seen := map[int64]bool{}
+	var out []int64
+	for key, m := range f.Members {
+		if cids[key[0]] && m.UID != uid && !seen[m.UID] {
+			seen[m.UID] = true
+			out = append(out, m.UID)
+		}
+	}
+	return out, nil
 }
 
 // FakeSysStore implements store.SysStore minimally.
@@ -287,7 +333,48 @@ func (f *FakeSysStore) SetPenalty(ctx context.Context, p *store.Penalty) error {
 	return nil
 }
 
-// FakeArchive implements store.ArchiveTarget with call recording.
+// MarkRecalled soft-deletes one fake row (exact cid+msg+sender match,
+// not-already-recalled guard), mirroring the sqlite semantics.
+func (f *FakeMsgStore) MarkRecalled(ctx context.Context, cid, msgID, senderID, at int64) (*store.HotMsg, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for k, m := range f.Rows {
+		if m.Cid == cid && m.MsgID == msgID && m.SenderID == senderID {
+			if m.Recalled != 0 {
+				row := m
+				return &row, nil // already recalled: report the row
+			}
+			m.Recalled = at
+			f.Rows[k] = m
+			row := m
+			return &row, nil
+		}
+	}
+	return nil, fmt.Errorf("fake: msg cid=%d id=%d: %w", cid, msgID, store.ErrNotFound)
+}
+
+// MarkEdited implements store.MsgWriter.MarkEdited: soft content update on
+// the exact (cid, msg_id, sender_id) row; ErrNotFound when absent or recalled.
+func (f *FakeMsgStore) MarkEdited(ctx context.Context, cid, msgID, senderID int64, content []byte, at int64) (*store.HotMsg, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for k, m := range f.Rows {
+		if m.Cid == cid && m.MsgID == msgID && m.SenderID == senderID {
+			if m.Recalled != 0 {
+				return nil, fmt.Errorf("fake: msg cid=%d id=%d recalled: %w", cid, msgID, store.ErrNotFound)
+			}
+			m.Content = content
+			m.Edited = at
+			f.Rows[k] = m
+			row := m
+			return &row, nil
+		}
+	}
+	return nil, fmt.Errorf("fake: msg cid=%d id=%d: %w", cid, msgID, store.ErrNotFound)
+}
+
+// FakeArchive implements the archiver's two ports with call recording:
+// store.ArchiveSource (cold copy) and store.HotPruner (hot delete).
 type FakeArchive struct {
 	hot                    []store.HotMsg
 	mu                     sync.Mutex
@@ -296,6 +383,7 @@ type FakeArchive struct {
 	DeletedBefore          int64
 	Deleted                int64
 	FailCopy               bool
+	FailDelete             bool
 }
 
 func (f *FakeArchive) CopyBatch(ctx context.Context, rows []store.HotMsg) (int64, error) {
@@ -323,13 +411,16 @@ func (f *FakeArchive) CopyBatch(ctx context.Context, rows []store.HotMsg) (int64
 	return n, nil
 }
 
-func (f *FakeArchive) DeleteHot(ctx context.Context, before int64) (int64, error) {
+// DeleteHotBefore prunes the HOT side only; f.Copied is the archive and stays
+// immutable (that is what makes a re-run copy zero new rows).
+func (f *FakeArchive) DeleteHotBefore(ctx context.Context, before int64) (int64, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.DeleteCalls++
 	f.DeletedBefore = before
-	// DeleteHot prunes the HOT side only; f.Copied is the archive and stays
-	// immutable (that is what makes a re-run copy zero new rows).
+	if f.FailDelete {
+		return 0, fmt.Errorf("fake hot pruner down")
+	}
 	var n int64
 	kept := f.hot[:0]
 	for _, r := range f.hot {
@@ -342,6 +433,16 @@ func (f *FakeArchive) DeleteHot(ctx context.Context, before int64) (int64, error
 	f.hot = kept
 	f.Deleted = n
 	return n, nil
+}
+
+// SeedHot populates the HOT side directly, bypassing CopyBatch. Tests need this
+// to model "hot has rows the archiver has not seen yet" without polluting the
+// archive recording (CopyBatch would append to Copied and only ever set hot
+// from its first batch).
+func (f *FakeArchive) SeedHot(rows ...store.HotMsg) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.hot = append([]store.HotMsg(nil), rows...)
 }
 
 // Rows returns the remaining HOT rows (the archive is inspected via Copied).

@@ -57,8 +57,11 @@ type Session struct {
 	users    [shardCount]userShard
 	conns    [shardCount]connShard
 	presence [shardCount]presenceShard
-	ttl      time.Duration
-	now      func() time.Time // 测试可注入
+	// caps 是连接能力表（connID → pull_capable，旧客户端能力协商，
+	// lts-1.4-acceptance §B）。只记录，不参与投递判定。
+	caps [shardCount]capsShard
+	ttl  time.Duration
+	now  func() time.Time // 测试可注入
 }
 
 // New 构造连接表；tombstoneTTL 默认 30s（docs §1.1）。
@@ -141,6 +144,9 @@ func (s *Session) Unregister(connID uint64) {
 		}
 	}
 	us.mu.Unlock()
+
+	// 能力条目随连接一起消失（connID 回绕复用时不得继承旧能力）。
+	s.ClearPullCapable(connID)
 }
 
 // Lookup 按 connID 定位连接。

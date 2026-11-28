@@ -27,6 +27,25 @@ const (
 	KindKicked       Kind = 11 // 全设备踢下线+断连
 	KindFeatureFlags Kind = 12 // 广播到 sys.> 的策略开关
 	KindRateLimited  Kind = 13
+	// 14 = WATERMARK（拉取模式水位线，v1.2；docs/pull-mode-spec-v1.2.md §1.1）。
+	// 注：14 号曾在 v1.2 短暂分配给 KindResync（RESYNC 慢消费者降级提示），
+	// 因客户端未实现对应 handler 已回滚；本次复用前客户端 handler（P1）已合入
+	// 并有单测（T-CL-1…T-CL-8），事故根因 #2 的前置条件已满足。
+	// 见 docs/perf-postmortem-v1.2-draft.md。
+	KindWatermark Kind = 14
+
+	// v3 消息总线（docs/v3-bus-design.md §4.1；15-19 为 0-99 系统层新增号段）。
+	// 客户端 handler（P1）与常量同 PR 合入（铁律 2：双端同 PR）。
+	KindMailboxAck    Kind = 15 // C→S 累积 ACK {cursor}
+	KindMailboxPause  Kind = 16 // S→C 仅诊断
+	KindMailboxResume Kind = 17 // C→S 续传 {cursor, limit?}
+
+	// 18 = CLIENT_CAPS（旧客户端能力协商，lts-1.4-acceptance §B）。
+	// C→S：客户端上报自身能力，payload = JSON {"pull_capable":bool}。
+	// 服务端把能力记进连接注册表；universal_pull_enabled=true 时只有
+	// pull_capable 的连接走水位线，无能力连接保持 inline 逐成员推（不漏消息）。
+	// 18/19 属 15-19 空号段，不改 Envelope 任何字段号。
+	KindClientCaps Kind = 18
 )
 
 // -------------------------------------------------------------------
@@ -89,9 +108,23 @@ const (
 // 400-449 presence
 // -------------------------------------------------------------------
 const (
-	KindPresenceUpdate      Kind = 400
-	KindPresenceSubscribe   Kind = 401
-	KindPresenceUnsubscribe Kind = 402
+	KindPresenceUpdate Kind = 400
+
+	// 401/402 are SERVER-emitted CONNECTION-LIFECYCLE events: the user layer
+	// broadcasts "peer went online" / "peer went offline" to the peers who
+	// share a conversation. They are NOT client-initiated presence
+	// subscriptions — the proto message PresenceSubscribe{user_ids} (client
+	// subscribing to others' presence) is a DIFFERENT, currently-unused concept.
+	KindPresenceOnline  Kind = 401
+	KindPresenceOffline Kind = 402
+)
+
+// Legacy aliases for 401/402. The VALUES are unchanged (401/402); only the Go
+// identifiers now carry the correct online/offline semantics. Kept so any
+// out-of-tree reference to the old names still compiles.
+const (
+	KindPresenceSubscribe   Kind = KindPresenceOnline
+	KindPresenceUnsubscribe Kind = KindPresenceOffline
 )
 
 // -------------------------------------------------------------------
@@ -214,6 +247,11 @@ func init() {
 	register(KindKicked, "KICKED")
 	register(KindFeatureFlags, "FEATURE_FLAGS")
 	register(KindRateLimited, "RATE_LIMITED")
+	register(KindWatermark, "WATERMARK")
+	register(KindMailboxAck, "MAILBOX_ACK")
+	register(KindMailboxPause, "MAILBOX_PAUSE")
+	register(KindMailboxResume, "MAILBOX_RESUME")
+	register(KindClientCaps, "CLIENT_CAPS")
 
 	register(KindMsgSend, "MSG_SEND")
 	register(KindMsgNew, "MSG_NEW")
@@ -252,8 +290,14 @@ func init() {
 	register(KindCallHangup, "CALL_HANGUP")
 
 	register(KindPresenceUpdate, "PRESENCE_UPDATE")
-	register(KindPresenceSubscribe, "PRESENCE_SUBSCRIBE")
-	register(KindPresenceUnsubscribe, "PRESENCE_UNSUBSCRIBE")
+	// 401/402 = server-side online/offline events. The DISPLAY labels keep the
+	// historical "SUBSCRIBE/UNSUBSCRIBE" strings (same map slot 401/402) so the
+	// wire logs and docs/ws-protocol.md stay stable — the Go identifiers above
+	// carry the authoritative semantics.
+	register(KindPresenceOnline, "PRESENCE_ONLINE")
+	register(KindPresenceOffline, "PRESENCE_OFFLINE")
+	register(KindPresenceSubscribe, "PRESENCE_SUBSCRIBE")     // == PRESENCE_ONLINE (401)
+	register(KindPresenceUnsubscribe, "PRESENCE_UNSUBSCRIBE") // == PRESENCE_OFFLINE (402)
 
 	register(KindProfileUpdate, "PROFILE_UPDATE")
 	register(KindBlock, "BLOCK")

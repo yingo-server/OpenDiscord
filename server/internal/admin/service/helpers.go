@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/yingo-server/OpenChat/server/internal/admin/bridgeproxy"
-	"github.com/yingo-server/OpenChat/server/internal/admin/identity"
+	"github.com/yingo-server/UFOT/server/internal/admin/bridgeproxy"
+	"github.com/yingo-server/UFOT/server/internal/admin/identity"
 )
 
 func actorName(a *identity.Admin) string {

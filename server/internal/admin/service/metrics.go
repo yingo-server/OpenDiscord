@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yingo-server/OpenChat/server/internal/admin/bridgeproxy"
+	"github.com/yingo-server/UFOT/server/internal/admin/bridgeproxy"
 )
 
 // Metrics is a hand-written Prometheus exposition source (no prometheus
@@ -57,18 +57,18 @@ func (m *Metrics) ObserveRequest(method string, status int) {
 // Render produces Prometheus text exposition format 0.0.4.
 func (m *Metrics) Render() string {
 	var b strings.Builder
-	b.WriteString("# HELP openchat_admin_build_info Admin API build information.\n")
-	b.WriteString("# TYPE openchat_admin_build_info gauge\n")
-	b.WriteString("openchat_admin_build_info{version=\"dev\"} 1\n")
-	b.WriteString("# HELP openchat_admin_uptime_seconds Seconds since the admin server started.\n")
-	b.WriteString("# TYPE openchat_admin_uptime_seconds gauge\n")
-	fmt.Fprintf(&b, "openchat_admin_uptime_seconds %.0f\n", time.Since(m.started).Seconds())
+	b.WriteString("# HELP ufot_admin_build_info Admin API build information.\n")
+	b.WriteString("# TYPE ufot_admin_build_info gauge\n")
+	b.WriteString("ufot_admin_build_info{version=\"dev\"} 1\n")
+	b.WriteString("# HELP ufot_admin_uptime_seconds Seconds since the admin server started.\n")
+	b.WriteString("# TYPE ufot_admin_uptime_seconds gauge\n")
+	fmt.Fprintf(&b, "ufot_admin_uptime_seconds %.0f\n", time.Since(m.started).Seconds())
 	b.WriteString("# HELP go_goroutines Number of goroutines.\n")
 	b.WriteString("# TYPE go_goroutines gauge\n")
 	fmt.Fprintf(&b, "go_goroutines %d\n", runtime.NumGoroutine())
 
-	b.WriteString("# HELP openchat_admin_http_requests_total Admin HTTP requests by method and status.\n")
-	b.WriteString("# TYPE openchat_admin_http_requests_total counter\n")
+	b.WriteString("# HELP ufot_admin_http_requests_total Admin HTTP requests by method and status.\n")
+	b.WriteString("# TYPE ufot_admin_http_requests_total counter\n")
 	m.mu.Lock()
 	keys := make([]string, 0, len(m.requests))
 	for k := range m.requests {
@@ -77,53 +77,53 @@ func (m *Metrics) Render() string {
 	sort.Strings(keys)
 	for _, k := range keys {
 		parts := strings.SplitN(k, "|", 2)
-		fmt.Fprintf(&b, "openchat_admin_http_requests_total{method=%q,status=%q} %d\n", parts[0], parts[1], m.requests[k])
+		fmt.Fprintf(&b, "ufot_admin_http_requests_total{method=%q,status=%q} %d\n", parts[0], parts[1], m.requests[k])
 	}
 	m.mu.Unlock()
 
 	if m.loginStats != nil {
 		f, l := m.loginStats()
-		b.WriteString("# HELP openchat_admin_login_failures_total Failed admin login attempts.\n")
-		b.WriteString("# TYPE openchat_admin_login_failures_total counter\n")
-		fmt.Fprintf(&b, "openchat_admin_login_failures_total %d\n", f)
-		b.WriteString("# HELP openchat_admin_login_lockouts_total Login lockout events.\n")
-		b.WriteString("# TYPE openchat_admin_login_lockouts_total counter\n")
-		fmt.Fprintf(&b, "openchat_admin_login_lockouts_total %d\n", l)
+		b.WriteString("# HELP ufot_admin_login_failures_total Failed admin login attempts.\n")
+		b.WriteString("# TYPE ufot_admin_login_failures_total counter\n")
+		fmt.Fprintf(&b, "ufot_admin_login_failures_total %d\n", f)
+		b.WriteString("# HELP ufot_admin_login_lockouts_total Login lockout events.\n")
+		b.WriteString("# TYPE ufot_admin_login_lockouts_total counter\n")
+		fmt.Fprintf(&b, "ufot_admin_login_lockouts_total %d\n", l)
 	}
 	if m.opHits != nil {
-		b.WriteString("# HELP openchat_admin_ratelimit_hits_total Management operations rejected by the rate limiter.\n")
-		b.WriteString("# TYPE openchat_admin_ratelimit_hits_total counter\n")
-		fmt.Fprintf(&b, "openchat_admin_ratelimit_hits_total %d\n", m.opHits())
+		b.WriteString("# HELP ufot_admin_ratelimit_hits_total Management operations rejected by the rate limiter.\n")
+		b.WriteString("# TYPE ufot_admin_ratelimit_hits_total counter\n")
+		fmt.Fprintf(&b, "ufot_admin_ratelimit_hits_total %d\n", m.opHits())
 	}
 	if m.auditFailures != nil {
-		b.WriteString("# HELP openchat_admin_audit_append_failures_total Audit appends that failed after the primary operation succeeded.\n")
-		b.WriteString("# TYPE openchat_admin_audit_append_failures_total counter\n")
-		fmt.Fprintf(&b, "openchat_admin_audit_append_failures_total %d\n", m.auditFailures())
+		b.WriteString("# HELP ufot_admin_audit_append_failures_total Audit appends that failed after the primary operation succeeded.\n")
+		b.WriteString("# TYPE ufot_admin_audit_append_failures_total counter\n")
+		fmt.Fprintf(&b, "ufot_admin_audit_append_failures_total %d\n", m.auditFailures())
 	}
 	if m.bridge != nil {
 		st := m.bridge()
-		b.WriteString("# HELP openchat_admin_bridge_requests_total Logical injection requests.\n")
-		b.WriteString("# TYPE openchat_admin_bridge_requests_total counter\n")
-		fmt.Fprintf(&b, "openchat_admin_bridge_requests_total %d\n", st.Requests)
-		b.WriteString("# HELP openchat_admin_bridge_attempts_total HTTP attempts including retries.\n")
-		b.WriteString("# TYPE openchat_admin_bridge_attempts_total counter\n")
-		fmt.Fprintf(&b, "openchat_admin_bridge_attempts_total %d\n", st.Attempts)
-		b.WriteString("# HELP openchat_admin_bridge_failures_total Logical injection failures.\n")
-		b.WriteString("# TYPE openchat_admin_bridge_failures_total counter\n")
-		fmt.Fprintf(&b, "openchat_admin_bridge_failures_total %d\n", st.Failures)
-		b.WriteString("# HELP openchat_admin_bridge_retries_total Retried HTTP attempts.\n")
-		b.WriteString("# TYPE openchat_admin_bridge_retries_total counter\n")
-		fmt.Fprintf(&b, "openchat_admin_bridge_retries_total %d\n", st.Retries)
-		b.WriteString("# HELP openchat_admin_bridge_circuit_open Circuit breaker state (1=open).\n")
-		b.WriteString("# TYPE openchat_admin_bridge_circuit_open gauge\n")
+		b.WriteString("# HELP ufot_admin_bridge_requests_total Logical injection requests.\n")
+		b.WriteString("# TYPE ufot_admin_bridge_requests_total counter\n")
+		fmt.Fprintf(&b, "ufot_admin_bridge_requests_total %d\n", st.Requests)
+		b.WriteString("# HELP ufot_admin_bridge_attempts_total HTTP attempts including retries.\n")
+		b.WriteString("# TYPE ufot_admin_bridge_attempts_total counter\n")
+		fmt.Fprintf(&b, "ufot_admin_bridge_attempts_total %d\n", st.Attempts)
+		b.WriteString("# HELP ufot_admin_bridge_failures_total Logical injection failures.\n")
+		b.WriteString("# TYPE ufot_admin_bridge_failures_total counter\n")
+		fmt.Fprintf(&b, "ufot_admin_bridge_failures_total %d\n", st.Failures)
+		b.WriteString("# HELP ufot_admin_bridge_retries_total Retried HTTP attempts.\n")
+		b.WriteString("# TYPE ufot_admin_bridge_retries_total counter\n")
+		fmt.Fprintf(&b, "ufot_admin_bridge_retries_total %d\n", st.Retries)
+		b.WriteString("# HELP ufot_admin_bridge_circuit_open Circuit breaker state (1=open).\n")
+		b.WriteString("# TYPE ufot_admin_bridge_circuit_open gauge\n")
 		open := 0
 		if st.CircuitOpen {
 			open = 1
 		}
-		fmt.Fprintf(&b, "openchat_admin_bridge_circuit_open %d\n", open)
-		b.WriteString("# HELP openchat_admin_bridge_circuit_opened_total Times the breaker opened.\n")
-		b.WriteString("# TYPE openchat_admin_bridge_circuit_opened_total counter\n")
-		fmt.Fprintf(&b, "openchat_admin_bridge_circuit_opened_total %d\n", st.CircuitOpened)
+		fmt.Fprintf(&b, "ufot_admin_bridge_circuit_open %d\n", open)
+		b.WriteString("# HELP ufot_admin_bridge_circuit_opened_total Times the breaker opened.\n")
+		b.WriteString("# TYPE ufot_admin_bridge_circuit_opened_total counter\n")
+		fmt.Fprintf(&b, "ufot_admin_bridge_circuit_opened_total %d\n", st.CircuitOpened)
 	}
 	return b.String()
 }

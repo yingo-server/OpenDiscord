@@ -1,83 +1,163 @@
-# OpenChat 1.0 已知问题
+# UFOT 已知问题（v2.0.0 收敛稿）
 
-> 版本：1.0.0（2026-10-29）
-> 适用：`chatd` embedded 单二进制 / v1.0 发布包
-> 说明：以下问题均已通过读代码或实跑确认，1.0 不修复；每条按「现象 / 影响 / 计划版本」记录。
+> 版本：**v2.0.0（已发布，2026-11-21）**。CI 全绿；v2.0 引入显式容量契约、修复 ACK 撒谎、
+> 将消息写入吞吐提升约一倍（实测 ≈579→1197 ACK/s）。**容量门槛仍未达标**：单进程 SQLite
+> + 满速扇出的物理天花板未突破，S-1/S-2 缺口如实保留，超限由显式限流兜底。
+> 纪律：凡未经 S-1~S-7 压测守门的性能声明一律不写成"达标"。历史 v1.4 首轮压测
+> PASS=0 / FAIL=6 / BLOCKED=8 与 v2.0 吞吐改善数据并存，详见 `docs/v2.0-roadmap.md`
+> 与 `docs/release-notes-v2.0.0.md`。
 
-## 1. 媒体下载没有会话级 ACL
+## 状态速览
 
-- **现象**：`GET /api/media/{media_id}` 只校验登录态（`access_token` Cookie），不校验请求者与媒体所属会话的成员关系。`media_id = base64url(sha256(前 16 字节) ‖ 8 字节随机数)`（32 字符，不可枚举）；`media_media` 行记录了上传者 `uid`，但下载路径没有使用它。无权限与不存在统一返回 404，不泄露存在性。
-- **影响**：任何已登录用户只要拿到 `media_id` 就能下载原文件；安全性依赖 `media_id` 不泄露（日志、转发、客户端缓存均可能泄露）。1.0 只适合可信的小规模部署。
-- **计划版本**：1.1 补 `media_id → 消息 → 会话 → 成员` 的 ACL 校验（security-spec §4.4 红线）。
+| # | 问题 | 状态 |
+|---|---|---|
+| 1 | 冷库 PG driver 需部署层注册 | 已修（`chatd-pg` 变体，CI 全绿） |
+| 2 | 短信/邮件/图形验证码供应商未接 | 已修（webhook 适配器，CI 全绿） |
+| 3 | Windows ARM/ARM64 无产物 | 保持（明确不做，理由见下） |
+| 4 | split 多进程部署未实现 | 已修（删除死 systemd 单元，标注 embedded-only） |
+| 5 | 群通话/屏幕共享 | 保持（明确不做，理由见下） |
+| 6 | 移动端无推送 | v1.5 已修（Web Push/VAPID：订阅端点 + 每条消息下发；未配 VAPID 则 fail-closed） |
+| 7 | 通话需自备 TURN | 已修（自动化部分：管理面 TURN 自检，CI 全绿） |
+| 8 | 群人数上限默认 100 | 保持（默认值不动；理由：S-1/S-2 容量缺口未解决前不放大默认值） |
+| 9 | 编辑/转发/@提及 服务端 | 已实现（`msg_domain_v2_enabled` 默认开启；处理分支在 `data/pipe`，经压测守门前不宣称达标） |
+| 10 | 用户举报 kind 453 | v1.5 已修（端到端：服务端 onReport 在位，客户端经 WS 发 453 帧） |
+| 10b | 会话列表未虚拟滚动 | 已修（客户端侧长列表虚拟化，见 client-contract.md §8 性能建议） |
+| 11 | auto_vacuum 需手工转换 | 已修（`ufotctl upgrade` 自动化，CI 全绿） |
+| 12 | 旧 thumb_data 需手工迁移 | 已修（并入 `ufotctl upgrade`，dry-run 默认，CI 全绿） |
+| 容量 | 扇出写放大（S-1/S-2 缺口） | **v2.0 吞吐翻倍（≈579→1197 ACK/s）但仍未达门槛**：seq 批量分配 + batch500 显著改善写路径；单进程 SQLite 物理上限未突破，S-1/S-2 缺口如实保留，超限由 V2-0 显式限流兜底（不再静默挂起）；架构级突破留待 V2-2 分片/Actor |
 
-## 2. 会话列表未虚拟滚动（消息列表已虚拟滚动）
+另：**CORE-3（v3 总线接线）代码已落盘、待 CI/压测验证**——`AttachV3Deliver` 已在
+`newAssembly` 末尾调用，`AddConnLifecycle` 已注入 user 层 Server，自适应控制循环
+（adaptive.go）已接 `SetAdaptiveStore`，kind 15 上行已进 Router，SIGUSR1 dump 已含
+Plane 背压指标。双投递保护按 uid 单一路径判定。**但**：`v3_bus_enabled=false`
+默认关闭，控制器热生效单测与灰度切换全链路不双投递断言未写，最后一轮编译
+未复跑（交 CI），全部未经 S-1~S-7 压测。状态见 §0。
 
-- **现象**：`apps/client/src/ui/views/conv-list/ConvList.tsx` 直接 `filtered.map(...)` 渲染全部会话，只做了行级 `memo`，没有虚拟列表；消息列表 `apps/client/src/ui/views/chat/MessageList.tsx` 已使用 `@tanstack/react-virtual` 做虚拟滚动。
-- **影响**：会话数量达到数千时首屏 DOM 节点过多、滚动卡顿、内存升高；功能本身正常。
-- **计划版本**：1.1（`@tanstack/react-virtual` 复用消息列表的方案）。
+## 0. 1.4 三核心（新，代码在位·待验证）
 
-## 3. E2EE / 音视频通话 / 视频消息为 feature flag 关闭的预留实现
+三条主线的机制代码已全部落盘，**全部默认关闭、零行为影响**：
 
-- **现象**：`[feature_flags]` 的 `e2ee`、`call_enabled`、`video_enabled` 默认均为 `false`，且当前没有对应的业务实现可开启：协议只为通话预留 kind 350–399（常量已定义、无处理器），`mediasvc` 只接受 image/audio/file（mtype 3 视频留给 1.1），客户端 `video` 渲染器回退为文件卡片；E2EE 仅有表结构预留（security-spec §5.4），没有密钥协商与加解密实现。
-- **影响**：1.0 不支持端到端加密、音视频通话、视频消息；后台把 flag 改成 `true` 也不会启用任何功能。
-- **计划版本**：1.1（视频消息）；1.2（E2EE、音视频通话）。
+- **普遍拉取（CORE-2）**：`universal_pull_enabled=false` 时 fanout 分流与 v1.2.1
+  逐字节一致（T-SV-5 常驻回归锁定）。flag-on 后所有会话统一走水位线分支。
+- **自适应控制器（CORE-1）**：AIMD + 双维控制器（含 SafeTick panic 旁路）在位；
+  chatd 控制循环（adaptive.go）已接线，`adaptive_control_enabled=false`（默认）时
+  不启动/不写/保持静态 `watermark_batch=50 / watermark_interval_ms=2000`；开启时
+  SafeTick→AdaptiveWrite 越界拒载。热生效单测未写，交 CI/压测。
+- **v3 消息总线（CORE-3）**：MailboxHub / DeliveryPlane / 灰度双写旁路 / kind 15/16/17
+  客户端 / 连接钩子适配全部在位；**接线四项（钩子注册、灰度关旧直投、kind 15 上行、
+  背压指标上报）已落盘**。`v3_bus_enabled=false` 默认关闭；开启时按 uid 单一路径
+  判定（DeliveryEnabled / LegacyDirectEnabled 共用），关闭旧逐成员直投，无双投递窗口。
+  全链路不双投递的 e2e 断言未写，交 CI/压测。
 
-## 4. 冷库 Postgres driver 需部署层注册，未注册时审计降级为「只写日志不落盘」
+**状态更新（v1.4.0 已发布）**：以上 §0 三段为转生产前的收敛记录。四个 flag
+（`universal_pull_enabled` / `adaptive_control_enabled` / `v3_bus_enabled` / `v3_bus_percent=100`）
+现已在 v1.4 默认开启；CORE-1/2/3 单测与 cmd 层 e2e（`core3_test.go`、`v3deliver_test.go` 等）
+在 CI `-race` 全绿，热生效/不双投递断言已补齐。唯一未过的是容量门槛 S-1~S-7
+（见 `lts-1.4-plan.md §9`），属**性能限制**而非"未接线/未验证"——S-1/S-2 容量缺口仍未解决。
 
-- **现象**：`chatd` 按架构约定不 import 任何 PostgreSQL driver（driver 由部署层注入）。`cold_dsn` 非空时执行 `sql.Open("postgres", dsn)`；若部署层未 import/注册 `lib/pq`（驱动名 `postgres`）或等价 driver，启动日志报 `cold store disabled: driver not registered — 需在部署层 import pgx/stdlib 或 lib/pq 注册 driver（本二进制按架构约定不携带 postgres driver）`，冷库句柄为 `nil`。冷库与归档作业已接线：归档调度仍存在，但无冷库时只做 dry-run/明确报错；管理面审计 journal 退化为 `logJournal`，每个事件只打一条 WARN 并累加 `Dropped`，不落盘。
-- **影响**：历史消息无法归档到冷库、冷读与归档搜索不可用；审计链缺失（security-spec §5.5 生产红线）。热库的新消息读写不受影响。
-- **计划版本**：1.0 部署时由部署层注册 driver（见 docs/deploy.md 附录 A）；1.1 评估提供带 driver 的构建变体与启动自检。
+## 部署与依赖
 
-## 5. 短信 / 邮件 / 图形验证码为接口缝
+### 1. 冷库 Postgres driver 需部署层注册 —— 已修
 
-- **现象**：`authsvc.Deps` 中的 `SMS`（`SMSSender`）、`Mailer`、`Captcha`（`CaptchaVerifier`）都是注入接口，`chatd` 装配未注入任何实现。`dev_otp=true` 且 `APP_ENV=dev` 时，手机 OTP 固定为 `123456`、邮箱 magic link 在响应里直接返回 `link`、captcha 任意非空 token 放行，可跑通完整链路。生产模式下短信/邮件不会真正发出；验证码在当日第 2 次 OTP 请求起强制，且 `CaptchaVerifier == nil` 时返回 `CAPTCHA_REQUIRED`（fail-closed，不会静默放行）。
-- **影响**：生产环境手机验证码登录、邮箱 magic link 不可用；触发验证码阈值后 OTP 发送会被拒。密码登录、游客登录不受影响。
-- **计划版本**：1.1（内置 SMS / SMTP / 图形验证码适配器；1.0 仅 dev 模式可跑通）。
+v1.4 提供 `chatd-pg` 构建变体（内嵌 pgx driver），启动时自检并落审计事件；
+`require_audit_store=true` 的拒启语义不变。普通 `chatd` 架构约定（不 import
+任何 driver）保持不变。CI 全绿，正式转为已修。
 
-## 6. `-race` 仅 CI 可跑（本地沙箱 TSan 不支持）
+### 2. 短信 / 邮件 / 图形验证码供应商未接入 —— 已修
 
-- **现象**：在本地沙箱/部分 ARM 环境执行 `go test -race`（如 `make test`）会直接失败：`FATAL: ThreadSanitizer: unsupported VMA range`。CI 的 x86_64 runner 上 `make test`（`go test ./... -race -count=1`）可正常执行。
-- **影响**：本地无法用 ThreadSanitizer 验证并发正确性；并发回归只能在 CI 发现。
-- **计划版本**：不修复（运行环境限制）；1.0 起发布门禁以 CI 的 `make test` 为准。
+v1.4 落地通用 HTTP webhook 适配器（POST JSON、3s 超时、非 2xx 即失败），
+`deploy/providers.example.toml` 提供阿里云/腾讯云/通用 webhook 三段示例（不含密钥）。
+生产未配置时保持 fail-closed：不发验证码、第 2 条 OTP 起强制图形码并拒绝——
+这是有意行为，不是缺陷。
 
-## 7. 分片上传 / 断点续传未做
+### 3. Windows ARM / ARM64 不提供构建产物 —— 保持（明确不做）
 
-- **现象**：媒体上传是单次 `multipart/form-data` 全量提交（`apps/client/src/net/media.ts` 的 `uploadMedia` 用一个 XHR 发送整个 `File`）；服务端 `mediasvc` 也是 `io.ReadAll` 一次读满（图片 8MB / 音频 2MB / 文件 20MB 上限）。没有分片、断点续传、秒传。注意：WS 的 `RESUME` 是消息同步水位，不是文件上传续传。
-- **影响**：弱网或大文件上传失败后必须整文件重传；上传进度只在单请求内有效。
-- **计划版本**：1.1（分片 + 断点续传）。
+理由不变：SQLite 需要 cgo，Windows on ARM/ARM64 没有可用的 mingw 工具链，
+为一个边缘平台引入交叉编译矩阵不值得。CI 显式 skip 而非静默跳过；
+源码构建路径（`GOOS=windows GOARCH=arm64 CGO_ENABLED=1`）文档化。
+若未来换纯 Go SQLite 驱动可重开评估（v1.5+）。
 
-## 8. blurhash 用低清占位代替
+### 4. split 多进程部署未实现 —— 已修（收敛为明确不做）
 
-- **现象**：图片渲染器（`apps/client/src/ui/renderers/image.tsx`）的占位是后端 `thumb_inline`（data URL/base64 低清图）或按 `mediaId` hash 生成的纯色渐变；没有 blurhash 编解码。`mediasvc` 也不生成缩略图/转码，真实链路中 `thumb_inline` 通常为空，最终回退为渐变占位。
-- **影响**：列表图片的渐进加载观感与 web-ui-spec §4.2 的 blurhash 目标有差距；因有宽高比容器，不会造成布局偏移（CLS）。
-- **计划版本**：1.1（服务端缩略图 + 客户端 blurhash）。
+v1.2 预留的 `ufot-{bridge,user,data,admin}.service` 指向不存在二进制的
+systemd 单元已删除，不留会启动失败的运维指引。文档明确 chatd 为 embedded-only
+单进程；真正的水平扩展需求由部署方自行拆分（见 roadmap 明确不做清单）。
 
-## 9. 媒体上传无异步病毒扫描（ClamAV 未接）
+## 功能边界
 
-- **现象**：`mediasvc.handleUpload` 在魔数/扩展名/大小校验通过后直接写入 `Media.Status = 1`（可用），没有 `status=0(scanning)` 阶段，也没有 clamd 扫描。security-spec §4.3 的 ClamAV 流水线属于 1.1 范围。
-- **影响**：上传文件不会被病毒扫描，恶意文件可能被其他用户下载；1.0 的防线只有类型白名单与大小上限。对可信内网可接受，对开放注册的生产环境不合规。
-- **计划版本**：1.1（ClamAV：status 0 → 1/2，检出隔离并告警）。
+### 5. 群通话 / 屏幕共享未实现 —— 保持（明确不做）
 
-## 10. access token 吊销不会踢掉已有 WS 连接
+1v1 通话完整（含忙线、超时、ICE 失败处理）。自建 SFU 超出 2C2G 带宽预算，
+LTS 不引入；云 SFU 集成留待 v1.5+ 按需求评估。
 
-- **现象**：`logout` 与 refresh 重放只吊销 refresh token family；access token 按设计不设黑名单（security-spec §2.7 允许 15 分钟残余窗口），且网关尚未接入「踢下线」信号（`server/internal/authsvc/tokens.go` 的 `TODO-KICK`）。已建立的 WebSocket 连接不会因登出/refresh 重放被立即断开。
-- **影响**：用户登出或 refresh 重放后，已签发的 access token 在剩余有效期（≤15 分钟）内仍可调用 API 和维持 WS；被撤销设备不会立刻下线。
-- **计划版本**：1.1（网关按 uid/device 踢线，access token 短 TTL + 主动刷新）。
+### 6. 移动端无推送 —— v1.5 已修（Web Push / VAPID）
 
-## 11. SYNC 补拉（会话内 gap 回补）在 v1.0 空转
+服务端：`POST /api/push/subscribe` 订阅登记（Cookie 鉴权、fail-closed）+ `pushsvc` 的
+VAPID ES256 JWT / aes128gcm 下发，并接到数据层 flusher 的每条已提交消息（对收件人
+`Notify`）。客户端需自行申请订阅并上报（三步契约见 [push-setup.md §0](push-setup.md)）。
+服务端配置 `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT`，任缺一则 no-op（订阅仍可登记，不发通知）。
+配置步骤见 `docs/push-setup.md`。
 
-- **现象**：客户端检测到 seq 跳号时（`apps/client/src/app/bootstrap.ts` 的 `onGap`）发送 `SYNC_REQUEST`（kind 8）。但服务端无消费者：usergw 将其转发至桥接，Bridge `Router.Route(8)` 落在 0-99 控制面白名单之外、无精确路由，返回 `nil`（丢帧）；数据层 `dispatcher` 只处理 101/920/930/940/970/971/980，无 kind 8 handler。断线重连的 `RESUME`(6) 与 `READ_HISTORY`(920) 读路径正常，仅「单连接内跳号的 SYNC 主动回补」链路空转。
-- **影响**：长乱序/单连接跳号导致的会话内缺口无法经 SYNC 主动回补，只能依赖重连 RESUME 全量对齐；期间该会话可能持续显示缺口。
-- **计划版本**：1.1（Bridge Route 增 kind 8 → data 920 映射，或数据层 dispatcher 增 SYNC handler，与 P3-7 一并接线）。
+### 7. 通话需要自备 TURN 服务器 —— 已修（自动化部分）
 
-## 12. 管理后台登录锁定计数为进程内存（单实例假设）
+保持自备 TURN（带宽成本由部署方决定）不变。v1.4 新增管理面一键连通性自检
+（`GET /api/v1/diagnostics/turn`，读配置 turn URL 做 TCP 探测，3s 超时，仅管理面可见），
+不再要求部署方手工 telnet 排查。硬化模板 `deploy/coturn/turnserver.conf` 不变。
 
-- **现象**：admin 登录失败锁定（`server/internal/admin/middleware/ratelimit.go` 的 `LoginLimiter`，5 次/档 → 15m/1h/24h，账号与来源指纹双维度）以进程内 `map + atomic` 计数维护，未落库、不跨实例共享、进程重启即清零。
-- **影响**：仅在单实例部署下成立；多副本或频繁重启会放宽暴力破解防护（计数丢失/分摊到各实例）。1.0 为单实例 embedded 部署，当前可接受。
-- **计划版本**：1.1（持久化到 adm 库，或引入共享计数器）。
+### 8. 群人数上限（默认 100，硬上限 1000）—— 保持
 
-## 13. split 多进程部署形态未实现（systemd unit 为预留）
+**默认值仍为 100，本版未放大到 1000。** 理由：放大默认值的前提是普遍拉取 +
+自适应经 S-1~S-2 压测证明可用性达标，而 S-1/S-2 容量缺口仍未解决（见 §0 与
+`architecture-reset-v2-plan.md`）。在验证完成前放大默认值，等于向 2 核用户承诺实测撑不住的规模
+（v1.1.1 降级教训）。验证通过后再改默认值（改动是一行 policy 默认 + 文档）。硬上限 1000（64KB 帧约束）不变。
+容量核算公式与实测表见下「容量」段，仍然有效。
 
-- **现象**：`server/cmd` 实际只有 `chatd`、`openchatctl`、`adminctl`；`server/cmd/chatd/main.go` 对非 embedded 的 `[mode]` 直接报错（`this build is embedded-only`）。`deploy/systemd/openchat-{bridge,user,data,admin}.service` 的 `ExecStart` 指向 `bin/chatd-bridge` 等不存在的二进制，**一旦 enable 即启动失败**。
-- **影响**：1.0 只能以 embedded 单二进制部署，无法按层分机扩展；这 4 个 unit 仅作 1.1 预留。
-- **计划版本**：1.1（补 `cmd/chatd-{bridge,user,data,admin}` 二进制，或从发布包/部署产物中移除这些 unit，避免运维误启）。
+### 9. 消息编辑 / 转发 / @提及 服务端实现 —— 已实现（flag 默认开启）
+
+服务端 106 编辑（时间窗内软更新 + 广播）、109 转发元数据、@ 提及定向通知
+已在 `data/pipe` 落地，由 `msg_domain_v2_enabled` 门控，**v1.4 起默认 true**。
+客户端 106/107/108 渲染路径已接线。S-1~S-7 压测守门前不宣称性能达标。
+
+### 10. 用户举报（REPORT kind 453）—— v1.5 已修（端到端）
+
+453 → `sys_reports` 入库 + 审计 + ACK 的处理代码在 v1.4 已落地
+（`data/pipe/msgdomain.go` `onReport`，与第 9 条同一 flag `msg_domain_v2_enabled` 门控），
+用户层上行白名单（`bridge/defaults.go`）与 wire 转换亦已放行 453。客户端侧发 453 帧
+（契约见 [client-contract.md](client-contract.md)），PII 只传 msg_id + 枚举原因
+（detail 不采集自由文本）。
+
+### 10b. 会话列表未虚拟滚动 —— 已修
+
+`ConvList.tsx` 已接 `@tanstack/react-virtual`（复用消息列表方案），
+无 flag 门控，随构建生效。单测在位，CI 全绿，正式转为已修。
+
+## 运维注意
+
+### 11. 升级到 v1.1 必须做一次热库 auto_vacuum 转换 —— 已修（自动化）
+
+`ufotctl upgrade`（v1.4 新增）启动检测 `auto_vacuum=0` 自动生成一次性
+迁移计划（停服 → 备份 → `PRAGMA auto_vacuum=INCREMENTAL; VACUUM;` → 校验返回 2），
+`--run` 执行、默认 dry-run。手工路径 `docs/deploy.md §7.4` 保留为回退手段。
+
+### 12. 旧版 `thumb_data` 需要手工迁移 —— 已修（自动化）
+
+并入 `ufotctl upgrade`（默认 dry-run，`--run` 执行）。独立的
+`ufotctl migrate thumbs --dry-run/--run` 仍可用。
+
+## 容量：扇出写放大是主要约束 —— 未解决（S-1/S-2 缺口，转入架构重设专项）
+
+以下为 v1.1.1/1.2.1 实测基线（保留，勿删）：
+
+| 场景 | 帧/秒 | 可用性(ACK/发送)：v1.1.1 基线 | 负优化版（已回滚） | 7cb04fc（当前） |
+|---|---|---|---|---|
+| 512 连接 × 10 人群 | ~35,000 | 98.1% | 73.0% | 91.7%（p95 120ms） |
+| 1000 连接 × 50 人群 | ~110,000 | 32.3% | 14.6% | 23.7%（p95 468ms） |
+| 1000 连接 × 500 人群 | ~1,000,000(需求) | 2.2% | 0.9% | 2.0% |
+
+写路径上限 ~5-6k 消息/秒（2 核）；1000 并发握手 1000/1000 成功，连接建立 <100ms。
+
+**1.4 的解法（普遍拉取 + 自适应 + v3 总线）已默认开启，但 S-1~S-7 容量门槛未通过**
+——上表的数字在本版本内仍然成立，容量规划公式（在线人数 × 群成员数 ×
+每人消息频率 ≈ 帧/秒，压到 40k 帧/秒以内）继续按此执行。S-1/S-2 缺口转入
+v1.5/v2.0 架构重设专项（`architecture-reset-v2-plan.md`）；架构重设落地后，
+本段数字由 CI 刷新（README 容量表同批更新）。

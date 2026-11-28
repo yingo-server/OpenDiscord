@@ -6,7 +6,7 @@
 package transport
 
 import (
-	"github.com/yingo-server/OpenChat/server/internal/proto"
+	"github.com/yingo-server/UFOT/server/internal/proto"
 )
 
 // Peer 是任意一层（user/data/admin/…）接入桥接的统一原语。

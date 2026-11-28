@@ -30,14 +30,14 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"github.com/yingo-server/OpenChat/server/internal/data/pipe/wire"
-	"github.com/yingo-server/OpenChat/server/internal/data/policy"
-	"github.com/yingo-server/OpenChat/server/internal/data/store"
-	"github.com/yingo-server/OpenChat/server/internal/pkg/log"
-	"github.com/yingo-server/OpenChat/server/internal/proto/gen/chatpb"
-	"github.com/yingo-server/OpenChat/server/internal/proto/kinds"
-	"github.com/yingo-server/OpenChat/server/internal/user/core/authn"
-	"github.com/yingo-server/OpenChat/server/internal/user/net/frame"
+	"github.com/yingo-server/UFOT/server/internal/data/pipe/wire"
+	"github.com/yingo-server/UFOT/server/internal/data/policy"
+	"github.com/yingo-server/UFOT/server/internal/data/store"
+	"github.com/yingo-server/UFOT/server/internal/pkg/log"
+	"github.com/yingo-server/UFOT/server/internal/proto/gen/chatpb"
+	"github.com/yingo-server/UFOT/server/internal/proto/kinds"
+	"github.com/yingo-server/UFOT/server/internal/user/core/authn"
+	"github.com/yingo-server/UFOT/server/internal/user/net/frame"
 )
 
 const testUID int64 = 4242
@@ -62,7 +62,13 @@ func testConfig(t *testing.T) *config {
 	cfg.DevOTP = false
 	cfg.ShutdownTimeout = 5
 
-	body, err := json.Marshal(policy.Default())
+	pol := policy.Default()
+	// The login-method switches default to OFF (fail-closed). These tests
+	// log in as guests (and exercise the password path), so the test policy
+	// must opt in explicitly — exactly like a real deployment does.
+	pol.Auth.Methods.Guest = true
+	pol.Auth.Methods.Password = true
+	body, err := json.Marshal(pol)
 	if err != nil {
 		t.Fatalf("marshal policy: %v", err)
 	}

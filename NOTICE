@@ -1,0 +1,43 @@
+UFOT
+Copyright 2024-2026 The UFOT Authors
+
+This product includes software developed by the UFOT project and is
+licensed under the Apache License, Version 2.0 (the "License"); you may not
+use this product except in compliance with the License. A copy of the License
+is included in the LICENSE file at the root of this distribution.
+
+--------------------------------------------------------------------------------
+THIRD-PARTY NOTICES
+--------------------------------------------------------------------------------
+
+This distribution bundles or depends on the following third-party components.
+Each remains under its own license; the relevant copyright and license texts
+are reproduced below / referenced to their upstream distributions.
+
+1) Go module dependencies (server)
+   - github.com/golang-jwt/jwt/v5 v5.2.1 — MIT License
+     Copyright (c) 2012 square/jwt contributors
+   - github.com/gorilla/websocket v1.5.3 — BSD 2-Clause License
+     Copyright (c) 2013 The Gorilla WebSocket Authors
+   - github.com/jackc/pgx/v5 v5.6.0 — MIT License
+     Copyright (c) 2015 Jack Christensen
+   - github.com/mattn/go-sqlite3 v1.14.22 — MIT License (see upstream LICENSE;
+     the project is also available under an "isclimited" dual license)
+     Copyright (c) 2014 Yasuhiro Matsumoto
+   - golang.org/x/crypto v0.24.0 — BSD 3-Clause License
+     Copyright (c) 2009 The Go Authors
+
+The full license texts of the above components are available in their upstream
+distributions and in the module/package caches used to build this product
+(go.sum pins the exact versions). This NOTICE is provided to
+satisfy the attribution requirements of Apache-2.0 §4(c)/(d) and the MIT/BSD
+licenses listed above.
+
+--------------------------------------------------------------------------------
+TRADEMARK
+--------------------------------------------------------------------------------
+
+UFOT is an independent project and is not affiliated with, endorsed by,
+or authorized by Discord Inc. "Discord" is a trademark of its respective owner.
+The use of "Discord" in this project name is descriptive only; no trademark
+rights are claimed.

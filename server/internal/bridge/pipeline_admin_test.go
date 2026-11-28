@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yingo-server/OpenChat/server/internal/bridge/adminapi"
-	"github.com/yingo-server/OpenChat/server/internal/transport/embedded"
+	"github.com/yingo-server/UFOT/server/internal/bridge/adminapi"
+	"github.com/yingo-server/UFOT/server/internal/transport/embedded"
 )
 
 // The AdminAPI is the ONLY non-socket ingress. These tests pin the wiring

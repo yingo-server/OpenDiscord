@@ -1,0 +1,12 @@
+-- media domain (hot, SQLite). 0003: thumbnails move OUT of the database.
+--
+-- thumb_data held a base64 inline preview (~10.7KB of TEXT per row for a
+-- capped-8KB payload) — with a million images that is >10GB of hot SQLite
+-- file for data that belongs on the media disk. New rows store the PATH of
+-- the thumbnail file (media_dir/thumbs/<sha[:2]>/<sha[:4]>/<sha>.thumb,
+-- tens of bytes); the reader falls back to the legacy inline value when the
+-- file is missing so existing rows keep working.
+--
+-- The column is REUSED (not renamed) so the read path is one column either
+-- way: non-empty legacy payload vs. path (prefixed with "path:") or empty.
+ALTER TABLE media_media ADD COLUMN thumb_path TEXT NOT NULL DEFAULT '';

@@ -4,15 +4,23 @@ package pipe
 import (
 	"context"
 	"encoding/json"
+	"sync"
 	"time"
 
-	"github.com/yingo-server/OpenChat/server/internal/data/store"
-	"github.com/yingo-server/OpenChat/server/internal/pkg/log"
-	"github.com/yingo-server/OpenChat/server/internal/proto/kinds"
+	"github.com/yingo-server/UFOT/server/internal/data/pipe/wire"
+	"github.com/yingo-server/UFOT/server/internal/data/policy"
+	"github.com/yingo-server/UFOT/server/internal/data/store"
+	"github.com/yingo-server/UFOT/server/internal/pkg/featureflags"
+	"github.com/yingo-server/UFOT/server/internal/pkg/log"
+	"github.com/yingo-server/UFOT/server/internal/proto/kinds"
 )
 
 const (
-	defaultFlushBatch = 1000
+	// defaultFlushBatch / defaultFlushEvery are the fallbacks when policy
+	// does not supply write_path.batch_size / flush_interval_ms; they match
+	// policy.DefaultWriteBatchSize / DefaultWriteFlushIntervalMS. The live
+	// values come from policy via applyWritePolicy (not hardcoded here).
+	defaultFlushBatch = 500 // perf-sqlite-write-path.md: batch=500 p95≈70ms vs 1000≈187ms
 	defaultFlushEvery = 50 * time.Millisecond
 )
 
@@ -22,14 +30,47 @@ const (
 // Acks hang off the COMMIT, never off the enqueue (docs §1.2). A failed
 // batch answers the WHOLE batch with code=500 (all-or-nothing contract).
 type flusher struct {
-	w         store.MsgWriter
-	convs     store.ConvStore
-	out       chan<- *env
-	lg        *log.Logger
+	w     store.MsgWriter
+	convs store.ConvStore
+	media store.MediaStore // optional: enriches media[] with thumb/waveform/status
+	out   chan<- *env
+	// seqAlloc 是 V2-1 从 onMsgSend 移来的 seq 分配器：flush 时对整个 batch
+	// 按 cid 聚组、每 cid 一次 AllocateSeq（批事务前），消除每消息一次写事务。
+	// nil = 旧路径（调用方已在入队前分配 seq）；兼容 writepath 单测。
+	seq *seqAlloc
+	// putBulk places a fan-out frame on the lane, honouring the reserve the
+	// pipe keeps for replies. Fan-out must never consume the ACK headroom.
+	putBulk func(*env) bool
+	// putAck places an ACK on the lane with full capacity: the sender is
+	// blocked on it, so it outranks broadcast traffic.
+	putAck func(*env)
+	// pushNotify 是可选的 Web Push 通知钩子（v1.5）：每条已提交消息的每个
+	// 收件人调一次，由 assembly 注入 pushsvc.Notify。nil = 未装配 = no-op；
+	// 任何失败由 pushsvc 自行 fail-closed，绝不阻塞投递热路径。
+	pushNotify func(uid int64, payload []byte)
+	lg         *log.Logger
+	// batchSize / interval are the group-commit tunables. They are read on
+	// every loop iteration by run(), so they are guarded by cfgMu to allow
+	// live reconfiguration (SIGHUP) without a data race. Tests that set them
+	// directly do so BEFORE run() starts (happens-before via go statement).
 	batchSize int
 	interval  time.Duration
+	cfgMu     sync.RWMutex
 	readyCh   <-chan ReadyMsg
 	dedup     *Dedup
+	// mc is the cached member-list view: the MSG_NEW fan-out resolves the
+	// recipient set from the cache instead of querying the DB per message.
+	mc *memberCache
+	// fanout owns the MSG_NEW delivery DECISION (inline 102 vs pull-mode
+	// watermark, §3.1/§3.2) and the per-conv watermark throttle. nil falls back
+	// to the plain inline loop (assemblies that build a flusher directly).
+	fanout *fanoutPlane
+	// v3 is the P3d-1 split sink, shared with p.fanout (see SetV3Offer).
+	// nil = no-op, legacy path byte-identical.
+	v3 *v3Split
+	// flags is the process-wide feature flag store (FE-1a: msg_domain_v2
+	// mention notices). nil = compiled defaults (all off).
+	flags *featureflags.Flags
 
 	// done closes when run() returns (final flush complete) — Drain waits on it.
 	done chan struct{}
@@ -47,9 +88,71 @@ func newFlusher(w store.MsgWriter, convs store.ConvStore, out chan<- *env, ready
 		interval: defaultFlushEvery, readyCh: ready, dedup: d, done: make(chan struct{})}
 }
 
+// setMediaStore injects the (optional) media store used to enrich the
+// downlink media[] entries with the inline thumbnail, the audio waveform and
+// the scan status. A nil store degrades gracefully: the media[] entries keep
+// whatever the uplink carried, minus the store-only fields.
+func (f *flusher) setMediaStore(ms store.MediaStore) { f.media = ms }
+
+// setSeqAlloc injects the V2-1 batch seq allocator. nil keeps the legacy
+// contract (caller assigned seq before enqueue) — used by writepath unit tests.
+func (f *flusher) setSeqAlloc(s *seqAlloc) { f.seq = s }
+
+// setPushNotify injects the optional Web Push notification hook (v1.5).
+// nil keeps the pre-v1.5 behaviour (no push). The hook must be fail-closed —
+// it is called on the fan-out path and must never block or panic.
+func (f *flusher) setPushNotify(fn func(int64, []byte)) { f.pushNotify = fn }
+
+// applyWritePolicy overrides the group-commit batch size and flush interval
+// from the policy snapshot (write_path section) when one is supplied. The
+// argument is the value pipe.New receives (a policy.Policy, a policy.Snapshot
+// or a *policy.Store); anything else — or a zero field — keeps the built-in
+// defaults (batchSize=1000, interval=50ms), so a missing policy degrades
+// predictably. Safe to call at runtime (SIGHUP): the new values apply to the
+// next batch, the in-flight batch commits with the old ones.
+func (f *flusher) applyWritePolicy(pol any) {
+	var wc policy.WritePathConfig
+	switch v := pol.(type) {
+	case policy.Policy:
+		wc = v.WritePath
+	case policy.Snapshot:
+		wc = v.Policy.WritePath
+	case *policy.Store:
+		if v != nil {
+			wc = v.Current().Policy.WritePath
+		}
+	}
+	var every time.Duration
+	if wc.FlushIntervalMS > 0 {
+		every = time.Duration(wc.FlushIntervalMS) * time.Millisecond
+	}
+	f.setConfig(wc.BatchSize, every)
+}
+
+// setConfig applies the tunables under the config lock; a zero value leaves
+// the current setting untouched (so a partial policy keeps the defaults).
+func (f *flusher) setConfig(batch int, every time.Duration) {
+	f.cfgMu.Lock()
+	defer f.cfgMu.Unlock()
+	if batch > 0 {
+		f.batchSize = batch
+	}
+	if every > 0 {
+		f.interval = every
+	}
+}
+
+// config returns the current (batchSize, interval) pair under the config lock.
+func (f *flusher) config() (int, time.Duration) {
+	f.cfgMu.RLock()
+	defer f.cfgMu.RUnlock()
+	return f.batchSize, f.interval
+}
+
 func (f *flusher) run(ctx context.Context) {
 	defer close(f.done)
-	t := time.NewTimer(f.interval)
+	_, initial := f.config()
+	t := time.NewTimer(initial)
 	defer t.Stop()
 	var buf []ReadyMsg
 	flushNow := func() {
@@ -67,18 +170,20 @@ func (f *flusher) run(ctx context.Context) {
 				return
 			}
 			buf = append(buf, m)
-			if len(buf) >= f.batchSize {
+			batch, every := f.config()
+			if len(buf) >= batch {
 				if !t.Stop() {
 					select {
 					case <-t.C:
 					default:
 					}
 				}
-				t.Reset(f.interval)
+				t.Reset(every)
 				flushNow()
 			}
 		case <-t.C:
-			t.Reset(f.interval)
+			_, every := f.config()
+			t.Reset(every)
 			flushNow()
 		case <-ctx.Done():
 			flushNow()
@@ -92,6 +197,21 @@ func (f *flusher) flush(ctx context.Context, buf []ReadyMsg) {
 	for i, m := range buf {
 		batch[i] = m.Msg
 	}
+	// V2-1: seq 分配从 onMsgSend（每消息一次写事务）移到此处——整批按 cid
+	// 聚组，每 cid 一次 AllocateSeq 预留连续段，回填 Seq/MsgID 后再批 INSERT。
+	// 把 N 次写锁获取降为「每 cid 一次 + 批事务一次」。
+	if f.seq != nil {
+		if err := f.seq.assign(ctx, batch); err != nil {
+			f.lg.Error("flusher: seq alloc failed", "batch_len", len(buf), "err", err.Error())
+			for _, m := range buf {
+				f.emit(m.Msg, 500, "seq alloc failed")
+			}
+			return
+		}
+		for i := range buf {
+			buf[i].Msg = batch[i]
+		}
+	}
 	if err := f.w.AppendMessages(ctx, batch); err != nil {
 		f.lg.Error("flusher: batch failed", "batch_len", len(buf), "err", err.Error())
 		for _, m := range buf {
@@ -99,64 +219,278 @@ func (f *flusher) flush(ctx context.Context, buf []ReadyMsg) {
 		}
 		return
 	}
+	// Resolve the batch's media rows ONCE (one store round trip per media
+	// id, but the ids are collected across the whole batch first, so a
+	// message with N media entries does not re-read the same row N times
+	// and the batch never degrades into an N+1 storm against the store).
+	mediaIdx := f.resolveMediaBatch(ctx, batch)
 	for _, m := range buf {
 		f.dedup.Remember(m.Msg.Cid, m.Msg.SenderID, m.Msg.ClientMsgID, dedupResult{
 			MsgID: m.Msg.MsgID, Seq: m.Msg.Seq, SentAt: m.Msg.SentAt, Status: 0,
 		})
 		f.emit(m.Msg, 0, "")
-		f.fanoutNew(m.Msg)
+		f.fanoutNew(m.Msg, mediaIdx)
 	}
+}
+
+// resolveMediaBatch collects every media_id referenced by the batch and
+// resolves it to its store row. The result is a map keyed by media_id that
+// the payload builder consults. A nil map means "no media store wired" and
+// the builder falls back to the uplink content only.
+func (f *flusher) resolveMediaBatch(ctx context.Context, batch []store.PendingMsg) map[string]*store.Media {
+	if f.media == nil || len(batch) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(batch))
+	seen := make(map[string]bool, len(batch))
+	for _, m := range batch {
+		for _, id := range mediaIDsIn(m.Content) {
+			if id == "" || seen[id] {
+				continue
+			}
+			seen[id] = true
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	out := make(map[string]*store.Media, len(ids))
+	for _, id := range ids {
+		rec, err := f.media.Get(ctx, id)
+		if err != nil || rec == nil {
+			continue // missing row: the payload keeps the uplink fields only
+		}
+		out[id] = rec
+	}
+	return out
+}
+
+// mediaIDsIn extracts the media_ids referenced by a stored content payload.
+func mediaIDsIn(content []byte) []string {
+	if len(content) == 0 {
+		return nil
+	}
+	var c msgNewContent
+	if err := json.Unmarshal(content, &c); err != nil {
+		return nil
+	}
+	out := make([]string, 0, len(c.Media))
+	for _, mm := range c.Media {
+		id := mm.MediaID
+		if id == "" {
+			id = mm.MediaIDCam
+		}
+		if id != "" {
+			out = append(out, id)
+		}
+	}
+	return out
 }
 
 // fanoutNew delivers MSG_NEW to every other conversation member, one frame
 // per member addressed by user_id (multi-device delivery is the gateway's
 // Broadcast(uid) job). The sender's own devices rely on the ack/outbox path.
-func (f *flusher) fanoutNew(m store.PendingMsg) {
+//
+// mediaIdx is the pre-resolved media table for the whole flush batch (nil
+// when no media store is wired).
+func (f *flusher) fanoutNew(m store.PendingMsg, mediaIdx map[string]*store.Media) {
 	if f.convs == nil {
 		return
 	}
-	members, err := f.convs.ListMembers(context.Background(), m.Cid)
+	var members []store.Member
+	var err error
+	if f.mc != nil {
+		members, err = f.mc.Members(context.Background(), m.Cid)
+	} else {
+		members, err = f.convs.ListMembers(context.Background(), m.Cid)
+	}
 	if err != nil {
 		f.lg.Warn("flusher: list members for MSG_NEW fanout failed", "cid", m.Cid, "err", err.Error())
 		return
 	}
-	payload := buildMsgNewPayload(m)
+	payload := buildMsgNewPayloadWithMedia(m, mediaLookupFromIndex(mediaIdx))
+	uids := make([]uint64, 0, len(members))
 	for _, member := range members {
 		if member.UID == m.SenderID {
 			continue
 		}
-		e := &env{Kind: uint32(kinds.KindMsgNew), ConvID: uint64(m.Cid), UserID: uint64(member.UID), Payload: payload}
-		select {
-		case f.out <- e:
-		default:
-			f.lg.Warn("flusher: outbound lane full; MSG_NEW dropped", "cid", m.Cid, "uid", member.UID)
+		uids = append(uids, uint64(member.UID))
+	}
+	// Web Push（v1.5）：对每个离线/后台收件人推一条系统通知。body 只放通用
+	// 文案 + 会话号，绝不带消息正文（PII/内容不进系统通知）。钩子 fail-closed：
+	// 未装配（nil）或无订阅/无 VAPID 时 pushsvc 内部 no-op，不影响投递热路径。
+	if f.pushNotify != nil && len(uids) > 0 {
+		np, _ := json.Marshal(map[string]any{
+			"title":  "UFOT",
+			"body":   "你有一条新消息",
+			"convId": m.Cid,
+		})
+		for _, uid := range uids {
+			f.pushNotify(int64(uid), np)
 		}
 	}
+	// 拉取模式分流（§3.1/§3.2）：只有 len(members) > pull_mode_threshold 时才
+	// 改走水位线。threshold 默认 0（禁用），此时整段判定为假，下面仍是 v1.1.1
+	// 的逐成员 102 循环 —— 逐字节一致，连丢帧日志与计数都不变。
+	if f.fanout != nil && f.fanout.pullModeActive(m.Cid, len(members)) {
+		if f.fanout.universalPullActive() {
+			// 普遍拉取 + 旧客户端能力协商（lts-1.4-acceptance §B）：
+			// 具备拉取能力的收件人收水位线（kind 14），没有能力上报的
+			// 收件人（老客户端）仍然收 inline 102 —— 绝不漏消息。
+			// 两组收件人互斥 ⇒ 同一 uid 不会同时收到水位线与 102（无双投递）。
+			pullUids, inlineUids := f.fanout.splitPullUids(uids)
+			if len(pullUids) > 0 {
+				f.fanout.emitWatermarkTo(uint64(m.Cid), uint64(m.Seq), len(members), pullUids, f.putBulk)
+			}
+			if len(inlineUids) == 0 {
+				return
+			}
+			uids = inlineUids
+			// 落到下面的 inline 分支：只给老客户端发逐成员 102。
+		} else {
+			// 回滚路径（universal_pull_enabled=false）：整会话一条水位线，
+			// 与 v1.2.1 逐字节一致（S-7）。
+			f.fanout.emitWatermark(uint64(m.Cid), uint64(m.SenderID), uint64(m.Seq), members, f.putBulk)
+			return
+		}
+	}
+	// FE-1a #3 (@mentions): a stored mentions list triggers a targeted
+	// CONV_PAYLOAD(202) notification frame per mentioned uid (kind reuse —
+	// no new protocol kind). Flag-gated; off → zero extra frames.
+	if f.flags != nil && f.flags.Bool("msg_domain_v2_enabled", false) {
+		f.emitMentionNotices(m, mediaIdx)
+	}
+	// P3d-1: MSG_NEW 的 canonical 产出按灰度 uid 双写进 mailbox（§5.1）。
+	// 大群（>threshold）在上面已经转成水位线，本体不进 mailbox（§2.4）。
+	// sink 为 nil / 总开关关闭时零行为变化，旧直投循环原样执行。
+	if f.v3 != nil && f.putBulk != nil {
+		f.v3.offerTo(context.Background(), uint32(kinds.KindMsgNew), uint64(m.Cid),
+			uids, "", payload, m.MsgID, m.Seq)
+	}
+	// encode-once (perf-spec §2.1): the MSG_NEW body is serialised a single time
+	// and shared by reference across every member's frame.
+	envs, _ := buildFanoutEnvs(defaultFanoutEncode, uint32(kinds.KindMsgNew), "", payload, uint64(m.Cid), uids)
+	for _, e := range envs {
+		if f.putBulk == nil {
+			// No fan-out plane wired (test assemblies without Run): the frame
+			// would be silently dropped with its shared reference never
+			// released. Release to keep the refcount invariant.
+			e.releaseShared()
+			continue
+		}
+		if !f.putBulk(e) {
+			e.releaseShared()
+			f.lg.Warn("flusher: outbound lane at bulk high-water; MSG_NEW dropped", "cid", m.Cid, "uid", e.UserID)
+		}
+	}
+}
+
+// mediaLookupFromIndex adapts the pre-resolved media table to the resolver
+// signature the payload builder expects.
+func mediaLookupFromIndex(idx map[string]*store.Media) func(string) (*store.Media, bool) {
+	if idx == nil {
+		return nil
+	}
+	return func(id string) (*store.Media, bool) {
+		rec, ok := idx[id]
+		return rec, ok && rec != nil
+	}
+}
+
+// mediaView is the client-facing media entry of the MSG_NEW content.
+//
+// Field names are part of the client contract (docs/client-contract.md
+// mapMedia): snake_case, matching proto/chat.proto's Media message.
+type mediaView struct {
+	MediaID    string `json:"media_id"`
+	MType      int32  `json:"mtype"`
+	Name       string `json:"name"`
+	Size       int64  `json:"size"`
+	Mime       string `json:"mime"`
+	Width      uint32 `json:"width"`
+	Height     uint32 `json:"height"`
+	DurationMs uint32 `json:"duration_ms"`
+	// ThumbInline is the inline thumbnail (base64 data-URI or bare base64).
+	// The frontend renders it as the low-res placeholder while the real
+	// image loads; without it the list shows an empty box.
+	ThumbInline string `json:"thumb_inline,omitempty"`
+	// Waveform is the 24-sample 0-100 amplitude array (JSON array as stored
+	// in media_media.waveform). The frontend draws the real scrubber from
+	// it; without it the audio bubble falls back to a pseudo-random shape.
+	Waveform []int `json:"waveform,omitempty"`
+	// Status is the media scan state as a CLIENT-FACING string
+	// ("pending"|"uploading"|"ready"|"expired"|"failed"), matching the
+	// frontend's MediaStatus union — NOT the numeric media_media.status.
+	Status string `json:"status,omitempty"`
+}
+
+// msgNewContent is the stored message content (the uplink MSG_SEND payload).
+// Both snake_case and camelCase spellings are accepted on input (the uplink
+// may come from a client that uses either), but the downlink is ALWAYS
+// snake_case (the server's unified downlink convention).
+type msgNewContent struct {
+	ClientMsgID      string `json:"client_msg_id"`
+	ClientMsgIDCamel string `json:"clientMsgId"`
+	Text             string `json:"text"`
+	ReplyTo          uint64 `json:"reply_to"`
+	ReplyToCamel     uint64 `json:"replyTo"`
+	Media            []struct {
+		MediaID    string `json:"media_id"`
+		MediaIDCam string `json:"mediaId"`
+		MType      int32  `json:"mtype"`
+		Name       string `json:"name"`
+		Size       int64  `json:"size"`
+		Mime       string `json:"mime"`
+		Width      uint32 `json:"width"`
+		Height     uint32 `json:"height"`
+		DurationMs uint32 `json:"duration_ms"`
+		DurationMc uint32 `json:"durationMs"`
+		// Fields the client MAY already carry inline (the optimistic upload
+		// path attaches them to the message): they are used as a fallback
+		// when the media row has no thumbnail/waveform yet.
+		ThumbInline string `json:"thumb_inline"`
+		Waveform    []int  `json:"waveform"`
+		Status      string `json:"status"`
+	} `json:"media"`
 }
 
 // buildMsgNewPayload emits the client-facing snake_case JSON shape
 // (MSG_NEW payload), embedding the stored message content as a JSON object
 // rather than base64 bytes.
-func buildMsgNewPayload(m store.PendingMsg) []byte {
-	var c struct {
-		ClientMsgID      string `json:"client_msg_id"`
-		ClientMsgIDCamel string `json:"clientMsgId"`
-		Text             string `json:"text"`
-		ReplyTo          uint64 `json:"reply_to"`
-		ReplyToCamel     uint64 `json:"replyTo"`
-		Media            []struct {
-			MediaID    string `json:"media_id"`
-			MediaIDCam string `json:"mediaId"`
-			MType      int32  `json:"mtype"`
-			Name       string `json:"name"`
-			Size       int64  `json:"size"`
-			Mime       string `json:"mime"`
-			Width      uint32 `json:"width"`
-			Height     uint32 `json:"height"`
-			DurationMs uint32 `json:"duration_ms"`
-			DurationMc uint32 `json:"durationMs"`
-		} `json:"media"`
+//
+// The media[] entries are ENRICHED with the store-only fields (thumb_inline,
+// waveform, status): the uplink content carries only the media reference, so
+// without this lookup the receiving client gets no thumbnail and no audio
+// waveform — the two fields the image/audio renderers depend on.
+//
+// The batch flush path resolves the whole batch's media rows once
+// (resolveMediaBatch) and calls buildMsgNewPayloadWithMedia directly; this
+// method is the single-message path used by the SYNC gap replay, where one
+// message's media rows are resolved on demand.
+func (f *flusher) buildMsgNewPayload(m store.PendingMsg) []byte {
+	return buildMsgNewPayloadWithMedia(m, f.mediaLookup)
+}
+
+// mediaLookup resolves one media_id to its store row. Errors are swallowed
+// (the caller falls back to the uplink content) — a missing media row must
+// never break the message downlink.
+func (f *flusher) mediaLookup(mediaID string) (*store.Media, bool) {
+	if f.media == nil || mediaID == "" {
+		return nil, false
 	}
+	rec, err := f.media.Get(context.Background(), mediaID)
+	if err != nil || rec == nil {
+		return nil, false
+	}
+	return rec, true
+}
+
+// buildMsgNewPayloadWithMedia is the pure builder: it takes the media
+// resolver as a function so the batch path can resolve MANY media ids with
+// ONE store round trip (no N+1).
+func buildMsgNewPayloadWithMedia(m store.PendingMsg, lookup func(string) (*store.Media, bool)) []byte {
+	var c msgNewContent
 	if len(m.Content) > 0 {
 		_ = json.Unmarshal(m.Content, &c)
 	}
@@ -168,7 +502,7 @@ func buildMsgNewPayload(m store.PendingMsg) []byte {
 	if replyTo == 0 {
 		replyTo = c.ReplyToCamel
 	}
-	media := make([]map[string]any, 0, len(c.Media))
+	media := make([]mediaView, 0, len(c.Media))
 	for _, mm := range c.Media {
 		id := mm.MediaID
 		if id == "" {
@@ -178,16 +512,29 @@ func buildMsgNewPayload(m store.PendingMsg) []byte {
 		if dm == 0 {
 			dm = mm.DurationMc
 		}
-		media = append(media, map[string]any{
-			"media_id":    id,
-			"mtype":       mm.MType,
-			"name":        mm.Name,
-			"size":        mm.Size,
-			"mime":        mm.Mime,
-			"width":       mm.Width,
-			"height":      mm.Height,
-			"duration_ms": dm,
-		})
+		v := mediaView{
+			MediaID:    id,
+			MType:      mm.MType,
+			Name:       mm.Name,
+			Size:       mm.Size,
+			Mime:       mm.Mime,
+			Width:      mm.Width,
+			Height:     mm.Height,
+			DurationMs: dm,
+			// Fallbacks first: what the client already attached inline.
+			ThumbInline: mm.ThumbInline,
+			Waveform:    mm.Waveform,
+			Status:      mm.Status,
+		}
+		if lookup != nil {
+			if rec, ok := lookup(id); ok {
+				applyMediaRecord(&v, rec)
+			}
+		}
+		if v.Status == "" {
+			v.Status = mediaStatusReady
+		}
+		media = append(media, v)
 	}
 	content, _ := json.Marshal(map[string]any{
 		"client_msg_id": clientMsgID,
@@ -202,22 +549,171 @@ func buildMsgNewPayload(m store.PendingMsg) []byte {
 		SenderID uint64          `json:"sender_id"`
 		SentAt   int64           `json:"sent_at"`
 		ConvID   uint64          `json:"conv_id"`
+		Recalled int64           `json:"recalled,omitempty"`
 		Content  json.RawMessage `json:"content"`
 	}{
 		MsgID: uint64(m.MsgID), Seq: uint64(m.Seq), SenderID: uint64(m.SenderID),
-		SentAt: m.SentAt * 1000, ConvID: uint64(m.Cid), Content: content,
+		SentAt: m.SentAt * 1000, ConvID: uint64(m.Cid),
+		Recalled: m.Recalled, Content: content,
 	})
 	return out
 }
+
+// emitMentionNotices (FE-1a #3): for each mentioned uid that is a member of
+// the conversation, emit one targeted CONV_PAYLOAD(202) notification frame
+// (kind reuse, addressed by user_id). The payload is the plain conv-event
+// shape the client's decodeConvPayload already reads: op "mention" with the
+// triggering msg/conv ids — no new kind, no new schema.
+func (f *flusher) emitMentionNotices(m store.PendingMsg, mediaIdx map[string]*store.Media) {
+	var c wire.MessagePayload
+	if len(m.Content) > 0 {
+		if err := json.Unmarshal(m.Content, &c); err != nil {
+			return
+		}
+	}
+	if len(c.Mentions) == 0 {
+		return
+	}
+	members, err := func() ([]store.Member, error) {
+		if f.mc != nil {
+			return f.mc.Members(context.Background(), m.Cid)
+		}
+		if f.convs == nil {
+			return nil, store.ErrNotFound
+		}
+		return f.convs.ListMembers(context.Background(), m.Cid)
+	}()
+	if err != nil {
+		f.lg.Warn("flusher: mention notices skipped (members)", "cid", m.Cid, "err", err.Error())
+		return
+	}
+	isMember := make(map[int64]bool, len(members))
+	for _, mm := range members {
+		isMember[mm.UID] = true
+	}
+	seen := make(map[uint64]bool, len(c.Mentions))
+	for _, uid := range c.Mentions {
+		if uid == 0 || seen[uid] || !isMember[int64(uid)] {
+			continue
+		}
+		seen[uid] = true
+		body, err := json.Marshal(map[string]any{
+			"convId":   uint64(m.Cid),
+			"op":       "mention",
+			"msgId":    uint64(m.MsgID),
+			"senderId": uint64(m.SenderID),
+			"seq":      uint64(m.Seq),
+		})
+		if err != nil {
+			continue
+		}
+		if f.putBulk == nil {
+			continue
+		}
+		e := &env{Kind: uint32(kinds.KindConvPayload), ConvID: uint64(m.Cid),
+			UserID: uid, Payload: body}
+		if !f.putBulk(e) {
+			e.releaseShared()
+			f.lg.Warn("flusher: mention notice dropped (lane full)", "cid", m.Cid, "uid", uid)
+		}
+	}
+}
+
+// mediaStatus* are the client-facing media status strings (frontend's
+// MediaStatus union). The numeric media_media.status maps onto them here.
+const (
+	mediaStatusPending   = "pending"
+	mediaStatusUploading = "uploading"
+	mediaStatusReady     = "ready"
+	mediaStatusExpired   = "expired"
+	mediaStatusFailed    = "failed"
+)
+
+// applyMediaRecord overlays the store row onto the downlink media entry.
+// The store is the authority for thumb/waveform/status; the uplink content
+// only fills the gaps.
+func applyMediaRecord(v *mediaView, rec *store.Media) {
+	if rec == nil {
+		return
+	}
+	if rec.Mime != "" {
+		v.Mime = rec.Mime
+	}
+	if rec.Name != "" {
+		v.Name = rec.Name
+	}
+	if rec.Size > 0 {
+		v.Size = rec.Size
+	}
+	if rec.Width > 0 {
+		v.Width = uint32(rec.Width)
+	}
+	if rec.Height > 0 {
+		v.Height = uint32(rec.Height)
+	}
+	if rec.DurationMS > 0 {
+		v.DurationMs = uint32(rec.DurationMS)
+	}
+	if rec.ThumbData != "" {
+		v.ThumbInline = rec.ThumbData
+	}
+	if w := parseWaveform(rec.Waveform); len(w) > 0 {
+		v.Waveform = w
+	}
+	v.Status = mediaStatusFromStore(rec.Status)
+}
+
+// mediaStatusFromStore maps the numeric media_media.status to the client's
+// string enum: 0 scanning → pending, 1 usable → ready, 2 violation → failed.
+// An unknown value degrades to "pending" (never "ready": claiming a usable
+// asset for a row we do not understand is the unsafe direction).
+func mediaStatusFromStore(status int) string {
+	switch status {
+	case 1:
+		return mediaStatusReady
+	case 2:
+		return mediaStatusFailed
+	case 0:
+		return mediaStatusPending
+	default:
+		return mediaStatusPending
+	}
+}
+
+// parseWaveform parses the stored waveform column (a JSON array of 0-100
+// ints) into a bounded int slice. A malformed column yields nil (the client
+// then falls back to its pseudo-random shape) — never an error.
+func parseWaveform(raw string) []int {
+	if raw == "" {
+		return nil
+	}
+	var out []int
+	if err := json.Unmarshal([]byte(raw), &out); err != nil {
+		return nil
+	}
+	if len(out) > maxWaveformSamples {
+		out = out[:maxWaveformSamples]
+	}
+	for i, v := range out {
+		if v < 0 {
+			out[i] = 0
+		}
+		if v > 100 {
+			out[i] = 100
+		}
+	}
+	return out
+}
+
+// maxWaveformSamples bounds the waveform array (the frontend slices to 24).
+const maxWaveformSamples = 24
 
 // emit sends the ack env for one message (status 0 = ok) on the outbound
 // lane. Non-blocking: the lane is bounded and the client's retry path
 // (dedup memory + DB UNIQUE) is the safety net for a dropped ack.
 func (f *flusher) emit(m store.PendingMsg, status uint32, reason string) {
 	e := buildAckEnv(m.SenderID, m.Cid, m.ClientMsgID, m.MsgID, m.Seq, status)
-	select {
-	case f.out <- e:
-	default:
-		f.lg.Warn("flusher: outbound lane full; ack dropped (retry will dedup)")
-	}
+	// ACK goes through the full-capacity path: bulk fan-out is capped below the
+	// high-water mark so the round trip the client is waiting on always fits.
+	f.putAck(e)
 }

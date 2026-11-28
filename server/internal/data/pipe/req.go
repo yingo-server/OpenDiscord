@@ -1,8 +1,8 @@
 package pipe
 
 import (
-	"github.com/yingo-server/OpenChat/server/internal/proto"
-	"github.com/yingo-server/OpenChat/server/internal/transport"
+	"github.com/yingo-server/UFOT/server/internal/proto"
+	"github.com/yingo-server/UFOT/server/internal/transport"
 )
 
 // req.go — Req view + FrameSource (see req comment in pipe.go).
@@ -29,8 +29,22 @@ type Req struct {
 type FrameSource func(*proto.Frame) Req
 
 // ShellFrameSource is the default FrameSource (kind shell only).
+//
+// It must carry the payload across: frames that are NOT wrapped in an
+// InternalFrame (e.g. the user layer's presence connect/disconnect events)
+// reach the pipe as bare envelopes, and dropping their payload made the
+// data layer parse an empty body (uid 0) — the event was silently dropped.
 func ShellFrameSource(f *proto.Frame) Req {
-	return Req{Kind: f.Kind, Frame: f}
+	r := Req{Kind: f.Kind, Frame: f}
+	if f != nil && f.Env != nil {
+		r.Payload = f.Env.GetPayload()
+		r.ConvID = f.Env.GetConvId()
+		r.RequestID = f.Env.GetRequestId()
+		if uid := f.Env.GetUserId(); uid > 0 {
+			r.UserID = uint64(uid)
+		}
+	}
+	return r
 }
 
 // EmitFunc converts an outbound env into a transport frame for Peer.Send.
@@ -41,9 +55,10 @@ type EmitFunc func(*env) *proto.Frame
 // DefaultEmit is the shell converter.
 func DefaultEmit(e *env) *proto.Frame { return &proto.Frame{Kind: e.Kind} }
 
-// Emit is the installed converter (see EmitFunc). Called from the sender
-// goroutine only.
-var Emit EmitFunc = DefaultEmit
+// emitFor is the per-Pipe converter. It used to be a package-level global,
+// which meant two Pipes in one process (two chatd assemblies in tests, or a
+// future split deployment) overwrote each other's emitter — CI -race caught
+// exactly that. Kept as a method so the wiring is per instance.
 
 // TestPeer is a minimal transport.Peer for pipe tests (chan-based).
 type TestPeer struct {
@@ -67,6 +82,9 @@ func (t *TestPeer) Send(f *proto.Frame) error {
 	}
 }
 func (t *TestPeer) Frames() <-chan *proto.Frame { return t.in }
+
+// Out exposes the outbound lane for tests that pump sendOne concurrently.
+func (t *TestPeer) Out() <-chan *proto.Frame { return t.out }
 func (t *TestPeer) Close() error {
 	select {
 	case <-t.closed:
@@ -100,12 +118,12 @@ var _ transport.Peer = (*TestPeer)(nil)
 // unexported env type. The adapter receives the plain fields, so cmd/ can build
 // a *proto.Frame (Envelope + FrameMeta) while the pipe keeps its wire-agnostic
 // outbound representation.
-func SetEmit(fn func(kind uint32, requestID string, convID, userID uint64, payload []byte) *proto.Frame) {
+func (p *Pipe) SetEmit(fn func(kind uint32, requestID string, convID, userID uint64, payload []byte) *proto.Frame) {
 	if fn == nil {
-		Emit = DefaultEmit
+		p.emit = DefaultEmit
 		return
 	}
-	Emit = func(e *env) *proto.Frame {
+	p.emit = func(e *env) *proto.Frame {
 		if e == nil {
 			return nil
 		}

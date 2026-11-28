@@ -5,16 +5,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yingo-server/OpenChat/server/internal/pkg/featureflags"
-	"github.com/yingo-server/OpenChat/server/internal/proto"
-	"github.com/yingo-server/OpenChat/server/internal/proto/gen/chatpb"
-	"github.com/yingo-server/OpenChat/server/internal/proto/kinds"
-	"github.com/yingo-server/OpenChat/server/internal/transport"
-	"github.com/yingo-server/OpenChat/server/internal/user/core/policy"
-	"github.com/yingo-server/OpenChat/server/internal/user/core/session"
-	"github.com/yingo-server/OpenChat/server/internal/user/net/bridge"
-	"github.com/yingo-server/OpenChat/server/internal/user/net/frame"
-	"github.com/yingo-server/OpenChat/server/internal/user/net/limit"
+	"github.com/yingo-server/UFOT/server/internal/pkg/featureflags"
+	"github.com/yingo-server/UFOT/server/internal/proto"
+	"github.com/yingo-server/UFOT/server/internal/proto/gen/chatpb"
+	"github.com/yingo-server/UFOT/server/internal/proto/kinds"
+	"github.com/yingo-server/UFOT/server/internal/transport"
+	"github.com/yingo-server/UFOT/server/internal/user/core/policy"
+	"github.com/yingo-server/UFOT/server/internal/user/core/session"
+	"github.com/yingo-server/UFOT/server/internal/user/net/bridge"
+	"github.com/yingo-server/UFOT/server/internal/user/net/frame"
+	"github.com/yingo-server/UFOT/server/internal/user/net/limit"
 )
 
 // ---------- fakes ----------
@@ -122,7 +122,20 @@ func newTestRouter(t *testing.T) (*Router, *fakeSession, *fakePeer) {
 	lim := limit.New(cfg.Limits)
 	peer := newFakePeer()
 	fwd := bridge.NewForwarder(peer, nil, 100)
-	return New(sess, lim, pol, fwd, featureflags.New(), nil), sess, peer
+	return New(sess, lim, pol, fwd, newOffFlags(), nil), sess, peer
+}
+
+// newOffFlags 显式 off 快照（§F.2）：不依赖 Defaults()——1.4 转生产后
+// Defaults() 已将 universal_pull / adaptive_control / v3_bus / msg_domain_v2
+// 默认开启，需要 off 基线的测试必须显式构造。
+func newOffFlags() *featureflags.Flags {
+	return featureflags.NewFromMap(map[string]any{
+		featureflags.KeyUniversalPullEnabled:   false,
+		featureflags.KeyAdaptiveControlEnabled: false,
+		featureflags.KeyV3BusEnabled:           false,
+		featureflags.KeyV3BusPercent:           0,
+		featureflags.KeyMsgDomainV2:            false,
+	})
 }
 
 // ---------- upstream ----------
@@ -279,7 +292,7 @@ func TestRateLimitThrottle(t *testing.T) {
 	pol := policy.New(cfg)
 	lim := limit.New(cfg.Limits)
 	fwd := bridge.NewForwarder(newFakePeer(), nil, 10)
-	r := New(sess, lim, pol, fwd, featureflags.New(), nil)
+	r := New(sess, lim, pol, fwd, newOffFlags(), nil)
 	c := &fakeConn{id: 1, uid: 2}
 	sess.add(c)
 	env := &chatpb.Envelope{Kind: kinds.KindMsgSend}
@@ -294,4 +307,34 @@ func TestRateLimitThrottle(t *testing.T) {
 		t.Fatalf("kind = %d", e.Kind)
 	}
 	_ = time.Now()
+}
+
+// TestRateLimitedCarriesAckID：V2-0 容量契约——RATE_LIMITED 带触发帧的 Envelope.Id，
+// 客户端据此把 in-flight 消息立即标记失败（零协议改动，AckId 是现成字段）。
+func TestRateLimitedCarriesAckID(t *testing.T) {
+	sess := newFakeSession()
+	cfg := policy.Default()
+	cfg.Limits = limit.DefaultConfig()
+	cfg.Limits.Rules = map[uint32]limit.Rule{kinds.KindMsgSend: {Rate: 0.001, Burst: 1, Capacity: 1}}
+	pol := policy.New(cfg)
+	lim := limit.New(cfg.Limits)
+	fwd := bridge.NewForwarder(newFakePeer(), nil, 10)
+	r := New(sess, lim, pol, fwd, newOffFlags(), nil)
+	c := &fakeConn{id: 7, uid: 8}
+	sess.add(c)
+	const triggerID = uint64(4242)
+	// 第一帧正常放行（消耗唯一令牌），第二帧带明确 Id 触发限流。
+	r.HandleUpstream(&UpEvent{Conn: c, Env: &chatpb.Envelope{Id: 1, Kind: kinds.KindMsgSend}})
+	r.HandleUpstream(&UpEvent{Conn: c, Env: &chatpb.Envelope{Id: triggerID, Kind: kinds.KindMsgSend}})
+	frames := c.frames()
+	if len(frames) != 1 {
+		t.Fatalf("got %d frames, want 1 RATE_LIMITED", len(frames))
+	}
+	e, _ := frame.Decode(frames[0])
+	if e.Kind != kinds.KindRateLimited {
+		t.Fatalf("kind = %d, want RATE_LIMITED", e.Kind)
+	}
+	if e.AckId != triggerID {
+		t.Fatalf("AckId = %d, want trigger env.Id %d", e.AckId, triggerID)
+	}
 }
