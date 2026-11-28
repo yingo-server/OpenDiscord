@@ -22,10 +22,10 @@ import (
 
 // ops for the 940 IDENTITY_DATA lane.
 const (
-	OpUpsertUser  = 1
-	OpGetUser     = 2
-	OpGetBan      = 3
-	OpSetBan      = 4
+	OpUpsertUser = 1
+	OpGetUser    = 2
+	OpGetBan     = 3
+	OpSetBan     = 4
 	// OpSearchUser returns public profiles matching a keyword. It exists so
 	// a separately hosted client can pick a user to start a chat with.
 	OpSearchUser = 5
