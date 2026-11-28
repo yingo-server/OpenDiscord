@@ -26,6 +26,8 @@ interface MsgState {
   applyNew: (convId: number, payload: Record<string, unknown>) => void;
   applyTombstone: (convId: number, msgId: number, tombstone: boolean) => void;
   applyReceipt: (convId: number, payload: Record<string, unknown>) => void;
+  setStatus: (convId: number, msgId: number, status: MessageStatus) => void;
+  updateText: (convId: number, msgId: number, text: string) => void;
   setTyping: (convId: number, userId: number, typing: boolean) => void;
   listOf: (convId: number) => ChatMessage[];
   markRead: (convId: number, msgId: number) => void;
@@ -169,6 +171,28 @@ export const useMsgStore = create<MsgState>((set, get) => ({
       return m;
     });
     set({ messages: { ...get().messages, [convId]: next } });
+  },
+
+  setStatus(convId, msgId, status) {
+    const list = get().messages[convId];
+    if (!list) return;
+    set({
+      messages: {
+        ...get().messages,
+        [convId]: list.map((m) => (m.msgId === msgId ? { ...m, status } : m)),
+      },
+    });
+  },
+
+  updateText(convId, msgId, text) {
+    const list = get().messages[convId];
+    if (!list) return;
+    set({
+      messages: {
+        ...get().messages,
+        [convId]: list.map((m) => (m.msgId === msgId ? { ...m, text } : m)),
+      },
+    });
   },
 
   setTyping(convId, userId, typing) {

@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Avatar, Button, EmptyState, IconButton } from '@/ui/primitives/controls';
+import { Icon } from '@/ui/primitives/Icon';
+import { Avatar, Button, EmptyState, IconButton, TextInput } from '@/ui/primitives/controls';
 import { Dialog } from '@/ui/primitives/Dialog';
 import { MessageList } from './MessageList';
 import { Composer } from './Composer';
@@ -10,7 +11,7 @@ import { useConvStore } from '@/core/store/conv';
 import { useMsgStore } from '@/core/store/msg';
 import { useAuthStore } from '@/core/store/auth';
 import { useUiStore } from '@/core/store/ui';
-import { requestSync, sendReceipt, sendMutation, sendForward } from '@/core/store/bridge';
+import { requestSync, sendReceipt, sendMutation, sendForward, sendMessage, sendEdit } from '@/core/store/bridge';
 
 const NO_TYPING: readonly number[] = [];
 
@@ -64,16 +65,59 @@ export function ChatPage() {
     pushToast('已删除', 'info');
   };
 
+  const [editOpen, setEditOpen] = useState(false);
+  const [editMsgId, setEditMsgId] = useState(0);
+  const [editText, setEditText] = useState('');
+  const [forwardOpen, setForwardOpen] = useState(false);
+  const [forwardMsgId, setForwardMsgId] = useState(0);
+  const [forwardTarget, setForwardTarget] = useState(0);
+
+  const handleEdit = (msgId: number, text: string) => {
+    setEditMsgId(msgId);
+    setEditText(text);
+    setEditOpen(true);
+  };
+
+  const submitEdit = () => {
+    if (!editText.trim() || !editMsgId) return;
+    sendEdit(convId, editMsgId, editText.trim());
+    useMsgStore.getState().updateText(convId, editMsgId, editText.trim());
+    setEditOpen(false);
+    setEditMsgId(0);
+  };
+
   const handleForward = (msgId: number) => {
-    const target = Object.values(useConvStore.getState().conversations).find(
-      (c) => c.convId !== convId,
-    );
-    if (!target) {
+    setForwardMsgId(msgId);
+    const others = Object.values(useConvStore.getState().conversations).filter((c) => c.convId !== convId);
+    setForwardTarget(others[0]?.convId ?? 0);
+    if (!others.length) {
       pushToast('暂时没有其他会话可以转发', 'warn');
       return;
     }
-    sendForward(convId, target.convId, msgId);
-    pushToast(`已转发到「${target.title || target.convId}」`, 'info');
+    setForwardOpen(true);
+  };
+
+  const submitForward = () => {
+    if (!forwardTarget || !forwardMsgId) return;
+    sendForward(convId, forwardTarget, forwardMsgId);
+    const target = useConvStore.getState().conversations[forwardTarget];
+    pushToast(`已转发到「${target?.title || forwardTarget}」`, 'info');
+    setForwardOpen(false);
+  };
+
+  const handleRetry = (msgId: number) => {
+    const message = list.find((m) => m.msgId === msgId);
+    if (!message) return;
+    useMsgStore.getState().setStatus(convId, msgId, 'pending');
+    const ok = sendMessage({
+      convId,
+      text: message.text,
+      media: message.media,
+      replyTo: message.replyTo,
+      mentions: message.mentions,
+      clientMsgId: message.clientMsgId ?? `retry-${Date.now()}`,
+    });
+    if (!ok) useMsgStore.getState().setStatus(convId, msgId, 'failed');
   };
 
   if (!convId) {
@@ -108,7 +152,29 @@ export function ChatPage() {
         onRecall={handleRecall}
         onDelete={handleDelete}
         onForward={handleForward}
+        onEdit={handleEdit}
+        onRetry={handleRetry}
       />
+
+      <Dialog open={editOpen} onClose={() => setEditOpen(false)} title="编辑消息"
+        actions={<><Button onClick={() => setEditOpen(false)}>取消</Button><Button variant="primary" onClick={submitEdit}>保存</Button></>}>
+        <TextInput value={editText} onChange={(e) => setEditText(e.target.value)} maxLength={2000} aria-label="消息内容" />
+      </Dialog>
+
+      <Dialog open={forwardOpen} onClose={() => setForwardOpen(false)} title="转发到"
+        actions={<><Button onClick={() => setForwardOpen(false)}>取消</Button><Button variant="primary" disabled={!forwardTarget} onClick={submitForward}>转发</Button></>}>
+        <div className="uf-col" style={{ gap: 'var(--sp-2)' }}>
+          {Object.values(useConvStore.getState().conversations)
+            .filter((c) => c.convId !== convId)
+            .map((c) => (
+              <button key={c.convId} type="button" className="uf-conv" onClick={() => setForwardTarget(c.convId)}
+                style={{ background: forwardTarget === c.convId ? 'var(--surface-2)' : undefined }}>
+                <span className="uf-grow truncate">{c.title || `会话 ${c.convId}`}</span>
+                {forwardTarget === c.convId ? <Icon name="check" size="sm" /> : null}
+              </button>
+            ))}
+        </div>
+      </Dialog>
 
       <Composer convId={convId} />
     </>
@@ -128,7 +194,7 @@ export function ConversationInfoDialog({
   const conv = useConvStore((s) => s.conversations[convId]);
   const togglePinned = useConvStore((s) => s.togglePinned);
   const toggleMuted = useConvStore((s) => s.toggleMuted);
-  const pushToast = useUiStore((s) => s.pushToast);
+  const pushToast = useUiStore.getState().pushToast;
 
   return (
     <Dialog open={open} onClose={onClose} title="会话信息">

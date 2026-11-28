@@ -121,11 +121,14 @@ async function parseBody(response: Response, expect: RequestOptions['expect']): 
   }
 }
 
+import { appendDebug, redactHeaders, summarizeBody } from '@/core/debug/db';
+
 /** 发起一次 API 请求；失败一律抛 ApiError（带 code / status / retryAfterMs）。 */
 export async function request<T = unknown>(
   path: string,
   options: RequestOptions = {},
 ): Promise<T> {
+  const started = Date.now();
   const {
     method = 'GET',
     body,
@@ -161,7 +164,17 @@ export async function request<T = unknown>(
       credentials: withCredentials ? 'include' : 'omit',
       signal,
     });
+    void appendDebug({
+      kind: 'http', direction: 'out', method, url, status: response.status,
+      headers: redactHeaders(finalHeaders), body: summarizeBody(body), durationMs: Date.now() - started,
+    });
   } catch (cause) {
+    void appendDebug({
+      kind: 'error', direction: 'out', method, url,
+      headers: redactHeaders(finalHeaders), body: summarizeBody(body),
+      durationMs: Date.now() - started,
+      error: cause instanceof Error ? cause.message : String(cause),
+    });
     throw new ApiError({
       code: 'NETWORK_ERROR',
       message: cause instanceof Error ? cause.message : '网络请求失败',
@@ -170,6 +183,10 @@ export async function request<T = unknown>(
   }
 
   const parsed = await parseBody(response, expect);
+  void appendDebug({
+    kind: 'http', direction: 'in', method, url, status: response.status,
+    body: summarizeBody(parsed), durationMs: Date.now() - started, ok: response.ok,
+  });
   if (!response.ok) {
     throw new ApiError(normalizeErrorBody(parsed, response.status));
   }

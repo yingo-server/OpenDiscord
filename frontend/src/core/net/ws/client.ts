@@ -10,6 +10,7 @@
 import { decodeFrame, encodeFrame, frameByteLength, WS_MAX_FRAME_BYTES } from './codec';
 import { Kind } from './kinds';
 import type { DecodedFrame } from './codec';
+import { appendDebug } from '@/core/debug/db';
 
 export type ConnectionState = 'idle' | 'connecting' | 'open' | 'reconnecting' | 'closed' | 'failed';
 
@@ -120,6 +121,11 @@ export class WsClient {
     socket.onmessage = (event) => {
       if (typeof event.data !== 'string') return;
       const frame = decodeFrame(event.data);
+      void appendDebug({
+        kind: 'ws-recv', direction: 'in', url: this.options.url,
+        body: event.data.length > 2000 ? `${event.data.slice(0, 2000)}…` : event.data,
+        error: frame ? `kind=${frame.kind} req=${frame.requestId || '-'}` : 'decode-failed',
+      });
       if (!frame) return;
       if (frame.kind === Kind.ERROR) {
         const code = Number(frame.payload?.code ?? 0);
@@ -190,6 +196,11 @@ export class WsClient {
       return false;
     }
     socket.send(text);
+    void appendDebug({
+      kind: 'ws-send', direction: 'out', url: this.options.url,
+      body: text.length > 2000 ? `${text.slice(0, 2000)}…` : text,
+      error: `kind=${kind} req=${options.requestId || '-'}`,
+    });
     return true;
   }
 

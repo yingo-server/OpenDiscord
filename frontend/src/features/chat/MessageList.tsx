@@ -33,6 +33,8 @@ export interface MessageListProps {
   onRecall: (msgId: number) => void;
   onDelete: (msgId: number) => void;
   onForward: (msgId: number) => void;
+  onEdit: (msgId: number, text: string) => void;
+  onRetry: (msgId: number) => void;
 }
 
 export function MessageList({
@@ -41,6 +43,8 @@ export function MessageList({
   onRecall,
   onDelete,
   onForward,
+  onEdit,
+  onRetry,
 }: MessageListProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [atBottom, setAtBottom] = useState(true);
@@ -136,10 +140,16 @@ export function MessageList({
                 {mine && !message.tombstone ? (
                   <span className="uf-bubble__actions">
                     <IconButton icon="reply" label="回复" size="sm" onClick={() => setReplyTo(message)} />
+                    <IconButton icon="edit" label="编辑" size="sm" onClick={() => onEdit(message.msgId, message.text)} />
                     <IconButton icon="forward" label="转发" size="sm" onClick={() => onForward(message.msgId)} />
                     <IconButton icon="trash" label="删除" size="sm" danger onClick={() => onDelete(message.msgId)} />
                     <IconButton icon="warning" label="撤回" size="sm" danger onClick={() => onRecall(message.msgId)} />
                   </span>
+                ) : null}
+                {mine && message.status === 'failed' ? (
+                  <button type="button" className="uf-retry" onClick={() => onRetry(message.msgId)}>
+                    发送失败，点此重试
+                  </button>
                 ) : null}
               </div>
               {mine ? <span className="uf-bubble-row__spacer" /> : null}

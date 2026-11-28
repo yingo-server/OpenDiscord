@@ -7,6 +7,7 @@ import { LoginPage } from '@/features/auth/LoginPage';
 import { ChatLayout } from '@/features/chat/ChatLayout';
 import { ChatPage } from '@/features/chat/ChatPage';
 import { SettingsPage } from '@/features/settings/SettingsPage';
+import { DebugPage } from '@/features/debug/DebugPage';
 import { EmptyState } from '@/ui/primitives/controls';
 import { useAuthStore } from '@/core/store/auth';
 import type { ReactElement } from 'react';
@@ -18,7 +19,9 @@ function RouteEffects() {
       ? '会话'
       : pathname.startsWith('/me')
         ? '我的'
-        : pathname.startsWith('/login')
+        : pathname.startsWith('/debug')
+          ? '调试日志'
+          : pathname.startsWith('/login')
           ? '登录'
           : 'UFOT';
     document.title = `${title} · UFOT`;
@@ -68,6 +71,7 @@ export function AppRoutes() {
             <Route path=":convId" element={<ChatPage />} />
           </Route>
           <Route path="/me" element={<SettingsPage />} />
+          <Route path="/debug" element={<DebugPage />} />
           <Route path="*" element={<Navigate to="/chats" replace />} />
         </Route>
       </Routes>

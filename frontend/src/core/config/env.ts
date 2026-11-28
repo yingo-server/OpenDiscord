@@ -11,8 +11,6 @@ export interface AppEnv {
   apiBase: string;
   /** WebSocket 全 URL */
   wsUrl: string;
-  /** 管理面 /api/v1 基址；与 apiBase 同源时复用 */
-  adminBase: string;
   /** Web Push VAPID 公钥（Base64URL），空串表示未配置 */
   vapidPublicKey: string;
 }
@@ -20,7 +18,6 @@ export interface AppEnv {
 export interface RawEnv {
   VITE_API_BASE?: string;
   VITE_WS_URL?: string;
-  VITE_ADMIN_BASE?: string;
   VITE_VAPID_PUBLIC_KEY?: string;
 }
 
@@ -43,11 +40,9 @@ export function deriveWsUrl(apiBase: string, origin: string): string {
 export function resolveEnv(raw: RawEnv, origin: string): AppEnv {
   const apiBase = normalizeBase(raw.VITE_API_BASE || origin);
   const wsUrl = raw.VITE_WS_URL ? normalizeBase(raw.VITE_WS_URL) : deriveWsUrl(apiBase, origin);
-  const adminBase = normalizeBase(raw.VITE_ADMIN_BASE || apiBase);
   return {
     apiBase,
     wsUrl,
-    adminBase,
     vapidPublicKey: raw.VITE_VAPID_PUBLIC_KEY || '',
   };
 }
@@ -69,7 +64,6 @@ export const env: AppEnv = resolveEnv(
   {
     VITE_API_BASE: import.meta.env.VITE_API_BASE,
     VITE_WS_URL: import.meta.env.VITE_WS_URL,
-    VITE_ADMIN_BASE: import.meta.env.VITE_ADMIN_BASE,
     VITE_VAPID_PUBLIC_KEY: import.meta.env.VITE_VAPID_PUBLIC_KEY,
   },
   typeof location === 'undefined' ? 'http://localhost' : location.origin,
