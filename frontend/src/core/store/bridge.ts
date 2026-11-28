@@ -245,14 +245,18 @@ export function requestGetUser(userId: number): Promise<{ ok: boolean; body?: un
   return requestWithReply(Kind.IDENTITY_REQUEST, { op: 2, userId });
 }
 
-/** 列出我的会话（kind 930 op7）。 */
+function encodeBody(value: unknown): string {
+  return btoa(JSON.stringify(value ?? {}));
+}
+
+/** 列出我的会话（kind 930 op7）：930 的 op 与参数都放在帧的 payload 里。 */
 export function requestListMyConversations(): Promise<{ ok: boolean; body?: unknown }> {
   return requestWithReply(Kind.CONV_DATA_REQUEST, { op: 7, body: '' });
 }
 
-/** 搜索用户（kind 940 op5）。 */
+/** 搜索用户（kind 940 op5）：940 的 op 在 payload，业务参数在 body(base64 JSON)。 */
 export function requestSearchUsers(query: string): Promise<{ ok: boolean; body?: unknown }> {
-  return requestWithReply(Kind.IDENTITY_REQUEST, { op: 5, query });
+  return requestWithReply(Kind.IDENTITY_REQUEST, { op: 5, body: encodeBody({ query }) });
 }
 
 function handleFrame(frame: {
