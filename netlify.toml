@@ -19,8 +19,13 @@
 
 [build.environment]
   NODE_VERSION = "22"
-  # 构建期零 env 注入：VITE_* 留空 → 运行时回退同源。
-  # 实际后端地址部署后在 Netlify UI 配置（不入库），见 README。
+  # 后端地址（构建期注入）。开源默认指向本仓库配套的公共后端；
+  # 自建部署者可在这里改成自己的地址，或改用 Netlify UI 的
+  # Environment variables（UI 值优先级更高，会覆盖这里的值）。
+  VITE_API_BASE = "https://server.344977.xyz:3004"
+  VITE_WS_URL = "wss://server.344977.xyz:3004/ws"
+  VITE_ADMIN_BASE = "https://server.344977.xyz:3004"
+  VITE_VAPID_PUBLIC_KEY = ""
 
 # SPA 使用 HashRouter（#/chats/...），静态托管无需 rewrite 兜底；
 # 保留一条兜底以防直接访问裸路径。
