@@ -137,7 +137,7 @@ rate_limit_enabled = %[2]t
 		return nil, "", err
 	}
 	if err := os.WriteFile(filepath.Join(dir, "policy.json"),
-		[]byte(`{"hot_retention_days": 90}`), 0o600); err != nil {
+		[]byte(`{"hot_retention_days":90,"auth":{"methods":{"guest":true}}}`), 0o600); err != nil {
 		return nil, "", err
 	}
 	os.MkdirAll(filepath.Join(dir, "keys"), 0o750)
@@ -662,6 +662,10 @@ func runLadder(base string, start, maxConns, secs int, interval time.Duration, c
 	seedDB := dbPathFromEnv()
 	if seedDB == "" {
 		seedDB = filepath.Join(dir, "hot.db")
+	}
+	if len(pool) == 0 || convMembers <= 0 {
+		fmt.Println("no registered users; aborting ladder before load")
+		os.Exit(2)
 	}
 	convIDs, err := seedConvs(seedDB, uids, convMembers, numConvsMax)
 	if err != nil {
