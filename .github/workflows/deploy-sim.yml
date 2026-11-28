@@ -10,9 +10,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release tag to install (e.g. v2.0.1); must be a published release'
+        description: 'Release tag to install (e.g. v2.4.0); must be a published release'
         required: false
-        default: 'v2.0.1'
+        default: 'v2.4.0'
   push:
     paths:
       - 'deploy/**'
@@ -34,7 +34,7 @@ jobs:
           set -euo pipefail
           ROOT="$RUNNER_TEMP/ufot-deploy"
           SRC="$GITHUB_WORKSPACE"
-          VER="${{ github.event.inputs.version || 'v2.0.1' }}"
+          VER="${{ github.event.inputs.version || 'v2.4.0' }}"
           mkdir -p "$ROOT"/{prefix,etc,state,units,journald} "$ROOT/repo"
           # Download the ACTUAL published release tarball — no local build,
           # no mocks. This is the exact artifact users install.
