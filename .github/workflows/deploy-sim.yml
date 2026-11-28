@@ -148,13 +148,13 @@ jobs:
           sudo openssl req -x509 -newkey rsa:2048 -sha256 -days 2 -nodes \
             -keyout "$CERTDIR/tls.key" -out "$CERTDIR/tls.crt" \
             -subj "/CN=localhost" -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" 2>/dev/null
-          sudo tee -a "$UFOT_ETC/ufot.toml" > /dev/null <<TOMLEOF
+          sudo tee -a "$UFOT_ETC/ufot.toml" > /dev/null <<'TOMLEOF'
 
-# --- deploy-sim coverage (appended; not part of the packaged template) ---
-tls_cert = "$CERTDIR/tls.crt"
-tls_key = "$CERTDIR/tls.key"
-cookie_same_site = "none"
-TOMLEOF
+          # --- deploy-sim coverage (appended; not part of the packaged template) ---
+          tls_cert = "$CERTDIR/tls.crt"
+          tls_key = "$CERTDIR/tls.key"
+          cookie_same_site = "none"
+          TOMLEOF
           sudo env APP_ENV=dev UFOT_CONFIG="$UFOT_ETC/ufot.toml" \
             "$ROOT/repo/dist/chatd" --config "$UFOT_ETC/ufot.toml" \
             > "$ROOT/chatd-boot.log" 2>&1 &
