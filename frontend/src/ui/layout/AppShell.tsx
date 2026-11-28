@@ -53,7 +53,7 @@ export function AppShell() {
         </button>
       </nav>
 
-      <main className="uf-main"><Outlet /></main>
+      <main id="main" className="uf-main"><Outlet /></main>
 
       <nav className="uf-bottomtabs" aria-label="底部导航">
         <NavLink to="/chats" className={({ isActive }) => `uf-bottomtabs__item${isActive ? ' uf-bottomtabs__item--active' : ''}`}>

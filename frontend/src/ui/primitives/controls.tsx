@@ -87,6 +87,8 @@ export interface FieldProps {
 
 export function Field({ label, hint, error, children }: FieldProps) {
   const id = useId();
+  const errorId = `${id}-error`;
+  const hintId = `${id}-hint`;
   return (
     <div className="uf-field">
       {label ? (
@@ -95,7 +97,15 @@ export function Field({ label, hint, error, children }: FieldProps) {
         </label>
       ) : null}
       {children(id)}
-      {error ? <span className="uf-error">{error}</span> : hint ? <span className="uf-hint">{hint}</span> : null}
+      {error ? (
+        <span id={errorId} className="uf-error" role="alert">
+          {error}
+        </span>
+      ) : hint ? (
+        <span id={hintId} className="uf-hint">
+          {hint}
+        </span>
+      ) : null}
     </div>
   );
 }
@@ -134,17 +144,28 @@ export interface TabsProps<T extends string> {
 }
 
 export function Tabs<T extends string>({ value, options, onChange, ariaLabel }: TabsProps<T>) {
+  const handleKeyDown = (event: React.KeyboardEvent, index: number) => {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    event.preventDefault();
+    const delta = event.key === 'ArrowRight' ? 1 : -1;
+    const next = (index + delta + options.length) % options.length;
+    const option = options[next];
+    if (option && !option.disabled) onChange(option.value);
+  };
+
   return (
-    <div className="uf-tabs" role="tablist" aria-label={ariaLabel}>
-      {options.map((option) => (
+    <div className="uf-tabs" role="radiogroup" aria-label={ariaLabel}>
+      {options.map((option, index) => (
         <button
           key={option.value}
-          role="tab"
+          role="radio"
           type="button"
           className="uf-tab"
-          aria-selected={option.value === value}
+          aria-checked={option.value === value}
+          tabIndex={option.value === value ? 0 : -1}
           disabled={option.disabled}
           onClick={() => onChange(option.value)}
+          onKeyDown={(event) => handleKeyDown(event, index)}
         >
           {option.label}
         </button>

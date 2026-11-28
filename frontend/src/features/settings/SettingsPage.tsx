@@ -183,7 +183,7 @@ export function SettingsPage() {
           <div className="uf-row">
             <Icon name="bell" />
             <span className="uf-grow">Web Push 通知</span>
-            <Button onClick={() => void enablePush()}>开启</Button>
+            <Button onClick={() => void enablePush()} disabled={!env.vapidPublicKey}>开启</Button>
           </div>
           <div className="uf-faint" style={{ marginTop: 'var(--sp-2)' }}>
             如无法开启通知，请稍后再试或联系管理员。
@@ -200,7 +200,9 @@ export function SettingsPage() {
         </section>
 
         <section className="uf-card">
-          <Button variant="danger" icon="logout" onClick={() => void auth.logout()}>
+          <Button variant="danger" icon="logout" onClick={() => {
+            if (window.confirm('退出后需要重新登录。确定退出吗？')) void auth.logout();
+          }}>
             退出登录
           </Button>
         </section>

@@ -19,20 +19,11 @@
 
 [build.environment]
   NODE_VERSION = "22"
-  # 后端地址（构建期注入）。开源默认指向本仓库配套的公共后端；
-  # 自建部署者可在这里改成自己的地址，或改用 Netlify UI 的
-  # Environment variables（UI 值优先级更高，会覆盖这里的值）。
-  VITE_API_BASE = "https://server.344977.xyz:3004"
-  VITE_WS_URL = "wss://server.344977.xyz:3004/ws"
-  VITE_ADMIN_BASE = "https://server.344977.xyz:3004"
-  VITE_VAPID_PUBLIC_KEY = ""
+  # 后端地址不入库。请在 Netlify UI 注入：
+  #   VITE_API_BASE / VITE_WS_URL / VITE_VAPID_PUBLIC_KEY
+  # 同域部署时三者都可留空。
 
-# SPA 使用 HashRouter（#/chats/...），静态托管无需 rewrite 兜底；
-# 保留一条兜底以防直接访问裸路径。
-[[redirects]]
-  from = "/*"
-  to = "/index.html"
-  status = 200
+# SPA 使用 HashRouter（#/chats/...），静态托管无需 rewrite。
 
 # 安全响应头（静态资源通用基线）
 [[headers]]

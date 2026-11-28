@@ -51,12 +51,14 @@ export function ChatPage() {
   const title = conv?.title || (convId ? `会话 ${convId}` : '会话');
 
   const handleRecall = (msgId: number) => {
+    if (!window.confirm('撤回后所有人都会看到「消息已撤回」。确定撤回吗？')) return;
     sendMutation(convId, msgId, true);
     useMsgStore.getState().applyTombstone(convId, msgId, true);
     pushToast('正在撤回', 'info');
   };
 
   const handleDelete = (msgId: number) => {
+    if (!window.confirm('删除后这条消息将不再显示。确定删除吗？')) return;
     sendMutation(convId, msgId, false);
     useMsgStore.getState().applyTombstone(convId, msgId, true);
     pushToast('已删除', 'info');

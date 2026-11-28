@@ -95,6 +95,7 @@
   outline-offset: 1px;
 }
 .uf-textarea { resize: none; line-height: 1.45; }
+.uf-input--invalid { border-bottom-color: var(--accent-dark); }
 .uf-hint { font-size: var(--fs-xs); color: var(--text-faint); }
 .uf-error { font-size: var(--fs-xs); color: var(--accent); }
 
@@ -120,7 +121,7 @@
   padding: 0 var(--sp-2);
 }
 .uf-tab:hover { color: var(--text); }
-.uf-tab[aria-selected='true'] { color: var(--primary); border-bottom-color: var(--primary); }
+.uf-tab[aria-checked='true'] { color: var(--primary); box-shadow: inset 0 -3px 0 0 var(--primary); }
 
 /* 徽标：MD1 彩色圆点 */
 .uf-badge {
