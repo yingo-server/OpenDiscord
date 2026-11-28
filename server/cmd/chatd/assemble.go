@@ -360,7 +360,7 @@ func newAssembly(cfg *config, lg *log.Logger) (*assembly, error) {
 				panic(fmt.Sprintf("chatd: invalid cookie_same_site %q (want lax|none)", cfg.CookieSameSite))
 			}
 		}(),
-		Logger:        log.For("authsvc"),
+		Logger: log.For("authsvc"),
 		// The login-method switches live in policy.json ("auth.methods").
 		// The closure reads the LIVE snapshot, so a policy reload (SIGHUP)
 		// flips a login method without a restart.

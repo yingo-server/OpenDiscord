@@ -86,8 +86,9 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
           VER="$(git describe --tags --always 2>/dev/null | tr -d '\n' | tr -c 'A-Za-z0-9._-' '-')"
-          tar -czf "../ufot-web-$VER-dist.tar.gz" -C dist .
-          mv ../ufot-web-$VER-dist.tar.gz "$GITHUB_WORKSPACE/"
+          # GITHUB_WORKSPACE 就是 repo 根，working-directory=frontend 下的 ..
+          # 已经指向它，直接写到工作区内固定路径，避免 mv 自身。
+          tar -czf "$GITHUB_WORKSPACE/ufot-web-$VER-dist.tar.gz" -C dist .
           ls -lh "$GITHUB_WORKSPACE"/ufot-web-*.tar.gz
 
       - uses: actions/upload-artifact@v4

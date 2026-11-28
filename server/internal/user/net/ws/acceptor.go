@@ -42,10 +42,10 @@ type AuthnFunc = Authn
 
 // Config acceptor 参数。
 type Config struct {
-	ListenAddr   string
+	ListenAddr string
 	// 可选 TLS（后端直接对公网提供 https 的小型部署；ACME 部署请用反代终结）。
-	TLSCertFile string
-	TLSKeyFile  string
+	TLSCertFile  string
+	TLSKeyFile   string
 	PublicOrigin string // 同源校验白名单，如 https://chat.example.com
 	// AllowAnyOrigin 放行任意合法 Origin（独立前端部署的默认姿态）。
 	AllowAnyOrigin bool
