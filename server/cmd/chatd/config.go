@@ -27,6 +27,9 @@ type config struct {
 	// CookieSameSite: "lax"(默认) | "none"（独立托管前端跨站携带 Cookie 时用，
 	// 仅 https public_origin 下合法——违例启动即失败）。
 	CookieSameSite string
+	// 可选 TLS 证书对（listen 直接 https 时用；部署方管理证书与续期）。
+	TLSCertFile string
+	TLSKeyFile  string
 	// AllowAnyOrigin: WS 握手放行任意 Origin（独立前端默认 true）。
 	AllowAnyOrigin bool
 
@@ -138,6 +141,10 @@ func loadConfig(path string) (*config, error) {
 			}
 		case "cookie_same_site":
 			cfg.CookieSameSite = v
+		case "tls_cert":
+			cfg.TLSCertFile = v
+		case "tls_key":
+			cfg.TLSKeyFile = v
 		case "allow_any_origin":
 			cfg.AllowAnyOrigin = v == "true"
 		case "hot_db":

@@ -20,6 +20,11 @@ func limitRule(rate, burst, capacity float64, maxPayload int, silent bool) limit
 type Config struct {
 	// ListenAddr WS 监听地址，如 ":8081"。
 	ListenAddr string
+	// 可选 TLS：直接以 https 提供 HTTP/WS（证书由部署方管理，如 Caddy file_server
+	// 签发的证书或手工申请的证书对）。两项都非空才启用；ACME 自动签发场景
+	// 仍建议用反向代理终结 TLS（本路径不处理续期）。
+	TLSCertFile string
+	TLSKeyFile  string
 	// PublicOrigin 允许的浏览器 Origin（如 https://chat.example.com）；
 	// 为空时仅做 Host 同源比较。
 	PublicOrigin string

@@ -10,6 +10,7 @@ package ws
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"net"
@@ -42,6 +43,9 @@ type AuthnFunc = Authn
 // Config acceptor 参数。
 type Config struct {
 	ListenAddr   string
+	// 可选 TLS（后端直接对公网提供 https 的小型部署；ACME 部署请用反代终结）。
+	TLSCertFile string
+	TLSKeyFile  string
 	PublicOrigin string // 同源校验白名单，如 https://chat.example.com
 	// AllowAnyOrigin 放行任意合法 Origin（独立前端部署的默认姿态）。
 	AllowAnyOrigin bool
@@ -529,6 +533,21 @@ func (a *Acceptor) closeConn(c *Conn) {
 // Run 监听并在 ctx 结束时优雅关闭。
 func (a *Acceptor) Run(ctx context.Context) error {
 	ln, err := net.Listen("tcp", a.cfg.ListenAddr)
+	if err != nil {
+		return fmt.Errorf("acceptor: listen %s: %w", a.cfg.ListenAddr, err)
+	}
+	// 可选 TLS：配置 CertFile+KeyFile 时监听升级为 TLS（ACME 用户请继续用
+	// 反向代理终结 TLS——本路径面向“后端直接对公网提供 https”的小型部署）。
+	if a.cfg.TLSCertFile != "" && a.cfg.TLSKeyFile != "" {
+		cert, cerr := tls.LoadX509KeyPair(a.cfg.TLSCertFile, a.cfg.TLSKeyFile)
+		if cerr != nil {
+			return fmt.Errorf("acceptor: load tls keypair: %w", cerr)
+		}
+		ln = tls.NewListener(ln, &tls.Config{
+			MinVersion:   tls.VersionTLS12,
+			Certificates: []tls.Certificate{cert},
+		})
+	}
 	if err != nil {
 		return fmt.Errorf("ws: listen %s: %w", a.cfg.ListenAddr, err)
 	}

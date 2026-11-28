@@ -408,6 +408,9 @@ func newAssembly(cfg *config, lg *log.Logger) (*assembly, error) {
 	// 10. user layer gateway: /ws + /api/auth/* + /healthz + SPA on one port.
 	userCfg := app.DefaultConfig()
 	userCfg.ListenAddr = cfg.Listen
+	// 可选 TLS：listen 指向 0.0.0.0/公网地址 + 配置证书对时，后端直接 https。
+	userCfg.TLSCertFile = cfg.TLSCertFile
+	userCfg.TLSKeyFile = cfg.TLSKeyFile
 	userCfg.PublicOrigin = cfg.PublicOrigin
 	userCfg.AllowAnyOrigin = cfg.AllowAnyOrigin
 	userCfg.CORSOrigins = cfg.CORSOrigins

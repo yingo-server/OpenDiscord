@@ -9,8 +9,14 @@
 
 mode = "embedded"
 
-# 用户层 HTTP/WS 监听（Caddy /ws 与 /api/* 反代到此）
+# 用户层 HTTP/WS 监听。
+# 默认 127.0.0.1（公网入口走 Caddy 反代）；配置 tls_cert/tls_key 后可直接
+# 监听公网地址以 https 提供 HTTP+WS（证书与续期由部署方管理）。
 listen = "127.0.0.1:8080"
+
+# 可选 TLS（两项都非空才启用；留空 = 纯 http，交由反向代理终结 TLS）
+# tls_cert = "/etc/ufot/tls/fullchain.pem"
+# tls_key  = "/etc/ufot/tls/privkey.pem"
 
 # 管理层 AdminAPI 监听（Caddy 只对白名单 IP 反代 /api/admin/*）
 admin_listen = "127.0.0.1:7780"
