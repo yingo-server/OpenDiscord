@@ -35,6 +35,17 @@ func New(path string) (*Store, error) {
 	return s, nil
 }
 
+// NewDefault creates an in-memory Store serving policy.Default(). It is used
+// on first boot / sandbox deployments where the policy file is absent: the
+// mechanism must still have a live snapshot (authsvc reads it at construction
+// time) instead of leaving a nil store that panics on Current().
+func NewDefault() *Store {
+	s := &Store{path: ""}
+	s.cur.Store(Snapshot{Policy: Default(), Version: 1})
+	s.version.Store(1)
+	return s
+}
+
 // Current returns the active snapshot. Always safe to call concurrently.
 func (s *Store) Current() Snapshot {
 	return s.cur.Load().(Snapshot)

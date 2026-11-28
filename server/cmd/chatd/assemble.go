@@ -138,9 +138,11 @@ func newAssembly(cfg *config, lg *log.Logger) (*assembly, error) {
 	switch {
 	case cfg.PolicyPath == "":
 		lg.Warn("no policy_path configured; using built-in policy defaults")
+		a.policy = policy.NewDefault()
 	default:
 		if _, statErr := os.Stat(cfg.PolicyPath); errors.Is(statErr, os.ErrNotExist) {
 			lg.Warn("policy file not found; using built-in defaults", "path", cfg.PolicyPath)
+			a.policy = policy.NewDefault()
 			break
 		}
 		pol, perr := policy.New(cfg.PolicyPath)
