@@ -1,0 +1,103 @@
+/*
+ * 设计令牌：参考 chats-apps（shadcn 中性风）的视觉语言 ——
+ * 近黑/白中性色打底、弱边框、大留白、低饱和表面；
+ * 正红/正黄/正蓝仅作语义强调（危险 / 警告 / 交互主色）。
+ */
+
+:root {
+  /* 间距刻度（4 的倍数，克制） */
+  --sp-1: 0.25rem;
+  --sp-2: 0.5rem;
+  --sp-3: 0.75rem;
+  --sp-4: 1rem;
+  --sp-5: 1.5rem;
+  --sp-6: 2rem;
+
+  /* 字号刻度 */
+  --fs-xs: 0.75rem;
+  --fs-sm: 0.8125rem;
+  --fs-md: 0.875rem;
+  --fs-lg: 1rem;
+  --fs-xl: 1.125rem;
+  --fs-2xl: 1.375rem;
+
+  /* 圆角（shadcn 基准 0.625rem） */
+  --r-s: 0.375rem;
+  --r-m: 0.625rem;
+  --r-l: 0.875rem;
+  --r-full: 999px;
+
+  /* 图标 */
+  --icon-sm: 0.875rem;
+  --icon-md: 1rem;
+  --icon-lg: 1.25rem;
+
+  /* 最小可点区域 */
+  --hit-min: 2.25rem;
+  --hit-min-mobile: 2.75rem;
+
+  /* 布局 */
+  --rail-w: 3.75rem;
+  --list-w: 20rem;
+  --topbar-h: 3.25rem;
+  --composer-min-h: 2.5rem;
+
+  /* 动效 */
+  --dur-fast: 120ms;
+  --dur-base: 200ms;
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+
+  /* 语义强调色 */
+  --red: #e5484d;
+  --yellow: #f5a524;
+  --blue: #3b82f6;
+}
+
+/* 亮色（默认跟随系统时可切） */
+:root,
+[data-theme='light'] {
+  --bg: #ffffff;
+  --bg-elev: #ffffff;
+  --bg-sunken: #fafafa;
+  --bg-muted: #f4f4f5;
+  --bg-hover: #f4f4f5;
+  --border: #e4e4e7;
+  --border-strong: #d4d4d8;
+  --text: #18181b;
+  --text-dim: #71717a;
+  --text-faint: #a1a1aa;
+  --primary: #18181b;
+  --primary-fg: #fafafa;
+  --own-bubble: #18181b;
+  --own-bubble-fg: #fafafa;
+  --other-bubble: #f4f4f5;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  color-scheme: light;
+}
+
+/* 暗色 */
+[data-theme='dark'] {
+  --bg: #09090b;
+  --bg-elev: #09090b;
+  --bg-sunken: #0a0a0a;
+  --bg-muted: #27272a;
+  --bg-hover: #1c1c1f;
+  --border: rgba(255, 255, 255, 0.1);
+  --border-strong: rgba(255, 255, 255, 0.16);
+  --text: #fafafa;
+  --text-dim: #a1a1aa;
+  --text-faint: #71717a;
+  --primary: #fafafa;
+  --primary-fg: #18181b;
+  --own-bubble: #fafafa;
+  --own-bubble-fg: #18181b;
+  --other-bubble: #27272a;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+  color-scheme: dark;
+}
+
+@media (max-width: 1023px) {
+  :root {
+    --list-w: 17rem;
+  }
+}
