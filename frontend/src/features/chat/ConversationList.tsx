@@ -42,10 +42,8 @@ export function ConversationList() {
         .filter((c): c is NonNullable<typeof c> => Boolean(c));
       replaceAll(items);
     } catch (error) {
-      pushToast(
-        error instanceof Error ? `会话列表加载失败：${error.message}` : '会话列表加载失败',
-        'error',
-      );
+      error instanceof Error ? console.error(error) : undefined;
+      pushToast('会话列表暂时打不开，请稍后重试', 'error');
     } finally {
       useConvStore.setState({ loading: false });
     }
@@ -77,7 +75,7 @@ export function ConversationList() {
           <span className="uf-faint">{formatTime(time)}</span>
         </span>
         <span className="uf-conv__row">
-          <span className="uf-conv__preview truncate">{lastText || '暂无消息'}</span>
+          <span className="uf-conv__preview truncate">{lastText || '还没有消息'}</span>
           {muted ? <Icon name="bell" size="sm" className="uf-faint" /> : null}
           {isPinned ? <Icon name="list" size="sm" className="uf-faint" /> : null}
           {unread > 0 ? <Badge count={unread} tone="blue" /> : null}
@@ -91,9 +89,6 @@ export function ConversationList() {
       <div className="uf-list__top">
         <span className="uf-grow uf-topbar__title">会话</span>
         <IconButton icon="refresh" label="刷新会话" onClick={() => void refresh()} />
-      </div>
-
-      <div className="uf-list__search">
         <TextInput
           value={query}
           placeholder="搜索会话"
@@ -117,7 +112,7 @@ export function ConversationList() {
             ) : null}
             {others.length > 0 ? (
               <>
-                {pinned.length > 0 ? <div className="uf-list__section">全部</div> : null}
+                {pinned.length > 0 ? <div className="uf-list__section">其他</div> : null}
                 {others.map((conv) =>
                   renderItem(conv.convId, conv.title, conv.lastMessage?.text ?? '', conv.lastActivity ?? conv.lastSeq ?? 0, conv.unread ?? 0, Boolean(conv.muted), false),
                 )}

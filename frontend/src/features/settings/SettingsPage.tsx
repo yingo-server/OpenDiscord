@@ -59,9 +59,20 @@ export function SettingsPage() {
     }
   };
 
+  const connLabel =
+    conn.state === 'open'
+      ? '已连接'
+      : conn.state === 'connecting'
+        ? '连接中'
+        : conn.state === 'reconnecting'
+          ? '重连中'
+          : conn.state === 'failed'
+            ? '连接失败'
+            : '未连接';
+
   const enablePush = async () => {
     if (!env.vapidPublicKey) {
-      pushToast('未配置 VITE_VAPID_PUBLIC_KEY，推送不可用', 'warn');
+      pushToast('推送暂未开启，请联系管理员配置。', 'warn');
       return;
     }
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
@@ -97,12 +108,12 @@ export function SettingsPage() {
           <div className="uf-row" style={{ marginBottom: 'var(--sp-3)' }}>
             <Icon name="user" />
             <span className="uf-grow truncate">
-              {auth.session?.profile?.display_name || '未命名'}
+              {auth.session?.profile?.display_name || '未设置昵称'}
             </span>
             <span className="uf-faint">ID {auth.session?.user_id ?? '—'}</span>
           </div>
-          <div className="uf-faint">会话 ID：{auth.session?.session_id ?? '—'}</div>
-          <div className="uf-faint">{auth.session?.guest ? '游客账号' : '正式账号'}</div>
+          <div className="uf-faint">登录编号：{auth.session?.session_id ?? '—'}</div>
+          <div className="uf-faint">{auth.session?.guest ? '游客登录' : '已注册账号'}</div>
         </section>
 
         <section className="uf-card">
@@ -175,7 +186,7 @@ export function SettingsPage() {
             <Button onClick={() => void enablePush()}>开启</Button>
           </div>
           <div className="uf-faint" style={{ marginTop: 'var(--sp-2)' }}>
-            公钥由部署方通过 VITE_VAPID_PUBLIC_KEY 分发；未配置时不可用。
+            如无法开启通知，请稍后再试或联系管理员。
           </div>
         </section>
 
@@ -183,18 +194,12 @@ export function SettingsPage() {
           <h3 className="uf-card__title">连接</h3>
           <div className="uf-row">
             <Icon name="online" />
-            <span className="uf-grow">状态</span>
-            <span className="uf-faint">
-              {conn.state}
-              {conn.latencyMs ? ` · ${conn.latencyMs}ms` : ''}
-            </span>
+            <span className="uf-grow">连接状态</span>
+            <span className="uf-faint">{connLabel}{conn.latencyMs ? ` · ${conn.latencyMs} 毫秒` : ''}</span>
           </div>
-          <div className="uf-faint">API：{env.apiBase}</div>
-          <div className="uf-faint">WS：{env.wsUrl}</div>
         </section>
 
         <section className="uf-card">
-          <h3 className="uf-card__title">危险操作</h3>
           <Button variant="danger" icon="logout" onClick={() => void auth.logout()}>
             退出登录
           </Button>

@@ -47,7 +47,7 @@ export function ChatPage() {
   const handleRecall = (msgId: number) => {
     sendMutation(convId, msgId, true);
     useMsgStore.getState().applyTombstone(convId, msgId, true);
-    pushToast('已请求撤回', 'info');
+    pushToast('正在撤回', 'info');
   };
 
   const handleDelete = (msgId: number) => {
@@ -61,7 +61,7 @@ export function ChatPage() {
       (c) => c.convId !== convId,
     );
     if (!target) {
-      pushToast('没有可转发的目标会话', 'warn');
+      pushToast('暂时没有其他会话可以转发', 'warn');
       return;
     }
     sendForward(convId, target.convId, msgId);
@@ -86,7 +86,7 @@ export function ChatPage() {
           <span className="uf-topbar__title truncate">{title}</span>
           <span className="uf-topbar__sub">
             {conv?.memberCount ? `${conv.memberCount} 名成员` : ''}
-            {typing.length > 0 ? ' · 对方正在输入' : ''}
+            {typing.length > 0 ? ' · 正在输入…' : ''}
           </span>
         </div>
         <IconButton icon="info" label="会话信息" onClick={() => setInfoOpen(true)} />
@@ -95,7 +95,6 @@ export function ChatPage() {
       <ConversationInfoDialog convId={convId} open={infoOpen} onClose={() => setInfoOpen(false)} />
 
       <MessageList
-        convId={convId}
         messages={list}
         currentUserId={userId}
         onRecall={handleRecall}
@@ -161,7 +160,7 @@ export function ConversationInfoDialog({
             {conv.members.map((member) => (
               <div key={member.userId} className="uf-row">
                 <Avatar name={`U${member.userId}`} size="sm" />
-                <span className="uf-grow">用户 {member.userId}</span>
+                <span className="uf-grow">成员 {member.userId}</span>
                 <span className="uf-faint">{member.role === 1 ? '群主' : '成员'}</span>
               </div>
             ))}

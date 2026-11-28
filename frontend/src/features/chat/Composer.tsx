@@ -62,7 +62,7 @@ export function Composer({ convId }: { convId: number }) {
     });
     if (!ok) {
       useMsgStore.getState().applyAck({ clientMsgId, msgId: 0, seq: 0, status: 1 });
-      pushToast('网络恢复后重试', 'error');
+      pushToast('消息没有发出去，请检查网络后重试', 'error');
     }
     setText('');
     setPendingMedia([]);
@@ -83,7 +83,7 @@ export function Composer({ convId }: { convId: number }) {
       const media = await uploadMedia(file);
       setPendingMedia((prev) => [...prev, media]);
     } catch (error) {
-      pushToast(error instanceof Error ? error.message : '上传失败', 'error');
+      pushToast(error instanceof Error ? error.message : '文件没有传上去，请重试', 'error');
     } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = '';
@@ -100,7 +100,7 @@ export function Composer({ convId }: { convId: number }) {
       {replyTo ? (
         <div className="uf-composer__reply">
           <Icon name="reply" size="sm" />
-          <span className="truncate uf-grow">{replyTo.text || '（媒体消息）'}</span>
+          <span className="truncate uf-grow">{replyTo.text || '[图片]'}</span>
           <IconButton icon="close" label="取消回复" size="sm" onClick={() => setReplyTo(null)} />
         </div>
       ) : null}

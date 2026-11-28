@@ -27,9 +27,7 @@ function statusIcon(status: ChatMessage['status']) {
   if (status === 'read') return <Icon name="checkDouble" size="sm" />;
   return null;
 }
-
 export interface MessageListProps {
-  convId: number;
   messages: ChatMessage[];
   currentUserId: number;
   onRecall: (msgId: number) => void;
@@ -38,7 +36,6 @@ export interface MessageListProps {
 }
 
 export function MessageList({
-  convId,
   messages,
   currentUserId,
   onRecall,
@@ -107,7 +104,7 @@ export function MessageList({
               <div className={`uf-bubble ${mine ? 'uf-bubble--mine' : ''} ${message.tombstone ? 'uf-bubble--tomb' : ''}`}>
                 {reply ? (
                   <div className="uf-quote">
-                    <span className="uf-quote__text truncate">{reply.text || '（媒体消息）'}</span>
+                    <span className="uf-quote__text truncate">{reply.text || '[图片]'}</span>
                   </div>
                 ) : null}
 
@@ -129,7 +126,7 @@ export function MessageList({
                   <span className="uf-bubble__text break-anywhere">{message.text}</span>
                 ) : null}
 
-                {message.tombstone ? <span className="uf-faint">该消息已被撤回</span> : null}
+                {message.tombstone ? <span className="uf-faint">消息已撤回</span> : null}
 
                 <span className="uf-bubble__meta">
                   {formatTime(message.sentAt)}
@@ -140,8 +137,8 @@ export function MessageList({
                   <span className="uf-bubble__actions">
                     <IconButton icon="reply" label="回复" size="sm" onClick={() => setReplyTo(message)} />
                     <IconButton icon="forward" label="转发" size="sm" onClick={() => onForward(message.msgId)} />
-                    <IconButton icon="trash" label="删除（仅自己）" size="sm" danger onClick={() => onDelete(message.msgId)} />
-                    <IconButton icon="warning" label="对所有人撤回" size="sm" danger onClick={() => onRecall(message.msgId)} />
+                    <IconButton icon="trash" label="删除" size="sm" danger onClick={() => onDelete(message.msgId)} />
+                    <IconButton icon="warning" label="撤回" size="sm" danger onClick={() => onRecall(message.msgId)} />
                   </span>
                 ) : null}
               </div>
@@ -151,9 +148,6 @@ export function MessageList({
         );
       })}
 
-      <div className="uf-faint" style={{ textAlign: 'center', padding: 'var(--sp-2)' }}>
-        会话 {convId}
-      </div>
     </div>
   );
 }

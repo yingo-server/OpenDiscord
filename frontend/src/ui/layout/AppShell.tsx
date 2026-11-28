@@ -43,8 +43,8 @@ export function AppShell() {
           onClick={() =>
             pushToast(
               state === 'open'
-                ? `WebSocket 已连接${latency ? `（延迟 ${latency}ms）` : ''}`
-                : `WebSocket ${connLabel}`,
+                ? `已连接${latency ? `（延迟 ${latency} 毫秒）` : ''}`
+                : connLabel,
               state === 'open' ? 'info' : 'warn',
             )
           }

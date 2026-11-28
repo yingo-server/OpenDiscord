@@ -87,7 +87,7 @@ export function LoginPage() {
                     id={id}
                     value={account}
                     autoComplete="username"
-                    placeholder="手机号 / 邮箱 / 用户名"
+                    placeholder="用户名"
                     onChange={(event) => setAccount(event.target.value)}
                   />
                 )}
