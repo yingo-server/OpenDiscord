@@ -7,7 +7,7 @@
  */
 
 export interface AppEnv {
-  /** HTTP API 根，例如 http://server.344977.xyz */
+  /** HTTP API 根，例如 http://chat.example.com */
   apiBase: string;
   /** WebSocket 全 URL */
   wsUrl: string;

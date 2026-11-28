@@ -1,6 +1,6 @@
-/** 会话列表：搜索、置顶、静音、未读、最后一条预览、新建入口。 */
+/** 会话列表：搜索、置顶、静音、未读、最后一条预览；底部保留“现有会话 ID”入口。 */
 
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Icon } from '@/ui/primitives/Icon';
 import { Avatar, Badge, Button, EmptyState, IconButton, TextInput } from '@/ui/primitives/controls';
@@ -14,13 +14,10 @@ function formatTime(ts?: number): string {
   if (!ts) return '';
   const date = new Date(ts);
   const now = new Date();
-  const sameDay = date.toDateString() === now.toDateString();
-  if (sameDay) {
+  if (date.toDateString() === now.toDateString()) {
     return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
   }
-  if (date.getFullYear() === now.getFullYear()) {
-    return `${date.getMonth() + 1}/${date.getDate()}`;
-  }
+  if (date.getFullYear() === now.getFullYear()) return `${date.getMonth() + 1}/${date.getDate()}`;
   return `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()}`;
 }
 
@@ -29,13 +26,12 @@ export function ConversationList() {
   const query = useConvStore((s) => s.query);
   const setQuery = useConvStore((s) => s.setQuery);
   const replaceAll = useConvStore((s) => s.replaceAll);
-  const loaded = useConvStore((s) => s.loaded);
   const loading = useConvStore((s) => s.loading);
   const userId = useAuthStore((s) => s.session?.user_id ?? 0);
   const pushToast = useUiStore((s) => s.pushToast);
   const visible = useConvStore((s) => s.visible);
+  const [manualId, setManualId] = useState('');
 
-  // 权威列表：930 op7「列出我的会话」。失败只提示，不清空已有数据。
   const refresh = async () => {
     useConvStore.setState({ loading: true });
     try {
@@ -73,12 +69,7 @@ export function ConversationList() {
     muted: boolean,
     isPinned: boolean,
   ) => (
-    <button
-      key={convId}
-      type="button"
-      className="uf-conv"
-      onClick={() => navigate(`/chats/${convId}`)}
-    >
+    <button key={convId} type="button" className="uf-conv" onClick={() => navigate(`/chats/${convId}`)}>
       <Avatar name={title || '会话'} />
       <span className="uf-conv__body">
         <span className="uf-conv__row">
@@ -100,7 +91,6 @@ export function ConversationList() {
       <div className="uf-list__top">
         <span className="uf-grow uf-topbar__title">会话</span>
         <IconButton icon="refresh" label="刷新会话" onClick={() => void refresh()} />
-        <IconButton icon="plus" label="新建会话" onClick={() => navigate('/contacts')} />
       </div>
 
       <div className="uf-list__search">
@@ -114,35 +104,14 @@ export function ConversationList() {
 
       <div className="uf-list__scroll">
         {items.length === 0 ? (
-          loaded ? (
-            <EmptyState
-              icon="chat"
-              title="还没有会话"
-              description="点右上角 + 发起一个会话，收到的消息会出现在这里。"
-              action={
-                <Button variant="primary" icon="plus" onClick={() => navigate('/contacts')}>
-                  新建会话
-                </Button>
-              }
-            />
-          ) : (
-            <EmptyState icon="chat" title="正在加载会话…" />
-          )
+          <EmptyState icon="chat" title="还没有会话" description="输入现有会话 ID 可进入聊天。" />
         ) : (
           <>
             {pinned.length > 0 ? (
               <>
                 <div className="uf-list__section">置顶</div>
                 {pinned.map((conv) =>
-                  renderItem(
-                    conv.convId,
-                    conv.title,
-                    conv.lastMessage?.text ?? '',
-                    conv.lastActivity ?? conv.lastSeq ?? 0,
-                    conv.unread ?? 0,
-                    Boolean(conv.muted),
-                    true,
-                  ),
+                  renderItem(conv.convId, conv.title, conv.lastMessage?.text ?? '', conv.lastActivity ?? conv.lastSeq ?? 0, conv.unread ?? 0, Boolean(conv.muted), true),
                 )}
               </>
             ) : null}
@@ -150,29 +119,32 @@ export function ConversationList() {
               <>
                 {pinned.length > 0 ? <div className="uf-list__section">全部</div> : null}
                 {others.map((conv) =>
-                  renderItem(
-                    conv.convId,
-                    conv.title,
-                    conv.lastMessage?.text ?? '',
-                    conv.lastActivity ?? conv.lastSeq ?? 0,
-                    conv.unread ?? 0,
-                    Boolean(conv.muted),
-                    false,
-                  ),
+                  renderItem(conv.convId, conv.title, conv.lastMessage?.text ?? '', conv.lastActivity ?? conv.lastSeq ?? 0, conv.unread ?? 0, Boolean(conv.muted), false),
                 )}
               </>
             ) : null}
           </>
         )}
         {loading && items.length > 0 ? (
-          <div className="uf-faint" style={{ padding: 'var(--sp-2) var(--sp-3)' }}>
-            正在刷新…
-          </div>
+          <div className="uf-faint" style={{ padding: 'var(--sp-2) var(--sp-3)' }}>正在刷新…</div>
         ) : null}
       </div>
 
-      <div className="uf-list__footer">
-        <span className="uf-faint">用户 ID：{userId || '—'}</span>
+      <div className="uf-list__footer" style={{ display: 'flex', gap: 'var(--sp-2)', alignItems: 'center' }}>
+        <TextInput
+          value={manualId}
+          inputMode="numeric"
+          placeholder="现有会话 ID"
+          aria-label="现有会话 ID"
+          onChange={(event) => setManualId(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && manualId.trim()) navigate(`/chats/${manualId.trim()}`);
+          }}
+        />
+        <Button small disabled={!manualId.trim()} onClick={() => navigate(`/chats/${manualId.trim()}`)}>
+          进入
+        </Button>
+        <span className="uf-faint" style={{ whiteSpace: 'nowrap' }}>{userId || '—'}</span>
       </div>
     </>
   );

@@ -1,7 +1,6 @@
 /**
  * 应用外壳：侧边导航（桌面）、底部标签栏（手机）、连接状态指示。
- * 会话区的“列表 + 详情”两栏由 features/chat/ChatLayout 承担，
- * 这样外壳只负责导航与全局状态，避免出现两个 <Outlet/> 渲染同一子树。
+ * 只保留会话与设置两个真实可用的页面。
  */
 
 import { NavLink, Outlet } from 'react-router-dom';
@@ -28,14 +27,9 @@ export function AppShell() {
   return (
     <div className="uf-shell">
       <nav className="uf-rail" aria-label="主导航">
-        <span className="uf-rail__logo" title="UFOT">
-          UF
-        </span>
+        <span className="uf-rail__logo" title="UFOT">UF</span>
         <NavLink to="/chats" className="uf-rail__item" aria-label="会话">
           <Icon name="chat" />
-        </NavLink>
-        <NavLink to="/contacts" className="uf-rail__item" aria-label="联系人">
-          <Icon name="userPlus" />
         </NavLink>
         <NavLink to="/me" className="uf-rail__item" aria-label="我的">
           <Icon name="user" />
@@ -59,31 +53,17 @@ export function AppShell() {
         </button>
       </nav>
 
-      <main className="uf-main">
-        <Outlet />
-      </main>
+      <main className="uf-main"><Outlet /></main>
 
       <nav className="uf-bottomtabs" aria-label="底部导航">
         <NavLink to="/chats" className="uf-bottomtabs__item">
           <Icon name="chat" />
           <span>会话</span>
         </NavLink>
-        <NavLink to="/contacts" className="uf-bottomtabs__item">
-          <Icon name="userPlus" />
-          <span>联系人</span>
-        </NavLink>
         <NavLink to="/me" className="uf-bottomtabs__item">
           <Icon name="user" />
           <span>我的</span>
         </NavLink>
-        <button
-          type="button"
-          className="uf-bottomtabs__item"
-          onClick={() => (window.location.hash = '#/admin')}
-        >
-          <Icon name="shield" />
-          <span>管理</span>
-        </button>
       </nav>
     </div>
   );
