@@ -152,7 +152,7 @@ export function Composer({ convId }: { convId: number }) {
         <IconButton
           icon="send"
           label="发送"
-          className="uf-iconbtn--active"
+          className="uf-fab"
           onClick={submit}
           disabled={!text.trim() && pendingMedia.length === 0}
         />
