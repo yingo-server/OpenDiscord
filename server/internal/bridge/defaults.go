@@ -58,6 +58,11 @@ func allUserKinds() []kinds.Kind {
 		kinds.KindConvCreate, kinds.KindConvUpdate, kinds.KindConvPayload, kinds.KindMemberAdd, kinds.KindMemberRemove,
 		kinds.KindMemberUpdate, kinds.KindRoleSet, kinds.KindMute, kinds.KindPin, kinds.KindTyping, kinds.KindDraft,
 		kinds.KindConvDataResult,
+		// 930/920/940：客户端直连数据层的三个读/写通道。放在用户层能力表里
+		// 是为了让独立前端能主动取会话列表（930 op7）、翻历史（920）、
+		// 读写自己的资料（940）——此前这三者只对服务端内部可达，
+		// 独立客户端没有任何办法列出自己的会话。
+		kinds.KindConvDataRequest, kinds.KindReadHistory, kinds.KindIdentityRequest,
 		kinds.KindMediaPresignRequest, kinds.KindMediaReady, kinds.KindMediaExpire, kinds.KindMediaThumb,
 		kinds.KindPresenceUpdate, kinds.KindPresenceOnline, kinds.KindPresenceOffline,
 		kinds.KindProfileUpdate, kinds.KindBlock, kinds.KindUnblock, kinds.KindReport,

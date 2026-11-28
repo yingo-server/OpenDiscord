@@ -122,6 +122,34 @@ func (s *convStore) ListMembers(ctx context.Context, cid int64) ([]store.Member,
 	return out, rows.Err()
 }
 
+// ConvsForUser returns every conversation uid participates in, ordered by
+// cid ascending. The join goes through conv_members, so a uid only ever sees
+// conversations it is a member of (no separate authorization check needed).
+func (s *convStore) ConvsForUser(ctx context.Context, uid int64) ([]store.ConvMeta, error) {
+	if uid <= 0 {
+		return nil, fmt.Errorf("sqlite: convs for user: invalid uid %d", uid)
+	}
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT c.cid, c.ctype, c.title, c.avatar_media_id, c.created_by, c.created_at
+FROM conv_conversations c
+JOIN conv_members m ON m.cid = c.cid
+WHERE m.uid = ?
+ORDER BY c.cid ASC`, uid)
+	if err != nil {
+		return nil, fmt.Errorf("sqlite: convs for user %d: %w", uid, err)
+	}
+	defer rows.Close()
+	var out []store.ConvMeta
+	for rows.Next() {
+		var m store.ConvMeta
+		if err := rows.Scan(&m.Cid, &m.CType, &m.Title, &m.AvatarMediaID, &m.CreatedBy, &m.CreatedAt); err != nil {
+			return nil, fmt.Errorf("sqlite: scan conv for user %d: %w", uid, err)
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
 // SetMemberRole updates one member's role. Authorization happened above;
 // updating a non-member's role is a no-op success (idempotent by row absence).
 func (s *convStore) SetMemberRole(ctx context.Context, cid, uid int64, role int) error {

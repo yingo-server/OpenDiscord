@@ -681,7 +681,11 @@ func (p *Pipe) onIdentity(ctx context.Context, req Req) {
 		uid = req.UserID
 	}
 	r := p.ident.Handle(ctx, raw.Op, uid, raw.Body)
-	pl, _ := wire.Marshal(wire.DataResult{Op: raw.Op, Ok: r.OK, Error: r.Error, RequestID: raw.RequestID})
+	// Body must carry the domain payload: without it the client receives
+	// ok=true with an empty body and cannot read the profile it asked for.
+	pl, _ := wire.Marshal(wire.DataResult{
+		Op: raw.Op, Ok: r.OK, Error: r.Error, Body: r.Payload, RequestID: raw.RequestID,
+	})
 	p.reply(buildResultEnv(req, uint32(kinds.KindIdentityResult), pl))
 }
 

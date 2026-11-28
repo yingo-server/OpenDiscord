@@ -68,6 +68,14 @@ func (h hotBundle) CheckMember(ctx context.Context, cid, uid int64) (*store.Memb
 func (h hotBundle) ListMembers(ctx context.Context, cid int64) ([]store.Member, error) {
 	return h.conv.ListMembers(ctx, cid)
 }
+
+func (h hotBundle) ConvsForUser(ctx context.Context, uid int64) ([]store.ConvMeta, error) {
+	return h.conv.ConvsForUser(ctx, uid)
+}
+
+func (h hotBundle) SearchUsers(ctx context.Context, keyword string, limit int) ([]store.User, error) {
+	return nil, nil
+}
 func (h hotBundle) SetMemberRole(ctx context.Context, cid, uid int64, role int) error {
 	return h.conv.SetMemberRole(ctx, cid, uid, role)
 }

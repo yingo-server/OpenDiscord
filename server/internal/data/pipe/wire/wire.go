@@ -167,6 +167,12 @@ type CallSignal struct {
 	FromUserID    uint64  `json:"fromUserId,omitempty"`
 }
 
+// ConvList mirrors the 930 op7 ("list my conversations") response body:
+// a flat array of conversation snapshots.
+type ConvList struct {
+	Items []ConvPayload `json:"items,omitempty"`
+}
+
 // Member mirrors chat.v1.Member.
 type Member struct {
 	UserID     uint64 `json:"userId,omitempty"`

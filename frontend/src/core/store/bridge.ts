@@ -4,18 +4,23 @@
  * 职责边界：
  * - 连接层（core/net/ws）只管收发与重连；
  * - 本模块负责帧 → store 的分派，以及需要主动上行的动作（发送、输入中、回执、补拉）。
+ *
+ * 请求-回执配对：930/940 这类「请求-应答」帧用 request_id 配对。客户端发
+ * 出的请求登记在 pending 里，服务端的 931/941 回来时按 request_id 取走并
+ * resolve——这样上层（store/UI）能 await 一个真实的成功/失败，而不是盲发。
  */
 
 import { create } from 'zustand';
 import { env } from '@/core/config/env';
 import { WsClient } from '@/core/net/ws/client';
 import type { ConnectionState } from '@/core/net/ws/client';
-import type { DecodedFrame } from '@/core/net/ws/codec';
 import { decodePayload } from '@/core/net/ws/codec';
 import { Kind } from '@/core/net/ws/kinds';
 import { useConvStore } from './conv';
 import { useMsgStore } from './msg';
 import { useAuthStore } from './auth';
+import { useUiStore } from './ui';
+import { ConvType } from '@/core/domain/conv';
 import type { ChatMessage, MediaItem } from '@/core/domain/types';
 
 interface ConnState {
@@ -37,6 +42,63 @@ export const useConnStore = create<ConnState>((set) => ({
 let client: WsClient | null = null;
 let typingSentAt = 0;
 let typingActive = false;
+
+/** 请求-回执配对表：request_id → resolve/reject。 */
+interface PendingCall {
+  resolve: (body: unknown) => void;
+  reject: (error: Error) => void;
+  timer: ReturnType<typeof setTimeout>;
+}
+const pending = new Map<string, PendingCall>();
+let requestSeq = 0;
+
+function newRequestId(kind: string): string {
+  requestSeq += 1;
+  return `${kind}-${Date.now().toString(36)}-${requestSeq}`;
+}
+
+/**
+ * 发起一次「请求-应答」型调用：发出帧后等待对应回执。
+ * 超时 8s 后 reject，避免 UI 永远等下去。
+ */
+export function requestWithReply(
+  kind: number,
+  payload: unknown,
+  options: { convId?: number; userId?: number; timeoutMs?: number } = {},
+): Promise<{ ok: boolean; error?: string; body?: unknown }> {
+  return new Promise((resolve, reject) => {
+    if (!client || client.state !== 'open') {
+      reject(new Error('连接未就绪'));
+      return;
+    }
+    const requestId = newRequestId(`k${kind}`);
+    const timer = setTimeout(() => {
+      pending.delete(requestId);
+      reject(new Error('请求超时'));
+    }, options.timeoutMs ?? 8000);
+    pending.set(requestId, {
+      resolve: (body) => resolve({ ok: true, body }),
+      reject,
+      timer,
+    });
+    const ok = client.send(kind, payload, { ...options, requestId });
+    if (!ok) {
+      clearTimeout(timer);
+      pending.delete(requestId);
+      reject(new Error('发送失败'));
+    }
+  });
+}
+
+function settlePending(requestId: string, ok: boolean, error: string | undefined, body: unknown) {
+  const call = pending.get(requestId);
+  if (!call) return false;
+  clearTimeout(call.timer);
+  pending.delete(requestId);
+  if (ok) call.resolve(body);
+  else call.reject(new Error(error ?? '请求失败'));
+  return true;
+}
 
 function newClient(token: string | null): WsClient {
   return new WsClient({
@@ -126,17 +188,13 @@ export function sendMutation(convId: number, msgId: number, forEveryone: boolean
   );
 }
 
-/** 编辑消息（后端路由存在性以实测为准，见 NOTES.md）。 */
+/** 编辑消息。 */
 export function sendEdit(convId: number, msgId: number, text: string): void {
   sendFrame(Kind.MSG_EDIT, { msg_id: msgId, conv_id: convId, text }, { convId });
 }
 
 /** 转发消息。 */
-export function sendForward(
-  fromConvId: number,
-  toConvId: number,
-  msgId: number,
-): void {
+export function sendForward(fromConvId: number, toConvId: number, msgId: number): void {
   sendFrame(
     Kind.MSG_FORWARD,
     {
@@ -159,15 +217,7 @@ export function sendPresence(status: 'online' | 'away' | 'offline'): void {
   sendFrame(Kind.PRESENCE_UPDATE, { status, at: Date.now() });
 }
 
-/**
- * 修改资料：服务端资料读写唯一通道是 kind 940，但 940 不在用户层能力表内，
- * 因此这里先尝试 940，失败时由调用方提示“仅本地生效”。
- */
-export function sendProfileUpdate(displayName: string): void {
-  sendFrame(940, { op: 1, display_name: displayName });
-}
-
-/** 创建会话（kind 200 → 服务端翻译为 930 op1）。 */
+/** 创建会话（kind 200 → 服务端翻译为 930 op1）。convType 用 ConvType 常量。 */
 export function sendCreateConversation(input: {
   title?: string;
   convType?: number;
@@ -175,7 +225,7 @@ export function sendCreateConversation(input: {
 }): boolean {
   return sendFrame(Kind.CONV_CREATE, {
     title: input.title ?? '',
-    convType: input.convType ?? 0,
+    convType: input.convType ?? ConvType.DIRECT,
     memberIds: input.memberIds ?? [],
   });
 }
@@ -185,9 +235,38 @@ export function sendMemberOp(convId: number, userIds: number[], add: boolean): b
   return sendFrame(add ? Kind.MEMBER_ADD : Kind.MEMBER_REMOVE, { convId, userIds }, { convId });
 }
 
-function handleFrame(frame: DecodedFrame): void {
+/** 更新自己的资料（kind 940 op1）。 */
+export function requestUpdateProfile(displayName: string): Promise<{ ok: boolean; body?: unknown }> {
+  return requestWithReply(Kind.IDENTITY_REQUEST, { op: 1, displayName });
+}
+
+/** 读取用户资料（kind 940 op2）。 */
+export function requestGetUser(userId: number): Promise<{ ok: boolean; body?: unknown }> {
+  return requestWithReply(Kind.IDENTITY_REQUEST, { op: 2, userId });
+}
+
+/** 列出我的会话（kind 930 op7）。 */
+export function requestListMyConversations(): Promise<{ ok: boolean; body?: unknown }> {
+  return requestWithReply(Kind.CONV_DATA_REQUEST, { op: 7, body: '' });
+}
+
+/** 搜索用户（kind 940 op5）。 */
+export function requestSearchUsers(query: string): Promise<{ ok: boolean; body?: unknown }> {
+  return requestWithReply(Kind.IDENTITY_REQUEST, { op: 5, query });
+}
+
+function handleFrame(frame: {
+  kind: number;
+  convId: number;
+  userId: number;
+  requestId: string;
+  payload: Record<string, unknown> | null;
+  rawPayload: string | null;
+  ackId: number;
+}): void {
   const msg = useMsgStore.getState();
   const conv = useConvStore.getState();
+  const ui = useUiStore.getState();
 
   switch (frame.kind) {
     case Kind.MSG_NEW: {
@@ -234,6 +313,35 @@ function handleFrame(frame: DecodedFrame): void {
       conv.upsertFromPayload(frame.payload ?? {});
       break;
     }
+    case Kind.CONV_DATA_RESULT:
+    case Kind.IDENTITY_RESULT: {
+      const payload = frame.payload ?? {};
+      const ok = Boolean(payload.ok);
+      const errorText = typeof payload.error === 'string' ? payload.error : '';
+      const requestId = typeof payload.requestId === 'string' ? payload.requestId : frame.requestId;
+      const bodyRaw = typeof payload.body === 'string' ? payload.body : '';
+      let body: unknown;
+      if (bodyRaw) {
+        const decoded = decodePayload(bodyRaw);
+        body = decoded.payload;
+      }
+      // 先结掉等待中的请求（带 request_id 的那一路）。
+      if (requestId && settlePending(requestId, ok, errorText, body)) break;
+      // 服务端主动下发（无 request_id）：931 的 body 是会话快照，直接补进列表。
+      if (ok && body && typeof body === 'object') {
+        const snapshot = body as { convId?: number; items?: unknown[] };
+        if (Array.isArray(snapshot.items)) {
+          for (const item of snapshot.items) {
+            conv.upsertFromPayload(item as Record<string, unknown>);
+          }
+        } else if (snapshot.convId) {
+          conv.upsertFromPayload(body as Record<string, unknown>);
+        }
+      } else if (!ok && errorText) {
+        ui.pushToast(`操作失败：${errorText}`, 'error');
+      }
+      break;
+    }
     case Kind.WATERMARK: {
       const payload = frame.payload ?? {};
       const convId = Number(payload.convId ?? payload.conv_id ?? frame.convId ?? 0);
@@ -265,18 +373,22 @@ function handleFrame(frame: DecodedFrame): void {
       const payload = frame.payload ?? {};
       const retryAfterMs = Number(payload.retry_after_ms ?? payload.retryAfterMs ?? 500);
       useConnStore.setState({ detail: `服务端限流，${retryAfterMs}ms 后重试` });
+      ui.pushToast('发送过于频繁，请稍后再试', 'warn');
       break;
     }
     case Kind.KICKED: {
       const payload = frame.payload ?? {};
       const reason = String(payload.reason ?? '你已被管理员下线');
       useConnStore.setState({ kickedReason: reason });
+      ui.pushToast(reason, 'error');
       void useAuthStore.getState().logout();
       break;
     }
     case Kind.ERROR: {
       const payload = frame.payload ?? {};
-      useConnStore.setState({ detail: `服务端错误：${String(payload.reason ?? '未知')}` });
+      const reason = String(payload.reason ?? '未知错误');
+      useConnStore.setState({ detail: `服务端错误：${reason}` });
+      ui.pushToast(`服务端错误：${reason}`, 'error');
       break;
     }
     default:

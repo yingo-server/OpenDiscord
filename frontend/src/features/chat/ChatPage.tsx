@@ -1,6 +1,6 @@
 /** 会话详情：顶栏、消息流、输入区。 */
 
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Avatar, Button, EmptyState, IconButton } from '@/ui/primitives/controls';
 import { Dialog } from '@/ui/primitives/Dialog';
@@ -22,6 +22,7 @@ export function ChatPage() {
   const userId = useAuthStore((s) => s.session?.user_id ?? 0);
   const pushToast = useUiStore((s) => s.pushToast);
   const historyLoaded = useRef<Set<number>>(new Set());
+  const [infoOpen, setInfoOpen] = useState(false);
 
   const list = useMemo(() => messages ?? [], [messages]);
 
@@ -88,8 +89,10 @@ export function ChatPage() {
             {typing.length > 0 ? ' · 对方正在输入' : ''}
           </span>
         </div>
-        <IconButton icon="info" label="会话信息" onClick={() => pushToast('会话详情面板尚未开放', 'info')} />
+        <IconButton icon="info" label="会话信息" onClick={() => setInfoOpen(true)} />
       </header>
+
+      <ConversationInfoDialog convId={convId} open={infoOpen} onClose={() => setInfoOpen(false)} />
 
       <MessageList
         convId={convId}

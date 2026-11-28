@@ -272,6 +272,10 @@ func (d *DB) GetUser(ctx context.Context, uid int64) (*store.User, error) {
 	return d.identity.GetUser(ctx, uid)
 }
 
+func (d *DB) SearchUsers(ctx context.Context, keyword string, limit int) ([]store.User, error) {
+	return d.identity.SearchUsers(ctx, keyword, limit)
+}
+
 func (d *DB) GetBan(ctx context.Context, uid int64) (*store.Ban, error) {
 	return d.identity.GetBan(ctx, uid)
 }
@@ -294,6 +298,11 @@ func (d *DB) CheckMember(ctx context.Context, cid, uid int64) (*store.Member, er
 
 func (d *DB) ListMembers(ctx context.Context, cid int64) ([]store.Member, error) {
 	return d.conv.ListMembers(ctx, cid)
+}
+
+// ConvsForUser returns every conversation the uid participates in.
+func (d *DB) ConvsForUser(ctx context.Context, uid int64) ([]store.ConvMeta, error) {
+	return d.conv.ConvsForUser(ctx, uid)
 }
 
 func (d *DB) SetMemberRole(ctx context.Context, cid, uid int64, role int) error {

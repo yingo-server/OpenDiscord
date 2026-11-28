@@ -79,7 +79,7 @@ export function AppShell() {
         <button
           type="button"
           className="uf-bottomtabs__item"
-          onClick={() => pushToast('管理员入口：/admin', 'info')}
+          onClick={() => (window.location.hash = '#/admin')}
         >
           <Icon name="shield" />
           <span>管理</span>

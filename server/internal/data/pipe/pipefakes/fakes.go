@@ -7,6 +7,7 @@ package pipefakes
 import (
 	"context"
 	"fmt"
+	"sort"
 	"sync"
 
 	"github.com/yingo-server/UFOT/server/internal/data/store"
@@ -166,6 +167,24 @@ func (f *FakeConvStore) ListMembers(ctx context.Context, cid int64) ([]store.Mem
 			out = append(out, *m)
 		}
 	}
+	return out, nil
+}
+
+// ConvsForUser mirrors the sqlite implementation: every conversation the
+// uid is a member of, ordered by cid ascending.
+func (f *FakeConvStore) ConvsForUser(ctx context.Context, uid int64) ([]store.ConvMeta, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	seen := map[int64]bool{}
+	var out []store.ConvMeta
+	for _, m := range f.Members {
+		if m.UID != uid || seen[m.Cid] {
+			continue
+		}
+		seen[m.Cid] = true
+		out = append(out, store.ConvMeta{Cid: m.Cid})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Cid < out[j].Cid })
 	return out, nil
 }
 

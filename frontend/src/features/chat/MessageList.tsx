@@ -3,6 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Icon } from '@/ui/primitives/Icon';
 import { IconButton } from '@/ui/primitives/controls';
+import { useReplyStore } from './replyStore';
 import type { ChatMessage } from '@/core/domain/types';
 
 function formatTime(ts: number): string {
@@ -65,6 +66,7 @@ export function MessageList({
     return () => node.removeEventListener('scroll', onScroll);
   }, []);
 
+  const setReplyTo = useReplyStore((s) => s.setReplyTo);
   let lastDay = '';
 
   return (
@@ -136,7 +138,7 @@ export function MessageList({
 
                 {mine && !message.tombstone ? (
                   <span className="uf-bubble__actions">
-                    <IconButton icon="reply" label="回复" size="sm" />
+                    <IconButton icon="reply" label="回复" size="sm" onClick={() => setReplyTo(message)} />
                     <IconButton icon="forward" label="转发" size="sm" onClick={() => onForward(message.msgId)} />
                     <IconButton icon="trash" label="删除（仅自己）" size="sm" danger onClick={() => onDelete(message.msgId)} />
                     <IconButton icon="warning" label="对所有人撤回" size="sm" danger onClick={() => onRecall(message.msgId)} />

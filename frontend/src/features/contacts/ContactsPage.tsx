@@ -1,11 +1,11 @@
-/** 联系人：搜索用户、发起单聊/群聊。 */
+/** 联系人：搜索用户（940 op5）、按用户 ID 发起单聊、创建群聊。 */
 
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Icon } from '@/ui/primitives/Icon';
 import { Avatar, Button, EmptyState, Field, TextInput } from '@/ui/primitives/controls';
-import { isEndpointMissing, searchUsers } from '@/core/domain/conv';
-import { sendCreateConversation } from '@/core/store/bridge';
+import { ConvType } from '@/core/domain/conv';
+import { requestSearchUsers, sendCreateConversation } from '@/core/store/bridge';
 import { useUiStore } from '@/core/store/ui';
 import type { UserProfile } from '@/core/domain/types';
 
@@ -14,29 +14,34 @@ export function ContactsPage() {
   const pushToast = useUiStore((s) => s.pushToast);
   const [query, setQuery] = useState('');
   const [users, setUsers] = useState<UserProfile[]>([]);
-  const [endpointMissing, setEndpointMissing] = useState(false);
+  const [searching, setSearching] = useState(false);
   const [manualId, setManualId] = useState('');
   const [groupTitle, setGroupTitle] = useState('');
 
+  // 用户搜索：940 op5（WS 通道），输入停顿 300ms 后发一次。
   useEffect(() => {
+    const keyword = query.trim();
+    if (!keyword) {
+      setUsers([]);
+      return;
+    }
     let cancelled = false;
     const timer = setTimeout(() => {
-      void searchUsers({ q: query, limit: 30 })
-        .then((page) => {
+      setSearching(true);
+      requestSearchUsers(keyword)
+        .then((result) => {
           if (cancelled) return;
-          setUsers(page.items);
-          setEndpointMissing(false);
+          const body = result.body as { items?: UserProfile[] } | undefined;
+          setUsers(body?.items ?? []);
         })
-        .catch((error) => {
+        .catch((error: unknown) => {
           if (cancelled) return;
-          if (isEndpointMissing(error)) {
-            setEndpointMissing(true);
-            setUsers([]);
-          } else {
-            pushToast(error instanceof Error ? error.message : '搜索失败', 'error');
-          }
+          pushToast(error instanceof Error ? error.message : '搜索失败', 'error');
+        })
+        .finally(() => {
+          if (!cancelled) setSearching(false);
         });
-    }, 250);
+    }, 300);
     return () => {
       cancelled = true;
       clearTimeout(timer);
@@ -44,16 +49,18 @@ export function ContactsPage() {
   }, [query, pushToast]);
 
   const startChat = (memberIds: number[], title?: string) => {
+    const isGroup = Boolean(title && title.trim());
     const ok = sendCreateConversation({
-      title: title ?? '',
-      convType: memberIds.length > 1 ? 1 : 0,
+      title: title?.trim() ?? '',
+      convType: isGroup ? ConvType.GROUP : ConvType.DIRECT,
       memberIds,
     });
     if (!ok) {
-      pushToast('连接不可用，无法创建会话', 'error');
+      pushToast('连接不可用，暂时无法创建会话', 'error');
       return;
     }
-    pushToast('已发出创建会话请求', 'info');
+    pushToast(isGroup ? '正在创建群聊…' : '正在创建会话…', 'info');
+    navigate('/chats');
   };
 
   return (
@@ -64,48 +71,65 @@ export function ContactsPage() {
 
       <div className="uf-page__body">
         <div className="uf-card">
-          <Field label="搜索用户" hint="按昵称或用户 ID 检索">
+          <Field label="搜索用户" hint="按昵称检索">
             {(id) => (
               <TextInput
                 id={id}
                 value={query}
-                placeholder="输入关键字"
+                placeholder="输入昵称关键字"
                 onChange={(event) => setQuery(event.target.value)}
               />
             )}
           </Field>
+          {searching ? <div className="uf-faint">搜索中…</div> : null}
         </div>
 
-        {endpointMissing ? (
+        {query.trim() ? (
           <div className="uf-card">
-            <div className="uf-row" style={{ marginBottom: 'var(--sp-2)' }}>
-              <Icon name="info" />
-              <strong>后端尚未开放用户检索接口</strong>
-            </div>
-            <div className="uf-faint" style={{ marginBottom: 'var(--sp-3)' }}>
-              可以直接输入对方用户 ID 发起单聊，或创建群聊。
-            </div>
-            <Field label="对方用户 ID">
-              {(id) => (
-                <TextInput
-                  id={id}
-                  value={manualId}
-                  inputMode="numeric"
-                  placeholder="例如 12"
-                  onChange={(event) => setManualId(event.target.value)}
-                />
-              )}
-            </Field>
-            <Button
-              variant="primary"
-              style={{ marginTop: 'var(--sp-3)' }}
-              disabled={!manualId}
-              onClick={() => startChat([Number(manualId)])}
-            >
-              发起单聊
-            </Button>
+            <strong>搜索结果</strong>
+            {users.length === 0 && !searching ? (
+              <EmptyState icon="user" title="没有匹配的用户" />
+            ) : null}
+            {users.map((user) => (
+              <div key={user.user_id} className="uf-row" style={{ marginTop: 'var(--sp-3)' }}>
+                <Avatar name={user.display_name} />
+                <div className="uf-col uf-grow">
+                  <span className="truncate">{user.display_name || `用户 ${user.user_id}`}</span>
+                  <span className="uf-faint">ID {user.user_id}</span>
+                </div>
+                <Button small onClick={() => startChat([user.user_id])}>
+                  发起会话
+                </Button>
+              </div>
+            ))}
           </div>
         ) : null}
+
+        <div className="uf-card">
+          <div className="uf-row" style={{ marginBottom: 'var(--sp-2)' }}>
+            <Icon name="link" />
+            <strong>按用户 ID 发起会话</strong>
+          </div>
+          <Field label="对方用户 ID">
+            {(id) => (
+              <TextInput
+                id={id}
+                value={manualId}
+                inputMode="numeric"
+                placeholder="例如 12"
+                onChange={(event) => setManualId(event.target.value)}
+              />
+            )}
+          </Field>
+          <Button
+            variant="primary"
+            style={{ marginTop: 'var(--sp-3)' }}
+            disabled={!manualId}
+            onClick={() => startChat([Number(manualId)])}
+          >
+            发起单聊
+          </Button>
+        </div>
 
         <div className="uf-card">
           <div className="uf-row" style={{ marginBottom: 'var(--sp-2)' }}>
@@ -117,7 +141,7 @@ export function ContactsPage() {
               <TextInput
                 id={id}
                 value={groupTitle}
-                maxLength={64}
+                maxLength={30}
                 onChange={(event) => setGroupTitle(event.target.value)}
               />
             )}
@@ -127,33 +151,8 @@ export function ContactsPage() {
             disabled={!groupTitle.trim()}
             onClick={() => startChat([], groupTitle.trim())}
           >
-            创建空群聊
+            创建群聊
           </Button>
-        </div>
-
-        <div className="uf-card">
-          <strong>用户</strong>
-          {users.length === 0 && !endpointMissing ? (
-            <EmptyState icon="user" title="没有匹配的用户" />
-          ) : null}
-          {users.map((user) => (
-            <div key={user.user_id} className="uf-row" style={{ marginTop: 'var(--sp-3)' }}>
-              <Avatar name={user.display_name} />
-              <div className="uf-col uf-grow">
-                <span className="truncate">{user.display_name || `用户 ${user.user_id}`}</span>
-                <span className="uf-faint">ID {user.user_id}</span>
-              </div>
-              <Button
-                small
-                onClick={() => {
-                  startChat([user.user_id]);
-                  navigate('/chats');
-                }}
-              >
-                发起会话
-              </Button>
-            </div>
-          ))}
         </div>
       </div>
     </div>

@@ -62,7 +62,7 @@ export function Composer({ convId }: { convId: number }) {
     });
     if (!ok) {
       useMsgStore.getState().applyAck({ clientMsgId, msgId: 0, seq: 0, status: 1 });
-      pushToast('当前离线，消息发送失败，可在网络恢复后重试', 'error');
+      pushToast('网络恢复后重试', 'error');
     }
     setText('');
     setPendingMedia([]);

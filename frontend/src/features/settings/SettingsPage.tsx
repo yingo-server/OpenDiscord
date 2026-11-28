@@ -8,7 +8,7 @@ import { useUiStore } from '@/core/store/ui';
 import { useConnStore } from '@/core/store/bridge';
 import { env } from '@/core/config/env';
 import { request } from '@/core/net/http';
-import { sendProfileUpdate } from '@/core/store/bridge';
+import { requestUpdateProfile } from '@/core/store/bridge';
 
 function base64UrlToUint8Array(base64: string): Uint8Array {
   const padding = '='.repeat((4 - (base64.length % 4)) % 4);
@@ -33,10 +33,11 @@ export function SettingsPage() {
   const saveProfile = async () => {
     setBusy(true);
     try {
-      // 资料写回走 WS kind 940；服务端当前仅在用户层内部可达，失败时给出手动提示。
-      sendProfileUpdate(displayName.trim());
+      await requestUpdateProfile(displayName.trim());
       auth.updateProfile({ display_name: displayName.trim() });
-      pushToast('昵称已在本端更新；若服务端未接受，请稍后重试。', 'warn');
+      pushToast('昵称已保存', 'info');
+    } catch (error) {
+      pushToast(error instanceof Error ? error.message : '保存失败，请重试', 'error');
     } finally {
       setBusy(false);
     }
@@ -106,7 +107,7 @@ export function SettingsPage() {
 
         <section className="uf-card">
           <h3 className="uf-card__title">昵称</h3>
-          <Field label="显示昵称" hint="资料写回依赖 WS kind 940，当前后端尚未对客户端开放">
+          <Field label="显示昵称" hint="最多 32 个字符，保存后对方可见">
             {(id) => (
               <TextInput
                 id={id}

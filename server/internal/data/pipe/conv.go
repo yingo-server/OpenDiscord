@@ -32,6 +32,10 @@ const (
 	convOpSetRole      = 4
 	convOpGetMeta      = 5
 	convOpListMembers  = 6
+	// convOpListMine 列出「我参与的会话」。独立客户端此前没有任何办法
+	// 枚举自己的会话（用户面无 HTTP 列举端点，930 又不在用户层能力表内），
+	// 只能被动等 202 事件——新设备登录后会话列表是空的。
+	convOpListMine = 7
 )
 
 // Conversation types (proto chat.v1: 1 direct, 2 group).
@@ -98,6 +102,8 @@ func (d *convDomain) handle(ctx context.Context, senderUID int64, op uint32, cid
 		return d.getMeta(ctx, senderUID, cid)
 	case convOpListMembers:
 		return d.listMembers(ctx, senderUID, cid)
+	case convOpListMine:
+		return d.listMine(ctx, senderUID)
 	}
 	return convResult{Op: op, Error: "unknown op"}
 }
@@ -355,6 +361,47 @@ func (d *convDomain) listMembers(ctx context.Context, actor int64, cid uint64) c
 	out.LastSeq = d.lastSeqFor(ctx, int64(cid))
 	pl, _ := wire.Marshal(out)
 	return convResult{Op: convOpListMembers, OK: true, Cid: int64(cid), Payload: pl}
+}
+
+// listMine returns every conversation the actor participates in, each as a
+// full snapshot (title, members, lastSeq). It is the read path a client needs
+// on a fresh device: without it the only way to learn a conversation is to
+// wait for a membership-change event, which never fires for conversations
+// joined before the device existed.
+//
+// Authorization is implicit and total: the store query joins through
+// conv_members, so the result contains exactly the actor's own
+// conversations and nothing else.
+func (d *convDomain) listMine(ctx context.Context, actor int64) convResult {
+	if actor <= 0 {
+		return convResult{Op: convOpListMine, Error: "unauthenticated"}
+	}
+	metas, err := d.conv.ConvsForUser(ctx, actor)
+	if err != nil {
+		return convResult{Op: convOpListMine, Error: err.Error()}
+	}
+	items := make([]wire.ConvPayload, 0, len(metas))
+	for _, meta := range metas {
+		ms, err := d.conv.ListMembers(ctx, meta.Cid)
+		if err != nil {
+			continue // a conversation that vanished mid-list is skipped, not fatal
+		}
+		item := wire.ConvPayload{
+			ConvID: uint64(meta.Cid), Title: meta.Title,
+			ConvType: uint32(meta.CType), CreatedAt: meta.CreatedAt,
+		}
+		for _, m := range ms {
+			item.Members = append(item.Members, wire.Member{
+				UserID: uint64(m.UID), Role: uint32(m.Role),
+				JoinedAt: m.JoinedAt, MutedUntil: m.MutedUntil,
+			})
+		}
+		item.Version = convVersion(len(ms))
+		item.LastSeq = d.lastSeqFor(ctx, meta.Cid)
+		items = append(items, item)
+	}
+	pl, _ := wire.Marshal(wire.ConvList{Items: items})
+	return convResult{Op: convOpListMine, OK: true, Payload: pl}
 }
 
 // lastSeqFor returns the conversation's current high-water mark: the highest

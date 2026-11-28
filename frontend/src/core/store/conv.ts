@@ -1,11 +1,14 @@
 /**
- * 会话状态：来源有两条
- * 1) HTTP GET /api/conversations（待后端补齐，缺失时自动降级）；
- * 2) WS kind 202 CONV_PAYLOAD 事件累积（当前后端唯一稳定的来源）。
+ * 会话状态。
+ *
+ * 数据来源：
+ *  1) 930 op7「列出我的会话」——进应用/刷新时主动拉一次（权威来源）；
+ *  2) WS kind 202 CONV_PAYLOAD —— 成员变更时的增量推送；
+ *  3) 收到 102 消息时补一个会话条目（此前会话没被列举到的情况）。
+ * 置顶/静音是客户端本地偏好（服务端没有这个概念），持久化在 localStorage。
  */
 
 import { create } from 'zustand';
-import * as convApi from '@/core/domain/conv';
 import type { ChatMessage, Conversation } from '@/core/domain/types';
 
 const PREFS_KEY = 'ufot.conv.prefs';
@@ -34,25 +37,8 @@ function savePrefs(prefs: ConvPrefs): void {
   }
 }
 
-interface ConvState {
-  conversations: Record<number, Conversation>;
-  order: number[];
-  loading: boolean;
-  error: string | null;
-  /** 后端会话列举端点是否已上线 */
-  listEndpointReady: boolean | null;
-  query: string;
-
-  load: () => Promise<void>;
-  upsertFromPayload: (payload: Record<string, unknown>) => void;
-  touch: (convId: number, message: ChatMessage) => void;
-  setQuery: (query: string) => void;
-  togglePinned: (convId: number) => void;
-  toggleMuted: (convId: number) => void;
-  visible: () => Conversation[];
-}
-
-function parsePayload(payload: Record<string, unknown>): Conversation | null {
+/** 服务端 ConvPayload → 前端 Conversation。 */
+export function conversationFromPayload(payload: Record<string, unknown>): Conversation | null {
   const convId = Number(payload.convId ?? payload.conv_id ?? 0);
   if (!convId) return null;
   const members = Array.isArray(payload.members) ? payload.members : [];
@@ -78,6 +64,24 @@ function parsePayload(payload: Record<string, unknown>): Conversation | null {
   };
 }
 
+interface ConvState {
+  conversations: Record<number, Conversation>;
+  order: number[];
+  loading: boolean;
+  error: string | null;
+  /** 是否已成功拉取过完整列表（决定空态文案） */
+  loaded: boolean;
+  query: string;
+
+  replaceAll: (conversations: Conversation[]) => void;
+  upsertFromPayload: (payload: Record<string, unknown>) => void;
+  touch: (convId: number, message: ChatMessage) => void;
+  setQuery: (query: string) => void;
+  togglePinned: (convId: number) => void;
+  toggleMuted: (convId: number) => void;
+  visible: () => Conversation[];
+}
+
 export const useConvStore = create<ConvState>((set, get) => {
   const prefs = loadPrefs();
 
@@ -92,42 +96,29 @@ export const useConvStore = create<ConvState>((set, get) => {
     order: [],
     loading: false,
     error: null,
-    listEndpointReady: null,
+    loaded: false,
     query: '',
 
-    async load() {
-      set({ loading: true, error: null });
-      try {
-        const page = await convApi.listConversations({ limit: 100 });
-        const next: Record<number, Conversation> = {};
-        for (const conv of page.items) next[conv.convId] = applyPrefs(conv);
-        set({
-          conversations: { ...get().conversations, ...next },
-          order: Object.keys(next).map(Number),
-          loading: false,
-          listEndpointReady: true,
-        });
-      } catch (error) {
-        if (convApi.isEndpointMissing(error)) {
-          // 后端未提供列举端点：保留事件累积的列表，不报错。
-          set({ loading: false, listEndpointReady: false, error: null });
-          return;
-        }
-        set({
-          loading: false,
-          error: error instanceof Error ? error.message : '加载会话失败',
-        });
-      }
+    replaceAll(conversations) {
+      const next: Record<number, Conversation> = {};
+      for (const conv of conversations) next[conv.convId] = applyPrefs(conv);
+      set({
+        conversations: next,
+        order: conversations.map((c) => c.convId),
+        loaded: true,
+      });
     },
 
     upsertFromPayload(payload) {
-      const parsed = parsePayload(payload);
+      const parsed = conversationFromPayload(payload);
       if (!parsed) return;
       const current = get().conversations[parsed.convId];
       const merged = applyPrefs({
         ...current,
         ...parsed,
         members: parsed.members.length > 0 ? parsed.members : (current?.members ?? []),
+        // 标题不覆盖已有的非空标题（增量事件可能不带标题）
+        title: parsed.title || current?.title || '',
       });
       const order = get().order.includes(merged.convId)
         ? get().order
@@ -135,6 +126,7 @@ export const useConvStore = create<ConvState>((set, get) => {
       set({
         conversations: { ...get().conversations, [merged.convId]: merged },
         order,
+        loaded: true,
       });
     },
 
@@ -172,7 +164,12 @@ export const useConvStore = create<ConvState>((set, get) => {
       savePrefs({ ...prefsNow, pinned });
       const conv = get().conversations[convId];
       if (conv) {
-        set({ conversations: { ...get().conversations, [convId]: { ...conv, pinned: pinned.includes(convId) } } });
+        set({
+          conversations: {
+            ...get().conversations,
+            [convId]: { ...conv, pinned: pinned.includes(convId) },
+          },
+        });
       }
     },
 
@@ -184,7 +181,12 @@ export const useConvStore = create<ConvState>((set, get) => {
       savePrefs({ ...prefsNow, muted });
       const conv = get().conversations[convId];
       if (conv) {
-        set({ conversations: { ...get().conversations, [convId]: { ...conv, muted: muted.includes(convId) } } });
+        set({
+          conversations: {
+            ...get().conversations,
+            [convId]: { ...conv, muted: muted.includes(convId) },
+          },
+        });
       }
     },
 

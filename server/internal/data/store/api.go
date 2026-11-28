@@ -147,6 +147,13 @@ type IdentityStore interface {
 	// SetBan records (or, with Level<=0, lifts) a ban record. Append-style:
 	// history rows are kept, effectiveness is derived by expiry.
 	SetBan(ctx context.Context, b *Ban) error
+
+	// SearchUsers returns users whose display name matches the keyword
+	// (case-insensitive prefix/substring match), excluding banned and
+	// deleted accounts. It is the read primitive behind user search
+	// (940 op5): without it a client cannot pick anyone to talk to.
+	// The result is capped by limit (0 = store default).
+	SearchUsers(ctx context.Context, keyword string, limit int) ([]User, error)
 }
 
 // --------------------------------------------------------------- conv domain
@@ -194,6 +201,13 @@ type ConvStore interface {
 
 	// ListMembers returns all members of cid.
 	ListMembers(ctx context.Context, cid int64) ([]Member, error)
+
+	// ConvsForUser returns every conversation uid is a member of, newest
+	// activity first is NOT guaranteed — the caller sorts. It is the read
+	// primitive behind "list my conversations" (930 op7): a client must be
+	// able to enumerate its own conversations on a fresh device instead of
+	// waiting for a membership event that may never come again.
+	ConvsForUser(ctx context.Context, uid int64) ([]ConvMeta, error)
 
 	// SetMemberRole updates one member's role. Authorization happened above.
 	SetMemberRole(ctx context.Context, cid, uid int64, role int) error
