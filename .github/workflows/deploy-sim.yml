@@ -139,24 +139,42 @@ jobs:
           # Point the real chatd at the isolated state DB (installed toml uses
           # the packaged default path, which would write outside our sandbox).
           sudo sed -i "s|^hot_db *=.*|hot_db = \"$UFOT_STATE/chatd.db\"|" "$UFOT_ETC/ufot.toml"
+          # --- new-config coverage: exercise the keys that gate the hosted-
+          # frontend deployment shape (native TLS + cross-site cookie). TLS is
+          # asserted by LISTENING with a self-signed pair and probing https;
+          # cookie_same_site is asserted via the Set-Cookie attribute.
+          echo "=== generate a throwaway cert pair for the TLS boot ==="
+          CERTDIR=$(mktemp -d)
+          sudo openssl req -x509 -newkey rsa:2048 -sha256 -days 2 -nodes \
+            -keyout "$CERTDIR/tls.key" -out "$CERTDIR/tls.crt" \
+            -subj "/CN=localhost" -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" 2>/dev/null
+          sudo tee -a "$UFOT_ETC/ufot.toml" > /dev/null <<TOMLEOF
+
+# --- deploy-sim coverage (appended; not part of the packaged template) ---
+tls_cert = "$CERTDIR/tls.crt"
+tls_key = "$CERTDIR/tls.key"
+cookie_same_site = "none"
+TOMLEOF
           sudo env APP_ENV=dev UFOT_CONFIG="$UFOT_ETC/ufot.toml" \
             "$ROOT/repo/dist/chatd" --config "$UFOT_ETC/ufot.toml" \
             > "$ROOT/chatd-boot.log" 2>&1 &
           PID=$!
           ok=0
           for i in $(seq 1 40); do
-            if curl -sf --max-time 1 http://127.0.0.1:8080/healthz >/dev/null 2>&1; then ok=1; break; fi
+            if curl -sfk --max-time 1 https://127.0.0.1:8080/healthz >/dev/null 2>&1; then ok=1; break; fi
             sleep 0.5
           done
           echo "--- chatd boot log ---"; cat "$ROOT/chatd-boot.log"
-          [ "$ok" -eq 1 ] || { echo "FAIL: real chatd did not become healthy"; exit 1; }
-          echo "PASS: real chatd boot + healthz"
-          # Trigger a real write (guest login persists a user) so the lazy-
-          # opened SQLite DB file actually materializes with its migrated schema.
-          echo "=== bootstrap a real DB write (guest login) ==="
-          curl -sf --max-time 5 -X POST -H 'Content-Type: application/json' \
-            -d '{"nickname":"deploy-sim"}' http://127.0.0.1:8080/api/auth/guest \
-            -o "$ROOT/guest.json" && echo "guest login OK" || echo "guest login skipped (auth config)"
+          [ "$ok" -eq 1 ] || { echo "FAIL: real chatd did not become healthy over TLS"; exit 1; }
+          echo "PASS: real chatd boot + healthz over native TLS (tls_cert/tls_key honored)"
+          # Cookie attribute assertion: SameSite=None requires Secure at runtime.
+          echo "=== assert Set-Cookie Secure + SameSite=None (cookie_same_site) ==="
+          SC=$(curl -sk --max-time 5 -D - -o /dev/null -H 'Content-Type: application/json' \
+            -d '{"nickname":"deploy-sim"}' https://127.0.0.1:8080/api/auth/guest | grep -i '^set-cookie:' || true)
+          echo "$SC"
+          echo "$SC" | grep -qi 'SameSite=None' || { echo "FAIL: cookie_same_site=none not reflected in Set-Cookie"; exit 1; }
+          echo "$SC" | grep -qi 'Secure' || { echo "FAIL: Secure missing on SameSite=None cookie"; exit 1; }
+          echo "PASS: cookie_same_site=none -> Secure; SameSite=None"
           sleep 1
           sudo kill "$PID" 2>/dev/null || true
           wait "$PID" 2>/dev/null || true
