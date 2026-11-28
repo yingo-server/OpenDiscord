@@ -113,6 +113,8 @@ func New(cfg Config, authn AuthnFunc, peer transport.Peer) (*Server, error) {
 	upg := pol.Snapshot()
 	acc := ws.NewAcceptor(ws.Config{
 		ListenAddr:        cfg.ListenAddr,
+		TLSCertFile:       cfg.TLSCertFile,
+		TLSKeyFile:        cfg.TLSKeyFile,
 		PublicOrigin:      cfg.PublicOrigin,
 		AllowAnyOrigin:    cfg.AllowAnyOrigin,
 		CORSOrigins:       cfg.CORSOrigins,
